@@ -1,4 +1,5 @@
 /** Shared shell for the public pages: logo, header with accessible mobile menu, footer, and live status. */
+import { WEB_DEMO } from '../webDemo';
 import { Icon } from '../components/Icon';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Link, PATHS, useLocation } from '../router';
@@ -54,11 +55,12 @@ export function useRobotName(): string {
   return name;
 }
 
-export type LiveStatus = { kind: 'checking' } | { kind: 'offline' } | { kind: 'demo' } | { kind: 'llm'; model: string | null; configured: boolean; note?: string };
+export type LiveStatus = { kind: 'checking' } | { kind: 'offline' } | { kind: 'demo' } | { kind: 'web' } | { kind: 'llm'; model: string | null; configured: boolean; note?: string };
 /** Real server status (GET /api/status) — never inferred from the page having loaded. */
 export function useLiveStatus(): LiveStatus {
   const [s, setS] = useState<LiveStatus>({ kind: 'checking' });
   useEffect(() => {
+    if (WEB_DEMO) { setS({ kind: 'web' }); return; }
     const ctl = new AbortController();
     fetch('/api/status', { signal: AbortSignal.any ? AbortSignal.any([ctl.signal, AbortSignal.timeout(5000)]) : ctl.signal })
       .then(async (r) => { if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) throw new Error('no api'); return r.json() as Promise<ServerCapabilities>; })
@@ -72,6 +74,7 @@ export function StatusPill({ s }: { s: LiveStatus }) {
   const [cls, text] = s.kind === 'checking' ? ['st-checking', 'Checking the server…']
     : s.kind === 'offline' ? ['st-off', 'Server offline — local demo only']
     : s.kind === 'demo' ? ['st-demo', 'Demo brain — not an LLM']
+    : s.kind === 'web' ? ['st-demo', 'Web demo — scripted demo brain, not an LLM']
     : s.configured ? ['st-llm', `AI model ready: ${s.model ?? 'configured'}`] : ['st-demo', `AI provider needs setup${s.note ? ` — ${s.note}` : ''}`];
   return <span className={`status-pill ${cls}`} role="status"><i aria-hidden /> {text}</span>;
 }

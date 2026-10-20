@@ -1,4 +1,5 @@
 /** Route "/" — the public landing page. Every claim here matches what the app actually does. */
+import { REPO_URL, WEB_DEMO } from '../webDemo';
 import { Icon, type IconName } from '../components/Icon';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, PATHS, scrollToHash, useTitle } from '../router';
@@ -60,7 +61,9 @@ export default function Landing() {
               <Link to={PATHS.app} className="btn btn-primary btn-lg">Meet {name}</Link>
               <a href="#features" className="btn btn-ghost btn-lg" onClick={(e) => { e.preventDefault(); history.replaceState(null, '', '#features'); scrollToHash('#features'); }}>Explore features</a>
             </div>
-            <p className="muted small">Runs on your computer. No account needed. A model provider is required for real conversation.</p>
+            {WEB_DEMO
+              ? <p className="muted small" data-testid="web-demo-note">This is the <b>web demo</b>: the robot, its movements, skills and memory run in your browser and a scripted demo brain answers (not an AI). For real AI conversation, run NEXUS on your computer — <a className="text-link" href={REPO_URL}>get it on GitHub</a>.</p>
+              : <p className="muted small">Runs on your computer. No account needed. A model provider is required for real conversation.</p>}
           </div>
           <div className="hero-art">
             <div className="hero-glow" aria-hidden />

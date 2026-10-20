@@ -51,3 +51,21 @@ describe('[A118] failure containment and interface consistency', () => {
     expect(statusLabel('builtin')).toBe('built-in');
   });
 });
+
+describe('[A118] hosted web demo (GitHub Pages)', () => {
+  it('[A118] the web demo never calls a server, labels the demo brain as not an LLM, and refuses server-only features honestly', async () => {
+    const { ApiClient } = await import('../../ai/apiClient');
+    const { stripBase, withBase } = await import('../../webDemo');
+    const fetchSpy = vi.fn(); vi.stubGlobal('fetch', fetchSpy);
+    const api = new ApiClient('', 1000, true);
+    const caps = await api.status();
+    expect(caps).toMatchObject({ provider: 'web-demo', isLLM: false }); expect(caps.label).toMatch(/not an LLM/);
+    const r = await api.chat({ messages: [{ role: 'user', content: 'wave please' }], skills: [], expressions: ['happy'] }, new AbortController().signal);
+    expect(r.meta).toMatchObject({ provider: 'web-demo', isLLM: false }); expect(r.response.reply.length).toBeGreaterThan(0);
+    await expect(api.getConfig()).rejects.toThrow(/web demo/); expect((await api.testConnection()).ok).toBe(false);
+    expect(await api.summarize([{ role: 'user', content: 'x' }])).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+    expect(withBase('/app')).toBe('/app'); expect(stripBase('/app')).toBe('/app');   // root build: no base path
+  });
+});

@@ -5,6 +5,7 @@
  */
 import { BrainResponseSchema, ChatRequestSchema, type BrainHead, type BrainResponse, type ChatMessage, type ChatRequestInput, type ErrorCode, type ResponseMeta, type ServerCapabilities, type Source, type StreamEvent } from '../../shared/schema';
 import { demoBrain } from '../../shared/demoBrain';
+import { WEB_DEMO } from '../webDemo';
 
 export class ApiError extends Error { constructor(msg: string, public code: ErrorCode, public retryable = false) { super(msg); } }
 export interface ChatHandlers { onStatus?(s: 'researching' | 'thinking' | 'streaming'): void; onSources?(s: Source[]): void; onHead?(h: BrainHead): void; onDelta?(t: string): void }
@@ -15,11 +16,21 @@ export const OFFLINE_CAPS: ServerCapabilities = {
   promptVersion: 'local', runtimeConfig: false, research: { provider: 'none', configured: false, note: 'API server offline' }, note: 'Start the API server (npm run dev) to use a configured LLM.',
 };
 
+/** Capabilities of the hosted web demo: no server, the scripted demo brain answers (and says it is not an LLM). */
+export const WEB_DEMO_CAPS: ServerCapabilities = {
+  provider: 'web-demo', label: 'Web demo — runs in your browser, no AI server (not an LLM)', model: null, isLLM: false, configured: true, streaming: false,
+  promptVersion: 'local', runtimeConfig: false, research: { provider: 'none', configured: false, note: 'Not available in the web demo' },
+  speech: { tts: { configured: false, note: 'Not available in the web demo' }, stt: { configured: false, note: 'Not available in the web demo' } },
+  note: 'This hosted page has no NEXUS server. Run NEXUS on your computer to connect a real AI model.',
+};
+const noServer = () => new ApiError('Not available in the web demo — this page has no NEXUS server. Run NEXUS on your computer to use it.', 'unconfigured');
+
 export class ApiClient {
   offline = false;
-  constructor(private base = '', private timeoutMs = 60000) {}
+  constructor(private base = '', private timeoutMs = 60000, readonly webDemo = WEB_DEMO) {}
 
   async status(): Promise<ServerCapabilities> {
+    if (this.webDemo) return WEB_DEMO_CAPS;
     try {
       const r = await fetch(`${this.base}/api/status`, { signal: AbortSignal.timeout(5000) });
       if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) throw new Error('no api');
@@ -29,6 +40,7 @@ export class ApiClient {
 
   async chat(input: ChatRequestInput, signal: AbortSignal, h: ChatHandlers = {}): Promise<ChatResult> {
     const req = ChatRequestSchema.parse(input);
+    if (this.webDemo) { const r = await this.local(req, h, 'web demo'); return { ...r, offline: false, meta: { ...r.meta, provider: 'web-demo' } }; } // labelled, never presented as an AI
     // No silent substitution: if the server can't be reached we report it; the user may then explicitly ask the offline demo.
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort('timeout'), this.timeoutMs);
@@ -97,23 +109,25 @@ export class ApiClient {
   }
 
   async summarize(messages: ChatMessage[]): Promise<string | null> {
-    if (this.offline) return null;
+    if (this.offline || this.webDemo) return null;
     try {
       const r = await fetch(`${this.base}/api/summarize`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messages: messages.slice(-40) }), signal: AbortSignal.timeout(30000) });
       return r.ok ? (((await r.json()) as { summary?: string }).summary ?? null) : null;
     } catch { return null; }
   }
 
-  async getConfig() { const r = await fetch(`${this.base}/api/config`); if (!r.ok) throw new ApiError('Config unavailable', 'network'); return r.json(); }
+  async getConfig() { if (this.webDemo) throw noServer(); const r = await fetch(`${this.base}/api/config`); if (!r.ok) throw new ApiError('Config unavailable', 'network'); return r.json(); }
   async putConfig(patch: unknown) {
+    if (this.webDemo) throw noServer();
     const r = await fetch(`${this.base}/api/config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(patch) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new ApiError((j as { error?: string }).error ?? `HTTP ${r.status}`, 'invalid_request');
     return j as { ok: boolean; config: unknown; status: ServerCapabilities };
   }
-  async localModels() { const r = await fetch(`${this.base}/api/local-models`); if (!r.ok) throw new ApiError('Local model check unavailable', 'network'); return r.json() as Promise<{ ollama: { reachable: boolean; baseUrl: string; models: string[]; note: string } }>; }
+  async localModels() { if (this.webDemo) throw noServer(); const r = await fetch(`${this.base}/api/local-models`); if (!r.ok) throw new ApiError('Local model check unavailable', 'network'); return r.json() as Promise<{ ollama: { reachable: boolean; baseUrl: string; models: string[]; note: string } }>; }
   /** Downloads an Ollama model through the NEXUS server, reporting real progress. Resolves with Ollama's final result. */
   async pullModel(model: string, onProgress: (p: { status: string; completed?: number; total?: number }) => void, signal?: AbortSignal): Promise<{ ok: boolean; message: string }> {
+    if (this.webDemo) return { ok: false, message: noServer().message };
     let r: Response;
     try { r = await fetch(`${this.base}/api/local-models/pull`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ model }), signal }); }
     catch (e) { if (signal?.aborted) return { ok: false, message: 'Download cancelled.' }; throw new ApiError((e as Error).message, 'offline', true); }
@@ -131,5 +145,5 @@ export class ApiClient {
     } catch { if (signal?.aborted) return { ok: false, message: 'Download cancelled.' }; }
     return result ?? { ok: false, message: signal?.aborted ? 'Download cancelled.' : 'The download ended without a result.' };
   }
-  async testConnection() { const r = await fetch(`${this.base}/api/config/test`, { method: 'POST' }); return r.json() as Promise<{ ok: boolean; message: string; latencyMs?: number }>; }
+  async testConnection() { if (this.webDemo) return { ok: false, message: noServer().message }; const r = await fetch(`${this.base}/api/config/test`, { method: 'POST' }); return r.json() as Promise<{ ok: boolean; message: string; latencyMs?: number }>; }
 }

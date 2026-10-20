@@ -518,7 +518,7 @@ try {
   check('[A111] light theme applies to the workspace', lightBg.theme === 'light' && lum(lightBg.bg) > 200, JSON.stringify(lightBg));
   await page.screenshot({ path: 'test-results/e2e-light.png' });
 
-  const manifest = await page.evaluate(async () => { const r = await fetch('/manifest.webmanifest'); const j = await r.json(); const icons = await Promise.all(j.icons.map((i) => fetch(i.src).then((x) => x.ok && x.headers.get('content-type').includes('png')))); return { type: r.headers.get('content-type'), name: j.short_name, start: j.start_url, display: j.display, icons, link: !!document.querySelector('link[rel=manifest]') }; });
+  const manifest = await page.evaluate(async () => { const r = await fetch('/manifest.webmanifest'); const j = await r.json(); const icons = await Promise.all(j.icons.map((i) => fetch(new URL(i.src, new URL('/manifest.webmanifest', location.href))).then((x) => x.ok && x.headers.get('content-type').includes('png')))); return { type: r.headers.get('content-type'), name: j.short_name, start: new URL(j.start_url, new URL('/manifest.webmanifest', location.href)).pathname, display: j.display, icons, link: !!document.querySelector('link[rel=manifest]') }; });
   check('[A115] installable web app: valid manifest (standalone, starts in /app) with PNG icons', manifest.link && /manifest\+json|json/.test(manifest.type) && manifest.name === 'NEXUS' && manifest.start === '/app' && manifest.display === 'standalone' && manifest.icons.length >= 3 && manifest.icons.every(Boolean), JSON.stringify(manifest));
   // ---- Robot view (default layout) + server voice: TTS audio drives the mouth, interruption, server transcription ----
   {

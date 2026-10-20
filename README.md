@@ -1,5 +1,7 @@
 # NEXUS — an AI companion with an animated 2D robot body
 
+**Live web demo: https://farhan19112014-byte.github.io/nexus/** — the robot, its movements, skills and memory run in your browser; a scripted demo brain answers (it is not an AI). For real AI conversation, run NEXUS on your computer (below).
+
 <p align="center"><img src="docs/images/robot-view.png" alt="NEXUS: the robot fills the window, with captions and a voice dock below" width="760"></p>
 
 NEXUS is a voice-first AI companion. The interface **is** an original, fully articulated 2D robot: it listens, thinks,

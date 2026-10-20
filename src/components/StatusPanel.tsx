@@ -1,4 +1,5 @@
 /** Assets 49, 78, 80, 95, 99, 10/100 — capabilities, tool permissions, learning disclosure, diagnostics, performance, asset registry. */
+import { withBase } from '../webDemo';
 import { useCallback, useEffect, useState } from 'react';
 import { companion, engine, memory, registry, runtime } from '../core/runtime';
 import { download, fmtTime, usePoll, useSnapshot, useStore } from './hooks';
@@ -12,7 +13,7 @@ export default function StatusPanel() {
   const perf = usePoll(useCallback(() => runtime.stats(), []), 1000);
   const [status, setStatus] = useState<AssetStatus | null>(null);
   const [filter, setFilter] = useState('');
-  useEffect(() => { fetch('/asset-status.json').then((r) => (r.ok ? r.json() : null)).then(setStatus).catch(() => setStatus(null)); }, []);
+  useEffect(() => { fetch(withBase('/asset-status.json')).then((r) => (r.ok ? r.json() : null)).then(setStatus).catch(() => setStatus(null)); }, []);
   const counts = companion.diagnostics.counts();
   useStore(registry); useStore(memory);
   const live = usePoll(useCallback(() => ({ acts: engine.active().filter((a) => a.phase !== 'out' && !a.preview).map((a) => a.name), preview: engine.active().find((a) => a.preview)?.name ?? null }), []), 300);

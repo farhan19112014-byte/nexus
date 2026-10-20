@@ -3,6 +3,7 @@
  *   1. name your robot   2. choose its brain (demo / free Ollama on this computer / a hosted AI)   3. theme & voice
  * Everything is saved through the same paths as Settings (rename → companion, model → loopback-only /api/config).
  */
+import { WEB_DEMO } from '../webDemo';
 import { useEffect, useId, useRef, useState } from 'react';
 import { OllamaDownload } from './OllamaDownload';
 import { api, companion, memory } from '../core/runtime';
@@ -95,16 +96,17 @@ export function SetupWizard() {
           <p id={ids.desc} className="muted">This decides who writes the replies. The robot’s face and movements work with all of them.</p>
           <fieldset className="brain-options">
             <legend className="sr-only">Brain</legend>
+            {WEB_DEMO && <p className="small warn-t" data-testid="web-demo-setup">Web demo: only the demo brain is available here (there is no NEXUS server). Run NEXUS on your computer for a real AI.</p>}
             <label className={`brain ${brain === 'demo' ? 'on' : ''}`}><input type="radio" name="brain" checked={brain === 'demo'} onChange={() => setBrain('demo')} /><span><b>Demo brain</b> — works right now, offline. Scripted, <em>not an AI</em>: it understands movement commands, not questions.</span></label>
-            <label className={`brain ${brain === 'ollama' ? 'on' : ''}`}><input type="radio" name="brain" checked={brain === 'ollama'} onChange={() => setBrain('ollama')} /><span><b>Free AI on this computer (Ollama)</b> — a real open model; no account or key; replies stay on your computer.</span></label>
+            <label className={`brain ${brain === 'ollama' ? 'on' : ''}`}><input type="radio" name="brain" checked={brain === 'ollama'} disabled={WEB_DEMO} onChange={() => setBrain('ollama')} /><span><b>Free AI on this computer (Ollama)</b> — a real open model; no account or key; replies stay on your computer.</span></label>
             {brain === 'ollama' && <div className="brain-detail">
               <div className="small" role="status">{olla ? `${olla.reachable ? '✓' : '✗'} ${olla.note}` : 'Checking for Ollama…'}</div>
               {olla?.reachable && olla.models.length > 0 && <label className="field">Model<select value={model} onChange={(e) => setModel(e.target.value)}>{olla.models.map((m) => <option key={m} value={m}>{m}</option>)}</select></label>}
               {olla && <OllamaDownload reachable={olla.reachable} onDone={(m) => { setModel(m); void checkOllama(); }} />}
               <button type="button" className="link" onClick={() => { setOlla(null); void checkOllama(); }}>Check again</button>
             </div>}
-            <label className={`brain ${brain === 'openai' ? 'on' : ''}`}><input type="radio" name="brain" checked={brain === 'openai'} onChange={() => setBrain('openai')} /><span><b>Hosted AI (OpenAI-compatible)</b> — OpenAI, OpenRouter, Groq, LM Studio… Needs an API key; may cost money per message.</span></label>
-            <label className={`brain ${brain === 'anthropic' ? 'on' : ''}`}><input type="radio" name="brain" checked={brain === 'anthropic'} onChange={() => setBrain('anthropic')} /><span><b>Anthropic (Claude)</b> — needs an API key; may cost money per message.</span></label>
+            <label className={`brain ${brain === 'openai' ? 'on' : ''}`}><input type="radio" name="brain" checked={brain === 'openai'} disabled={WEB_DEMO} onChange={() => setBrain('openai')} /><span><b>Hosted AI (OpenAI-compatible)</b> — OpenAI, OpenRouter, Groq, LM Studio… Needs an API key; may cost money per message.</span></label>
+            <label className={`brain ${brain === 'anthropic' ? 'on' : ''}`}><input type="radio" name="brain" checked={brain === 'anthropic'} disabled={WEB_DEMO} onChange={() => setBrain('anthropic')} /><span><b>Anthropic (Claude)</b> — needs an API key; may cost money per message.</span></label>
             {(brain === 'openai' || brain === 'anthropic') && <div className="brain-detail">
               {brain === 'openai' && <label className="field">Base URL<input value={hosted.baseUrl} onChange={(e) => setHosted({ ...hosted, baseUrl: e.target.value })} /></label>}
               <label className="field">Model<input value={hosted.model} onChange={(e) => setHosted({ ...hosted, model: e.target.value })} placeholder="a current model id from your provider" /></label>

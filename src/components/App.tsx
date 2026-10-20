@@ -88,7 +88,7 @@ export default function App() {
         </div>
         <div className="chips-row">
           {llm && <span className={`badge cap-${snap.connection.state === 'failed' ? 'unavailable' : llm.state}`} title={`${llm.detail} — ${snap.connection.detail}${snap.connection.at ? ` (${new Date(snap.connection.at).toLocaleTimeString()})` : ''}`} data-testid="ai-chip">
-            {snap.caps?.provider === 'local-demo' ? 'server offline' : snap.caps?.isLLM ? `${snap.caps.model ?? 'LLM'} · ${snap.connection.state === 'ok' ? 'connected' : snap.connection.state === 'failed' ? 'last request failed' : 'not checked yet'}` : 'demo brain · not an LLM'}
+            {snap.caps?.provider === 'web-demo' ? 'web demo · not an LLM' : snap.caps?.provider === 'local-demo' ? 'server offline' : snap.caps?.isLLM ? `${snap.caps.model ?? 'LLM'} · ${snap.connection.state === 'ok' ? 'connected' : snap.connection.state === 'failed' ? 'last request failed' : 'not checked yet'}` : 'demo brain · not an LLM'}
           </span>}
           {s.quietMode && <span className="badge">quiet</span>}
           {s.research && <span className={`badge ${snap.caps?.research.configured ? 'cap-operational' : 'cap-needs_config'}`}>research {snap.caps?.research.configured ? 'on' : 'unavailable'}</span>}

@@ -1,4 +1,5 @@
 /** Assets 50, 57, 87, 88, 89 — settings that change real behaviour, plus the secure model configuration panel. */
+import { REPO_URL, WEB_DEMO } from '../webDemo';
 import { openRenameDialog } from './RenameDialog';
 import { openSetup } from './SetupWizard';
 import { OllamaDownload } from './OllamaDownload';
@@ -10,7 +11,15 @@ import type { Settings } from '../memory/store';
 
 interface PublicCfg { provider: string; allowRuntimeConfig: boolean; openai: { baseUrl: string; model: string; jsonMode: boolean; apiKey: { set: boolean; hint: string | null } }; anthropic: { model: string; apiKey: { set: boolean; hint: string | null } }; research: { provider: string; searxngUrl: string; tavilyKey: { set: boolean; hint: string | null } } }
 
+function WebDemoNote({ what }: { what: string }) {
+  return <div className="card warn" data-testid="web-demo-settings">{what} needs the NEXUS server, and this web demo has none — replies come from the scripted demo brain (not an AI). To connect a real model (OpenAI-compatible, Anthropic or free Ollama), run NEXUS on your computer: <a className="text-link" href={REPO_URL}>{REPO_URL.replace('https://', '')}</a>.</div>;
+}
+
 function ModelPanel() {
+  if (WEB_DEMO) return <WebDemoNote what="Choosing an AI model" />;
+  return <ModelPanelInner />;
+}
+function ModelPanelInner() {
   const snap = useSnapshot();
   const [cfg, setCfg] = useState<PublicCfg | null>(null); const [err, setErr] = useState('');
   const [form, setForm] = useState({ provider: 'demo', baseUrl: '', model: '', key: '', aModel: '', aKey: '', research: 'none', searx: '', tavily: '' });
@@ -71,6 +80,10 @@ interface SpeechPub { tts: { provider: string; baseUrl: string; model: string; v
 
 /** Optional server speech services (spec §11–§13). Keys are write-only and stay on the NEXUS server. */
 function SpeechServicePanel() {
+  if (WEB_DEMO) return <WebDemoNote what="A speech service" />;
+  return <SpeechServicePanelInner />;
+}
+function SpeechServicePanelInner() {
   const snap = useSnapshot();
   const [pub, setPub] = useState<SpeechPub | null>(null); const [allowed, setAllowed] = useState(false);
   const [f, setF] = useState({ ttsProvider: 'none', ttsBaseUrl: '', ttsModel: '', ttsVoice: '', ttsApiKey: '', sttProvider: 'none', sttBaseUrl: '', sttModel: '', sttApiKey: '', sttLanguage: '' });
