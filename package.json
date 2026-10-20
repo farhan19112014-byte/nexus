@@ -1,0 +1,125 @@
+{
+  "name": "project-nexus-2d",
+  "productName": "NEXUS",
+  "private": true,
+  "version": "4.4.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c cyan,blue \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:web": "vite",
+    "dev:server": "tsx watch server/index.ts",
+    "build": "tsc -p tsconfig.json --noEmit && vite build && npm run build:server",
+    "start": "npm run build && node dist-server/index.js --serve-dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:e2e": "node scripts/e2e.mjs",
+    "report": "node --import tsx scripts/report.mjs",
+    "sheet": "vite --open /?sheet=1",
+    "build:server": "esbuild server/index.ts server/start.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outdir=dist-server --log-level=warning",
+    "serve": "node dist-server/index.js --serve-dist --open",
+    "setup:ollama": "node scripts/setup-ollama.mjs",
+    "desktop": "npm run build && electron .",
+    "desktop:smoke": "electron . --smoke-test",
+    "dist:win": "npm run build && electron-builder --win portable --x64 --publish never",
+    "dist:mac": "npm run build && electron-builder --mac dmg --publish never",
+    "dist:linux": "npm run build && electron-builder --linux AppImage --publish never",
+    "icons": "node scripts/make-icons.mjs",
+    "lint": "eslint . --max-warnings=0",
+    "dist:win:installer": "npm run build && electron-builder --win nsis --x64 --publish never"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource/nunito": "^5.3.0",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.20.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "axe-core": "^4.14.0",
+    "concurrently": "^10.0.6",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "fake-indexeddb": "^6.2.6",
+    "globals": "^15.15.0",
+    "happy-dom": "^20.14.6",
+    "playwright-core": "1.64",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tsx": "^4.23.15",
+    "typescript": "5.9",
+    "typescript-eslint": "^8.71.2",
+    "vite": "^7.3.7",
+    "vitest": "^3.2.7"
+  },
+  "description": "NEXUS — a cute 2D AI robot companion in one desktop app",
+  "author": "NEXUS project",
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "app.nexus.companion",
+    "productName": "NEXUS",
+    "copyright": "Original NEXUS character and code",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "dist-server/**",
+      "desktop/**",
+      "build/icon.png",
+      "build/icon.ico",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "NEXUS",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "NEXUS-Setup-${version}-x64.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.entertainment"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "executableName": "nexus"
+    },
+    "publish": [],
+    "portable": {
+      "artifactName": "NEXUS.exe"
+    }
+  }
+}

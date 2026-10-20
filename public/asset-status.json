@@ -1,0 +1,771 @@
+{
+  "generatedAt": "2026-10-20T13:38:08.583Z",
+  "steps": [
+    {
+      "name": "typecheck",
+      "ok": true,
+      "code": 0,
+      "seconds": 8.255
+    },
+    {
+      "name": "build (app + server bundle)",
+      "ok": true,
+      "code": 0,
+      "seconds": 11.672
+    },
+    {
+      "name": "lint (eslint, 0 warnings)",
+      "ok": true,
+      "code": 0,
+      "seconds": 5.574
+    },
+    {
+      "name": "unit + integration tests",
+      "ok": true,
+      "code": 0,
+      "seconds": 25.363
+    },
+    {
+      "name": "end-to-end tests",
+      "ok": true,
+      "code": 0,
+      "seconds": 187.285
+    },
+    {
+      "name": "desktop app smoke test",
+      "ok": true,
+      "code": 0,
+      "seconds": 2.724
+    }
+  ],
+  "suites": {
+    "unit": {
+      "total": 108,
+      "passed": 108
+    },
+    "integration": {
+      "total": 50,
+      "passed": 50
+    },
+    "e2e": {
+      "total": 100,
+      "passed": 100
+    }
+  },
+  "assets": {
+    "A01": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A02": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A03": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A04": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A05": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A06": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A07": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A08": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A09": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A10": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A11": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A12": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A13": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A14": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A15": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A16": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A17": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A18": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A19": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A20": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A21": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A22": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A23": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A24": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A25": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A26": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A27": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A28": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A29": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A30": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A31": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A32": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A33": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A34": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A35": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A36": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A37": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A38": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A39": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A40": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A41": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A42": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A43": {
+      "status": "verified",
+      "passed": 6,
+      "failed": 0,
+      "missing": []
+    },
+    "A44": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A45": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A46": {
+      "status": "verified",
+      "passed": 4,
+      "failed": 0,
+      "missing": []
+    },
+    "A47": {
+      "status": "verified",
+      "passed": 5,
+      "failed": 0,
+      "missing": []
+    },
+    "A48": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A49": {
+      "status": "verified",
+      "passed": 6,
+      "failed": 0,
+      "missing": []
+    },
+    "A50": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A51": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A52": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A53": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A54": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A55": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A56": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A57": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A58": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A59": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A60": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A61": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A62": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A63": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A64": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A65": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A66": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A67": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A68": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A69": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A70": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A71": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A72": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A73": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A74": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A75": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A76": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A77": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A78": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A79": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A80": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A81": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A82": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A83": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A84": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A85": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A86": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A87": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A88": {
+      "status": "verified",
+      "passed": 9,
+      "failed": 0,
+      "missing": []
+    },
+    "A89": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A90": {
+      "status": "verified",
+      "passed": 6,
+      "failed": 0,
+      "missing": []
+    },
+    "A91": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A92": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A93": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A94": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A95": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A96": {
+      "status": "verified",
+      "passed": 108,
+      "failed": 0,
+      "missing": []
+    },
+    "A97": {
+      "status": "verified",
+      "passed": 50,
+      "failed": 0,
+      "missing": []
+    },
+    "A98": {
+      "status": "verified",
+      "passed": 100,
+      "failed": 0,
+      "missing": []
+    },
+    "A99": {
+      "status": "verified",
+      "passed": 5,
+      "failed": 0,
+      "missing": []
+    },
+    "A100": {
+      "status": "verified",
+      "passed": 6,
+      "failed": 0,
+      "missing": []
+    },
+    "A101": {
+      "status": "verified",
+      "passed": 6,
+      "failed": 0,
+      "missing": []
+    },
+    "A102": {
+      "status": "verified",
+      "passed": 7,
+      "failed": 0,
+      "missing": []
+    },
+    "A103": {
+      "status": "verified",
+      "passed": 21,
+      "failed": 0,
+      "missing": []
+    },
+    "A104": {
+      "status": "verified",
+      "passed": 5,
+      "failed": 0,
+      "missing": []
+    },
+    "A105": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A106": {
+      "status": "verified",
+      "passed": 8,
+      "failed": 0,
+      "missing": []
+    },
+    "A107": {
+      "status": "verified",
+      "passed": 6,
+      "failed": 0,
+      "missing": []
+    },
+    "A108": {
+      "status": "verified",
+      "passed": 4,
+      "failed": 0,
+      "missing": []
+    },
+    "A109": {
+      "status": "verified",
+      "passed": 11,
+      "failed": 0,
+      "missing": []
+    },
+    "A110": {
+      "status": "verified",
+      "passed": 4,
+      "failed": 0,
+      "missing": []
+    },
+    "A111": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A112": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A114": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A115": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A116": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A117": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A118": {
+      "status": "verified",
+      "passed": 7,
+      "failed": 0,
+      "missing": []
+    },
+    "A119": {
+      "status": "verified",
+      "passed": 26,
+      "failed": 0,
+      "missing": []
+    },
+    "A113": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    }
+  }
+}

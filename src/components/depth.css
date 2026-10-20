@@ -1,0 +1,131 @@
+/*
+ * Depth layer — gives the whole interface the same 3D lighting as the robot: one key light from the upper left
+ * (bright top edges, soft shadows falling down and right), raised controls, recessed fields and glass surfaces.
+ * Loaded after styles.css and site.css; it only adds shadows, sheens and small transforms, never layout or colour roles.
+ */
+:root {
+  --d-edge: rgba(255, 255, 255, .09);          /* lit top edge */
+  --d-edge-strong: rgba(255, 255, 255, .13);
+  --d-sheen: linear-gradient(180deg, rgba(255, 255, 255, .06) 0%, rgba(255, 255, 255, 0) 38%, rgba(0, 0, 0, .14) 100%);
+  --d-btn: linear-gradient(180deg, rgba(255, 255, 255, .08) 0%, rgba(255, 255, 255, 0) 52%, rgba(0, 0, 0, .18) 100%);
+  --d-raise-1: inset 0 1px 0 var(--d-edge), 0 1px 1px rgba(0, 0, 0, .45), 0 3px 8px rgba(0, 0, 0, .28);
+  --d-raise-2: inset 0 1px 0 var(--d-edge), 0 2px 4px rgba(0, 0, 0, .38), 0 12px 28px rgba(0, 0, 0, .34);
+  --d-raise-3: inset 0 1px 0 var(--d-edge-strong), 0 6px 12px rgba(0, 0, 0, .4), 0 28px 64px rgba(0, 0, 0, .55);
+  --d-hover: inset 0 1px 0 var(--d-edge-strong), 0 4px 8px rgba(0, 0, 0, .4), 0 22px 44px rgba(0, 0, 0, .42), 0 0 0 1px rgba(59, 130, 246, .25);
+  --d-press: inset 0 2px 5px rgba(0, 0, 0, .5), inset 0 -1px 0 var(--d-edge);
+  --d-inset: inset 0 2px 5px rgba(0, 0, 0, .5), inset 0 -1px 0 rgba(255, 255, 255, .05);
+  --d-glow-blue: 0 6px 22px rgba(37, 99, 235, .38);
+  --d-bar: 0 1px 0 rgba(255, 255, 255, .04), 0 8px 24px rgba(0, 0, 0, .35);
+  --d-vignette: inset 0 0 120px rgba(0, 0, 0, .55), inset 0 -40px 60px -30px rgba(0, 0, 0, .5);
+}
+:root[data-theme="light"] {
+  --d-edge: rgba(255, 255, 255, .95);
+  --d-edge-strong: rgba(255, 255, 255, 1);
+  --d-sheen: linear-gradient(180deg, rgba(255, 255, 255, .7) 0%, rgba(255, 255, 255, 0) 45%, rgba(15, 23, 42, .035) 100%);
+  --d-btn: linear-gradient(180deg, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, 0) 55%, rgba(15, 23, 42, .06) 100%);
+  --d-raise-1: inset 0 1px 0 var(--d-edge), 0 1px 1px rgba(15, 23, 42, .1), 0 2px 6px rgba(15, 23, 42, .07);
+  --d-raise-2: inset 0 1px 0 var(--d-edge), 0 1px 3px rgba(15, 23, 42, .1), 0 10px 24px rgba(15, 23, 42, .09);
+  --d-raise-3: inset 0 1px 0 var(--d-edge), 0 6px 14px rgba(15, 23, 42, .14), 0 24px 56px rgba(15, 23, 42, .2);
+  --d-hover: inset 0 1px 0 var(--d-edge), 0 4px 10px rgba(15, 23, 42, .12), 0 20px 40px rgba(15, 23, 42, .14), 0 0 0 1px rgba(37, 99, 235, .25);
+  --d-press: inset 0 2px 4px rgba(15, 23, 42, .16), inset 0 -1px 0 rgba(255, 255, 255, .8);
+  --d-inset: inset 0 2px 4px rgba(15, 23, 42, .09), inset 0 -1px 0 rgba(255, 255, 255, .9);
+  --d-glow-blue: 0 6px 18px rgba(37, 99, 235, .28);
+  --d-bar: 0 1px 0 rgba(255, 255, 255, .8), 0 6px 20px rgba(15, 23, 42, .08);
+  --d-vignette: inset 0 0 100px rgba(15, 23, 42, .1), inset 0 -40px 60px -30px rgba(15, 23, 42, .1);
+}
+
+/* ---- controls: raised, press down when clicked ---- */
+button:not(.link):not(.backdrop):not(.chat-open):not(.icon-btn),
+.btn, .chip {
+  background-image: var(--d-btn);
+  box-shadow: var(--d-raise-1);
+  transition: transform .1s ease, box-shadow .15s ease, border-color .15s, background-color .15s;
+}
+button:not(.link):not(.backdrop):not(.chat-open):not(.icon-btn):hover:not(:disabled),
+.btn:hover, .chip:hover { box-shadow: var(--d-raise-1), 0 4px 12px rgba(0, 0, 0, .18); transform: translateY(-1px); }
+button:not(.link):not(.backdrop):not(.chat-open):not(.icon-btn):active:not(:disabled),
+.btn:active, .chip:active { transform: translateY(1px); box-shadow: var(--d-press); }
+button:disabled { box-shadow: none; }
+button.primary, .btn-primary { box-shadow: var(--d-raise-1), var(--d-glow-blue); }
+button.primary:active:not(:disabled), .btn-primary:active { box-shadow: var(--d-press); }
+.btn-ghost { background-image: var(--d-btn); }
+/* flat-by-design controls inside a container keep the container's depth instead */
+.tabs button, .seg button { background-image: none; box-shadow: none; }
+.tabs button:hover:not(:disabled), .seg button:hover:not(:disabled) { transform: none; box-shadow: none; }
+.tabs button.on { background-image: var(--d-sheen); box-shadow: inset 0 2px 0 var(--c-cyan), 0 -2px 8px rgba(0, 0, 0, .18); }
+.seg { box-shadow: var(--d-inset); background: var(--c-bg); }
+.seg button.on { background-image: var(--d-btn); box-shadow: var(--d-raise-1); }
+.menu-btn { box-shadow: var(--d-raise-1); }
+
+/* ---- fields: recessed into the surface (like the robot's face screen) ---- */
+input:not([type=checkbox]):not([type=range]):not([type=radio]), textarea, select { box-shadow: var(--d-inset); }
+input:not([type=checkbox]):not([type=range]):not([type=radio]):focus, textarea:focus, select:focus { box-shadow: var(--d-inset), 0 0 0 3px rgba(56, 189, 248, .18); }
+.report, .name-preview, .md-code, .md code, .preview-robot, kbd { box-shadow: var(--d-inset); }
+kbd { box-shadow: inset 0 1px 0 var(--d-edge), 0 1px 0 rgba(0, 0, 0, .4); }
+
+/* ---- surfaces: cards and list items sit above the page ---- */
+.card, .skill, .mem-list li, .caps li, .chat-list li, .rem, .brain, .sheet-cell, fieldset.field {
+  background-image: var(--d-sheen);
+  box-shadow: var(--d-raise-1);
+}
+.brain.on { box-shadow: 0 0 0 1px var(--c-primary) inset, var(--d-raise-1); }
+.feature-card, .steps li {
+  background-image: var(--d-sheen);
+  box-shadow: var(--d-raise-2);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .15s;
+}
+.feature-card:hover, .steps li:hover { transform: translateY(-4px); box-shadow: var(--d-hover); }
+.trust-list li { box-shadow: var(--d-raise-1); }
+.cta-card { box-shadow: var(--d-raise-2), inset 0 1px 0 var(--d-edge-strong); }
+.personality-stage { box-shadow: var(--d-raise-2), var(--d-vignette); }
+.status-pill { box-shadow: var(--d-raise-1); }
+
+/* ---- chat bubbles ---- */
+.bubble { box-shadow: var(--d-raise-1); background-image: var(--d-sheen); }
+.msg.user .bubble { background-image: linear-gradient(180deg, rgba(255, 255, 255, .07), rgba(255, 255, 255, 0) 50%, rgba(0, 0, 0, .12)); }
+.ms-cancelled .bubble, .ms-failed .bubble { box-shadow: none; }
+
+/* ---- spheres & lights: icons, step numbers, status dots ---- */
+.feature-icon {
+  background: radial-gradient(circle at 34% 28%, rgba(255, 255, 255, .16), rgba(255, 255, 255, 0) 55%), linear-gradient(180deg, rgba(37, 99, 235, .26), rgba(37, 99, 235, .1));
+  box-shadow: inset 0 1px 0 var(--d-edge-strong), inset 0 -2px 4px rgba(0, 0, 0, .25), 0 4px 12px rgba(37, 99, 235, .22);
+}
+.step-n {
+  background: radial-gradient(circle at 34% 30%, #6aa2ff 0%, var(--nexus-blue) 48%, #163f9e 100%);
+  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, .3), inset 0 1px 0 rgba(255, 255, 255, .35), 0 4px 12px rgba(37, 99, 235, .4);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, .35);
+}
+.dot, .status-pill i, .typing i {
+  background-image: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, .75), rgba(255, 255, 255, 0) 55%);
+  box-shadow: 0 0 6px currentColor;
+}
+.dot { color: var(--c-electric); } .dot.st-listening { color: var(--c-ok); } .dot.st-processing { color: var(--c-warn); } .dot.st-error { color: var(--c-bad); }
+.dot.st-speaking, .dot.st-responding { color: var(--c-cyan); }
+.status-pill i { color: var(--nexus-grey-500); } .status-pill.st-llm i { color: var(--c-ok); } .status-pill.st-demo i { color: var(--c-warn); } .status-pill.st-off i { color: var(--c-bad); }
+.typing i { color: var(--c-cyan); }
+.tab-count { background-image: radial-gradient(circle at 35% 25%, rgba(255, 255, 255, .35), rgba(255, 255, 255, 0) 60%); box-shadow: 0 1px 3px rgba(0, 0, 0, .35); }
+.badge { box-shadow: inset 0 1px 0 var(--d-edge); }
+.logo-mark { filter: drop-shadow(0 2px 4px rgba(0, 0, 0, .35)); border-radius: 25%; }
+
+/* ---- structure: bars float above, the stage is a lit room ---- */
+.top, .site-header { position: relative; z-index: 5; box-shadow: var(--d-bar); }
+.site-header { position: sticky; z-index: 20; }
+.side { box-shadow: inset 1px 0 0 var(--d-edge), -8px 0 24px rgba(0, 0, 0, .18); }
+.stage-box { box-shadow: var(--d-vignette); }
+.stage-status { box-shadow: var(--d-raise-1); backdrop-filter: blur(6px); }
+.modal { box-shadow: var(--d-raise-3); background-image: var(--d-sheen); }
+.toast { box-shadow: var(--d-raise-2); background-image: var(--d-sheen); }
+.side.drawer { box-shadow: -16px 0 40px var(--shadow), inset 1px 0 0 var(--d-edge); }
+.floating-preview { box-shadow: var(--d-raise-3); }
+.hero-glow { box-shadow: 0 0 120px 20px rgba(37, 99, 235, .08); }
+.site h1 { text-shadow: 0 2px 0 rgba(0, 0, 0, .25), 0 12px 32px rgba(0, 0, 0, .35); }
+:root[data-theme="light"] .site h1 { text-shadow: 0 1px 0 rgba(255, 255, 255, .8), 0 10px 28px rgba(15, 23, 42, .1); }
+
+/* ---- accessibility: high contrast stays flat; reduced motion keeps depth but never moves ---- */
+.app.hc button, .app.hc .card, .app.hc .bubble, .app.hc .skill, .app.hc .mem-list li, .app.hc .caps li, .app.hc .chat-list li, .app.hc .rem,
+.app.hc input, .app.hc textarea, .app.hc select { background-image: none !important; box-shadow: none !important; }
+.app.rm button, .app.rm .btn, .app.rm .chip, .app.rm .feature-card { transform: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  button, .btn, .chip, .feature-card, .steps li { transform: none !important; transition: none !important; }
+}
+@media print { * { box-shadow: none !important; text-shadow: none !important; } }
