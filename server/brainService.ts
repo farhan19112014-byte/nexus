@@ -111,7 +111,7 @@ export class BrainService {
             : await this.json(req, history, sources, ctl.signal, meta);
           emit({ type: 'head', head: BrainHeadSchema.parse(out) });
           if (!useStream) emit({ type: 'delta', text: out.reply });
-          meta.latencyMs = Date.now() - t0;
+          meta.latencyMs = Date.now() - t0; meta.model = this.provider.model;   // the model that actually answered (may be a fallback)
           return { response: out, meta };
         } catch (e) {
           const pe = e instanceof ProviderError ? e : new ProviderError((e as Error).message, 'internal', 500);

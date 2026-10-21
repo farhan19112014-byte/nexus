@@ -69,7 +69,9 @@ mock.post(/^\/gemini\/v1beta\/models\/([^/:]+):(generateContent|streamGenerateCo
   if (key === 'bad-key') return gemErr(res, 400, 'INVALID_ARGUMENT', 'API key not valid. Please pass a valid API key.');
   if (model === 'missing-model') return gemErr(res, 404, 'NOT_FOUND', 'models/missing-model is not found');
   if (model === 'quota-model') return gemErr(res, 429, 'RESOURCE_EXHAUSTED', 'You exceeded your current quota');
-  if (model === 'down-model') return gemErr(res, 503, 'UNAVAILABLE', 'The model is overloaded');
+  if (model === 'down-model' || model === 'down-too') return gemErr(res, 503, 'UNAVAILABLE', 'The model is overloaded. Please try again later.');
+  if (model === 'flaky-model' && gemSeen.filter((x) => x.path?.startsWith('flaky-model')).length % 2 === 1) return gemErr(res, 503, 'UNAVAILABLE', 'The model is overloaded.');
+  if (model === 'not-for-you') return gemErr(res, 404, 'NOT_FOUND', 'models/not-for-you is not found');
   if (model === 'empty-model') return res.json({ candidates: [{ content: { role: 'model', parts: [] }, finishReason: 'MAX_TOKENS' }] });
   if (model === 'blocked-model') return res.json({ promptFeedback: { blockReason: 'SAFETY' } });
   const cfgIn = (req.body.generationConfig ?? {}) as Record<string, unknown>;
@@ -328,7 +330,7 @@ describe('[A97] server integration', () => {
   });
   it('[A120] Gemini brain (official @google/genai SDK): key stays server-side, streams, JSON mode, history, typed errors', async () => {
     mode = 'json';
-    const env = { GEMINI_API_KEY: 'AIza-gem-secret-7777', GEMINI_MODEL: 'gemini-test', GEMINI_BASE_URL: `${base}/gemini` };   // no LLM_PROVIDER: the key selects Gemini
+    const env = { GEMINI_API_KEY: 'AIza-gem-secret-7777', GEMINI_MODEL: 'gemini-test', GEMINI_BASE_URL: `${base}/gemini`, GEMINI_RETRY_DELAY_MS: '0', GEMINI_FALLBACK_MODELS: 'none' };   // no LLM_PROVIDER: the key selects Gemini
     const url = await start(env);
     const st = await (await fetch(`${url}/api/status`)).json();
     expect(st).toMatchObject({ provider: 'gemini', isLLM: true, configured: true, model: 'gemini-test' }); expect(st.label).toBe('Google Gemini · gemini-test');
@@ -357,7 +359,14 @@ describe('[A97] server integration', () => {
     const bk = await err({ GEMINI_API_KEY: 'bad-key' }); expect(bk.body.code).toBe('unconfigured'); expect(bk.body.error).toMatch(/rejected the API key/); expect(JSON.stringify(bk)).not.toContain('bad-key');
     expect((await err({ GEMINI_MODEL: 'missing-model' })).body.error).toMatch(/does not know this model/);
     const q = await err({ GEMINI_MODEL: 'quota-model' }); expect(q.status).toBe(429); expect(q.body).toMatchObject({ code: 'rate_limited', retryable: true }); expect(q.body.error).toMatch(/quota/);
-    expect((await err({ GEMINI_MODEL: 'down-model' })).body.error).toMatch(/temporarily unavailable/);
+    const down = await err({ GEMINI_MODEL: 'down-model' }); expect(down.body.error).toMatch(/temporarily unavailable \(HTTP 503 — UNAVAILABLE: The model is overloaded/);
+    // overloaded main model: one quick retry, then the fallback models in order (skipping one this key can't use); metadata names the model that answered
+    const fb = await start({ ...env, LLM_MAX_RETRIES: '0', GEMINI_MODEL: 'down-model', GEMINI_FALLBACK_MODELS: 'not-for-you, gemini-lite-ok' });
+    const n2 = gemSeen.length; const fr = await post(`${fb}/api/chat`, { message: 'hi', stream: false }); const fj = await fr.json();
+    expect(fr.status).toBe(200); expect(fj.meta.model).toBe('gemini-lite-ok');
+    expect(gemSeen.slice(n2).map((x) => x.path!.split(':')[0])).toEqual(['down-model', 'down-model', 'not-for-you', 'gemini-lite-ok']);
+    const allDown = await err({ GEMINI_MODEL: 'down-model', GEMINI_FALLBACK_MODELS: 'down-too' }); expect(allDown.body.error).toMatch(/temporarily unavailable/);
+    const fl = await start({ ...env, LLM_MAX_RETRIES: '0', GEMINI_MODEL: 'flaky-model' }); const flr = await post(`${fl}/api/chat`, { message: 'hi', stream: false }); expect(flr.status).toBe(200); expect((await flr.json()).meta.model).toBe('flaky-model');   // the retry fixed it
     expect((await err({ GEMINI_MODEL: 'empty-model' })).body.error).toBe('Gemini ran out of output tokens before writing a reply.');
     expect((await err({ GEMINI_MODEL: 'blocked-model' })).body.error).toBe('Gemini declined to answer this message (safety).');
     const net = await err({ GEMINI_BASE_URL: 'http://127.0.0.1:9' }); expect(net.body.code).toBe('network');

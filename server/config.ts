@@ -25,7 +25,7 @@ export interface ServerConfig {
   openai: { baseUrl: string; apiKey: string; model: string; jsonMode: boolean };
   anthropic: { apiKey: string; model: string; baseUrl: string };
   /** Google Gemini through the official @google/genai SDK; the key never leaves the server */
-  gemini: { apiKey: string; model: string; baseUrl: string };
+  gemini: { apiKey: string; model: string; baseUrl: string; fallbackModels: string[]; retryDelayMs?: number };
   research: ResearchConfig;
   allowRuntimeConfig: boolean; runtimeConfigPath: string;
   /** Timeout used for models on this computer (Ollama, LM Studio): the first reply loads the model and is slow on laptops. */
@@ -71,7 +71,10 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     historyMaxMessages: n(env.HISTORY_MAX_MESSAGES, 16), historyMaxChars: n(env.HISTORY_MAX_CHARS, 12000), rateLimitPerMin: n(env.RATE_LIMIT_PER_MIN, 30), maxRetries: n(env.LLM_MAX_RETRIES, 1),
     openai: { baseUrl: (env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/+$/, ''), apiKey: env.OPENAI_API_KEY ?? '', model: env.OPENAI_MODEL ?? '', jsonMode: (env.OPENAI_JSON_MODE ?? 'true') !== 'false' },
     anthropic: { apiKey: env.ANTHROPIC_API_KEY ?? '', model: env.ANTHROPIC_MODEL ?? '', baseUrl: (env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com').replace(/\/+$/, '') },
-    gemini: { apiKey: env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '', model: env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL, baseUrl: (env.GEMINI_BASE_URL ?? '').replace(/\/+$/, '') },
+    gemini: { apiKey: env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '', model: env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL, baseUrl: (env.GEMINI_BASE_URL ?? '').replace(/\/+$/, ''),
+      // tried in order when the main model is overloaded (HTTP 5xx); "none" turns this off
+      fallbackModels: (env.GEMINI_FALLBACK_MODELS ?? 'gemini-3.5-flash-lite,gemini-3.1-flash-lite').split(',').map((m) => m.trim()).filter((m) => m && m !== 'none'),
+      ...(env.GEMINI_RETRY_DELAY_MS ? { retryDelayMs: Number(env.GEMINI_RETRY_DELAY_MS) } : {}) },
     research: { provider: (['wikipedia', 'searxng', 'tavily'].includes(rp) ? rp : 'none') as ResearchConfig['provider'], searxngUrl: env.SEARXNG_URL ?? '', tavilyKey: env.TAVILY_API_KEY ?? '', wikipediaLang: env.WIKIPEDIA_LANG ?? 'en', wikipediaBase: env.WIKIPEDIA_BASE_URL || undefined, tavilyBase: env.TAVILY_BASE_URL || undefined },
     allowRuntimeConfig: (env.ALLOW_RUNTIME_CONFIG ?? 'true') !== 'false' && !pub,
     publicMode: pub,
