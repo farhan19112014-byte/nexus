@@ -7,6 +7,7 @@ import { SpeechInput, type ListenCallbacks } from './recognition';
 import { SpeechOutput, type TTSHooks } from './tts';
 import { ServerSpeechInput, ServerSpeechOutput, type SpeechIn, type SpeechOut } from './serverVoice';
 import type { SpeakingStyle } from '../../shared/schema';
+import { SpeakableFilter } from './speakable';
 
 export type VoiceEngine = 'auto' | 'server' | 'browser';
 
@@ -49,10 +50,19 @@ export class VoiceOutputRouter implements SpeechOut {
     this.browser.hooks = hooks; this.server.hooks = hooks;
   }
   voices() { return this.browser.voices(); }
-  enqueue(text: string, style: SpeakingStyle) { if (!this.speaking) this.warned = false; this.active.enqueue(text, style); }
+  private filter = new SpeakableFilter(); private lastEnqueue = 0;
+  /** Speaks reply text: code, JSON, markdown and raw links are left out of what is said (the screen shows everything). */
+  enqueue(text: string, style: SpeakingStyle) {
+    const now = Date.now();
+    if (!this.speaking) { this.warned = false; if (now - this.lastEnqueue > 5000) this.filter.reset(); }   // a new reply
+    this.lastEnqueue = now;
+    const say = this.filter.next(text); if (!say) return;
+    this.active.enqueue(say, style);
+  }
+  get volume() { return this.browser.volume ?? 1; } set volume(v: number) { this.browser.volume = v; this.server.volume = v; }
   pause() { this.active.pause?.(); }
   resume() { this.active.resume?.(); }
-  stop() { this.server.stop(); this.browser.stop(); }
+  stop() { this.filter.reset(); this.server.stop(); this.browser.stop(); }
 }
 
 export class VoiceInputRouter implements SpeechIn {

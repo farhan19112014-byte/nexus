@@ -27,6 +27,8 @@ export const ICON_PATHS = {
   keyboard: 'M3 7h18v10H3z M7 10.5h.01 M11 10.5h.01 M15 10.5h.01 M7 14h10',
   speaker: 'M4 9.5h3.5L12 6v12l-4.5-3.5H4z M15.5 9a4 4 0 0 1 0 6 M18 6.5a7.5 7.5 0 0 1 0 11',
   send: 'M4 12l16-8-6 16-2.5-6.5z M11.5 13.5L20 4',
+  sun: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z M12 2.5v2 M12 19.5v2 M2.5 12h2 M19.5 12h2 M5.3 5.3l1.4 1.4 M17.3 17.3l1.4 1.4 M5.3 18.7l1.4-1.4 M17.3 6.7l1.4-1.4',
+  moon: 'M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z',
   help: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z M9.5 9.5a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.2-2.5 3.6 M12 17h.01',
 } as const;
 export type IconName = keyof typeof ICON_PATHS;

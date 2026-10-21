@@ -71,6 +71,7 @@ preferences in your browser. The language model never changes.
 
 ## Docs
 
+- [docs/DEPLOY.md](docs/DEPLOY.md) — put NEXUS online for free (Render) so the website talks to Gemini
 - [docs/AI_BACKEND.md](docs/AI_BACKEND.md) — Gemini brain + ElevenLabs voice: keys, Windows setup, API, troubleshooting
 - [docs/LAPTOP.md](docs/LAPTOP.md) — the NEXUS desktop app, free offline AI (Ollama), keyboard shortcuts
 - [docs/SETUP.md](docs/SETUP.md) — install, providers, research, voice, commands

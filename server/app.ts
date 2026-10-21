@@ -24,6 +24,7 @@ import { GeminiProvider } from './providers/gemini';
 import { DemoProvider } from './providers/demo';
 import { makeResearch, type ResearchProvider } from './research';
 import { PROMPT_VERSION } from './prompts/system';
+import { DailyBudget } from './budget';
 
 export function makeProvider(c: ServerConfig): LLMProvider {
   if (c.provider === 'openai') return new OpenAICompatibleProvider(c.openai);
@@ -80,12 +81,29 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   const app = express();
   app.disable('x-powered-by');
   app.use((req, res, next) => { const t0 = Date.now(); res.on('finish', () => opts.log?.(`${req.method} ${req.originalUrl.split("?")[0]} ${res.statusCode} ${Date.now() - t0}ms`)); next(); });
-  const extraHosts = (process.env.ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+  if (base.publicMode) app.set('trust proxy', 1);          // behind the host's HTTPS proxy: req.ip is the visitor, not the proxy
+  const extraHosts = [...(process.env.ALLOWED_HOSTS ?? '').split(','), process.env.RENDER_EXTERNAL_HOSTNAME ?? ''].map((h) => h.trim().toLowerCase()).filter(Boolean);
+  const corsOrigins = new Set(base.allowedOrigins.map((o) => o.toLowerCase()));
+  const originOk = (o: string | undefined) => originAllowed(o, extraHosts) || (!!o && corsOrigins.has(o.toLowerCase()));
   app.use('/api', (req, res, next) => {
-    if (!hostAllowed(req.headers.host, extraHosts)) { res.status(403).json({ error: 'Host not allowed', code: 'forbidden_host' }); return; }
-    if (req.method !== 'GET' && req.method !== 'HEAD' && !originAllowed(req.headers.origin, extraHosts)) { res.status(403).json({ error: 'Cross-origin request refused', code: 'forbidden_origin' }); return; }
+    // the liveness probe carries no data, so the host's health checker may use any Host header
+    if (!(req.method === 'GET' && req.path === '/health') && !hostAllowed(req.headers.host, extraHosts)) { res.status(403).json({ error: 'Host not allowed', code: 'forbidden_host' }); return; }
+    const origin = req.headers.origin;
+    // CORS only for the exact origins in ALLOWED_ORIGINS (e.g. https://you.github.io); everyone else gets no CORS headers
+    if (origin && corsOrigins.has(origin.toLowerCase())) {
+      res.setHeader('access-control-allow-origin', origin); res.setHeader('vary', 'Origin');
+      res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS'); res.setHeader('access-control-allow-headers', 'content-type'); res.setHeader('access-control-max-age', '600');
+      if (req.method === 'OPTIONS') { res.status(204).end(); return; }
+    }
+    if (req.method !== 'GET' && req.method !== 'HEAD' && !originOk(origin)) { res.status(403).json({ error: 'Cross-origin request refused', code: 'forbidden_origin' }); return; }
     next();
   });
+  if (base.publicMode) {
+    app.use((_req, res, next) => { res.setHeader('strict-transport-security', 'max-age=31536000'); next(); });
+    // computer-only features make no sense (and must not run) on a public server
+    app.use(['/api/local-models', '/api/speech/voices'], (_req, res) => { res.status(404).json({ error: 'Not available on the public NEXUS server.', code: 'not_available' }); });
+  }
+  const budget = new DailyBudget(base.budget);
   app.use(express.json({ limit: '128kb' }));
   app.use((_req, res, next) => { res.setHeader('x-content-type-options', 'nosniff'); res.setHeader('referrer-policy', 'no-referrer'); next(); });
 
@@ -94,7 +112,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     const rs = research?.configured();
     return {
       provider: provider.id, label: provider.label(), model: provider.model, isLLM: provider.id !== 'demo', configured: st.ok,
-      streaming: provider.supportsStreaming, promptVersion: PROMPT_VERSION, runtimeConfig: cfg.allowRuntimeConfig, note: st.note,
+      streaming: provider.supportsStreaming, promptVersion: PROMPT_VERSION, runtimeConfig: cfg.allowRuntimeConfig, hosted: cfg.publicMode, note: st.note,
       speech: { tts: ttsStatus(cfg.speech.tts), stt: sttStatus(cfg.speech.stt) },
       research: { provider: research?.id ?? 'none', configured: !!rs?.ok, note: research ? rs?.note : 'Set RESEARCH_PROVIDER (wikipedia, searxng or tavily) to enable live research.' },
     };
@@ -106,6 +124,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   app.post('/api/chat', limit, async (req, res) => {
     const parsed = ChatRequestSchema.safeParse(simpleChat(req.body));
     if (!parsed.success) { res.status(400).json({ error: 'Invalid request', code: 'invalid_request', issues: parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`) }); return; }
+    if (provider.id !== 'demo') { const b = budget.takeChat(req.ip ?? '?'); if (!b.ok) { res.status(429).json({ error: b.reason, code: 'rate_limited', retryable: false }); return; } }
     const ctl = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ctl.abort('client'); });
     const body = parsed.data;
@@ -134,6 +153,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   app.post('/api/summarize', limit, async (req, res) => {
     const p = SummarizeRequestSchema.safeParse(req.body);
     if (!p.success) { res.status(400).json({ error: 'Invalid request', code: 'invalid_request' }); return; }
+    if (provider.id !== 'demo') { const b = budget.takeChat(req.ip ?? '?'); if (!b.ok) { res.status(429).json({ error: b.reason, code: 'rate_limited', retryable: false }); return; } }
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), cfg.timeoutMs);
     try { res.json({ summary: await brain.summarize(p.data.messages, ctl.signal) }); }
     catch (e) { res.status(e instanceof ProviderError ? e.status : 500).json({ error: (e as Error).message, code: e instanceof ProviderError ? e.code : 'internal' }); }
@@ -155,6 +175,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     const t0 = Date.now();
     if (provider.id === 'demo') { res.json({ ok: true, provider: 'demo', message: 'Demo brain is active (no network test needed — it is not an LLM).', latencyMs: 0 }); return; }
     const st = provider.configured(); if (!st.ok) { res.json({ ok: false, message: st.note }); return; }
+    { const b = budget.takeChat(_req.ip ?? '?'); if (!b.ok) { res.json({ ok: false, message: b.reason }); return; } }
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort('timeout'), Math.min(20000, cfg.timeoutMs));
     try {
       const text = await provider.complete({ system: 'Connection test. Reply with the single word OK.', messages: [{ role: 'user', content: 'Reply with OK.' }], maxTokens: 8, temperature: 0, json: false }, ctl.signal);
@@ -169,6 +190,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   app.post(['/api/speech', '/api/tts'], speechLimit, async (req, res) => {
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
     if (!text || text.length > 1200) { res.status(400).json({ error: 'Text must be 1–1200 characters', code: 'invalid_request' }); return; }
+    if (ttsStatus(cfg.speech.tts).configured) { const b = budget.takeSpeech(text.length); if (!b.ok) { res.status(429).json({ error: b.reason, code: 'quota' }); return; } }
     const ctl = new AbortController(); res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
     const t = setTimeout(() => ctl.abort('timeout'), 30000);
     try {

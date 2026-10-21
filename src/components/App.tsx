@@ -13,6 +13,7 @@ import SettingsPanel from './SettingsPanel';
 import StatusPanel from './StatusPanel';
 import { ChatsPanel, RemindersPanel } from './CompanionPanels';
 import { applyCssTokens } from '../character/tokens';
+import { ThemeToggle } from './ThemeToggle';
 import { RenameDialog, RENAME_EVENT, openRenameDialog } from './RenameDialog';
 import { SetupWizard } from './SetupWizard';
 import { Link, PATHS, useTitle } from '../router';
@@ -93,6 +94,7 @@ export default function App() {
           {s.quietMode && <span className="badge">quiet</span>}
           {s.research && <span className={`badge ${snap.caps?.research.configured ? 'cap-operational' : 'cap-needs_config'}`}>research {snap.caps?.research.configured ? 'on' : 'unavailable'}</span>}
         </div>
+        <ThemeToggle />
         {robotMode
           ? <button className="menu-toggle" onClick={() => setSide(!side)} aria-expanded={side} aria-controls="side" title="Conversation, skills, memory, settings (Alt+P)"><Icon name="menu" /> Menu</button>
           : <button className="link" onClick={() => setSide(!side)} aria-expanded={side} aria-controls="side" title="Alt+P">{side ? 'Hide panel' : drawerMode ? 'Skills · Memory · Settings' : 'Show panel'}</button>}

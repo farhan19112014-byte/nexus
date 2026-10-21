@@ -5,7 +5,7 @@
  */
 import { BrainResponseSchema, ChatRequestSchema, type BrainHead, type BrainResponse, type ChatMessage, type ChatRequestInput, type ErrorCode, type ResponseMeta, type ServerCapabilities, type Source, type StreamEvent } from '../../shared/schema';
 import { demoBrain } from '../../shared/demoBrain';
-import { WEB_DEMO } from '../webDemo';
+import { API_BASE, REMOTE_API, WEB_DEMO } from '../webDemo';
 
 export class ApiError extends Error { constructor(msg: string, public code: ErrorCode, public retryable = false) { super(msg); } }
 export interface ChatHandlers { onStatus?(s: 'researching' | 'thinking' | 'streaming'): void; onSources?(s: Source[]): void; onHead?(h: BrainHead): void; onDelta?(t: string): void }
@@ -27,15 +27,23 @@ const noServer = () => new ApiError('Not available in the web demo — this page
 
 export class ApiClient {
   offline = false;
-  constructor(private base = '', private timeoutMs = 60000, readonly webDemo = WEB_DEMO) {}
+  constructor(private base = API_BASE, private timeoutMs = 60000, readonly webDemo = WEB_DEMO, private remote = REMOTE_API) {}
+  private woken = false;
+  /** called once if the hosted server is slow to answer the first time (free hosts sleep when idle) */
+  onWaking: () => void = () => {};
 
   async status(): Promise<ServerCapabilities> {
     if (this.webDemo) return WEB_DEMO_CAPS;
+    // a sleeping free host needs up to about a minute to wake on the first request
+    const first = this.remote && !this.woken;
+    const slow = first ? setTimeout(() => this.onWaking(), 3000) : null;
     try {
-      const r = await fetch(`${this.base}/api/status`, { signal: AbortSignal.timeout(5000) });
+      const r = await fetch(`${this.base}/api/status`, { signal: AbortSignal.timeout(first ? 90000 : 8000) });
+      if (slow) clearTimeout(slow);
+      this.woken = true;
       if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) throw new Error('no api');
       this.offline = false; return await r.json() as ServerCapabilities;
-    } catch { this.offline = true; return OFFLINE_CAPS; }
+    } catch { if (slow) clearTimeout(slow); this.offline = true; return OFFLINE_CAPS; }
   }
 
   async chat(input: ChatRequestInput, signal: AbortSignal, h: ChatHandlers = {}): Promise<ChatResult> {
@@ -50,7 +58,7 @@ export class ApiClient {
       try { r = await fetch(`${this.base}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req), signal: ctl.signal }); }
       catch (e) {
         if (ctl.signal.aborted) throw ctl.signal.reason === 'timeout' ? new ApiError('The request timed out.', 'timeout', true) : new ApiError('Cancelled', 'cancelled');
-        this.offline = true; void e; throw new ApiError('Can’t reach the NEXUS server — it may have stopped (run start-nexus.bat again).', 'offline', true);
+        this.offline = true; void e; throw new ApiError(this.remote ? 'Can’t reach the NEXUS server — check your internet connection and try again.' : 'Can’t reach the NEXUS server — it may have stopped (run start-nexus.bat again).', 'offline', true);
       }
       const ct = r.headers.get('content-type') ?? '';
       if (ct.includes('text/event-stream')) return await this.readStream(r, ctl.signal, h);

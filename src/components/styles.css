@@ -26,13 +26,13 @@
 /* Light theme (Settings → Appearance → Light, or System when the OS is light). Same palette: white/grey surfaces, dark-blue text, blue accents. */
 :root[data-theme="light"] {
   color-scheme: light;
-  --c-bg: #F1F5F9; --c-bg2: #FFFFFF; --c-panel: #FFFFFF; --c-panel2: var(--nexus-grey-300); --c-text: var(--nexus-dark-blue); --c-muted: var(--nexus-grey-700);
+  --c-bg: #EEF5FF; --c-bg2: #FFFFFF; --c-panel: #FFFFFF; --c-panel2: var(--nexus-grey-300); --c-text: var(--nexus-dark-blue); --c-muted: var(--nexus-grey-700);
   --c-primary: var(--nexus-blue); --c-electric: #1D4ED8; --c-cyan: #1D4ED8; --c-pale: #1E40AF; --c-warn: #92400E; --c-bad: #B91C1C; --c-ok: #047857;
   --c-danger-line: #FCA5A5; --c-warn-line: #FCD34D; --c-ok-line: #6EE7B7; --c-info-line: #93C5FD; --c-user-bubble: #DBEAFE; --c-user-line: #93C5FD;
-  --bg: #F8FAFC; --surface: #FFFFFF; --surface-deep: #E2E8F0; --fg: var(--nexus-dark-blue); --fg-soft: #1E293B; --fg-muted: var(--nexus-grey-700); --line: var(--nexus-grey-300);
+  --bg: #F6FAFF; --surface: #FFFFFF; --surface-deep: #E3EEFB; --fg: var(--nexus-dark-blue); --fg-soft: #1E293B; --fg-muted: var(--nexus-grey-700); --line: var(--nexus-grey-300);
   --line-soft: rgba(100, 116, 139, .25); --accent-2: #1D4ED8; --header-bg: rgba(248, 250, 252, .9); --surface-glass: rgba(255, 255, 255, .8);
-  --band-1: rgba(226, 232, 240, .7); --band-2: rgba(226, 232, 240, .25); --backdrop: rgba(15, 23, 42, .45); --hero-top: #E2E8F0; --stage-bg: #E2E8F0; --cta-bg: #EFF6FF;
-  --stage-lab: radial-gradient(ellipse at 50% 40%, #DBEAFE 0%, #F1F5F9 70%); --status-glass: rgba(255, 255, 255, .85); --shadow: rgba(15, 23, 42, .15); --code-bg: #F1F5F9;
+  --band-1: rgba(219, 234, 254, .6); --band-2: rgba(219, 234, 254, .2); --backdrop: rgba(15, 23, 42, .45); --hero-top: #D6E8FF; --stage-bg: #E8F2FF; --cta-bg: #EAF3FF;
+  --stage-lab: radial-gradient(ellipse at 50% 40%, #FFFFFF 0%, #E3EFFF 72%); --status-glass: rgba(255, 255, 255, .85); --shadow: rgba(15, 23, 42, .15); --code-bg: #F1F5F9;
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
@@ -259,6 +259,11 @@ button .icon { margin-right: 2px; } button.icon-btn .icon, .skill .row button .i
 @media (max-width: 760px) { .captions { max-height: 30vh; } .robot-view { padding: 0 10px 10px; } .mic-btn { width: 60px; height: 60px; } }
 .convo-panel { height: 100%; display: flex; flex-direction: column; min-height: 60vh; } .convo-panel .chat { padding: 0; flex: 1; }
 .robot-layout { background: radial-gradient(ellipse 60% 55% at 50% 42%, var(--nexus-dark-blue) 0%, var(--c-bg) 72%); }
-:root[data-theme="light"] .robot-layout { background: radial-gradient(ellipse 60% 55% at 50% 42%, #DBEAFE 0%, #F1F5F9 72%); }
+:root[data-theme="light"] .robot-layout { background: radial-gradient(ellipse 60% 55% at 50% 42%, #FFFFFF 0%, #E3EFFF 70%, #D6E8FF 100%); }
 .robot-view .stage-box.env-lab, .robot-view .stage-box.env-grid { background: transparent; box-shadow: none; }
 .cap-reply .msg.system { margin: 0 auto; }
+
+/* theme switch (sun / moon) */
+.theme-toggle { display: inline-grid; place-items: center; width: 36px; height: 36px; min-height: 36px; padding: 0; border-radius: 50%; border: 1px solid var(--c-panel2); background: var(--c-panel); color: var(--c-text); cursor: pointer; }
+.theme-toggle:hover { border-color: var(--c-electric); color: var(--c-electric); }
+:root[data-theme="light"] .theme-toggle { color: #D97706; }

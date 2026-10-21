@@ -33,7 +33,7 @@ export function visemeFor(word: string): { open: number; round: number } {
 
 export class SpeechOutput {
   readonly supported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
-  rate = 1; voiceURI: string | null = null; character: VoiceCharacter = 'cute';
+  rate = 1; volume = 1; voiceURI: string | null = null; character: VoiceCharacter = 'cute';
   private queue: string[] = []; private busy = false; private gen = 0; private style: SpeakingStyle = 'warm';
   private paused = false; private wd: { g: number; ms: number; h: ReturnType<typeof setTimeout> } | null = null;
   hooks: TTSHooks = {};
@@ -50,7 +50,7 @@ export class SpeechOutput {
     if (!t) { this.busy = false; this.hooks.onIdle?.(); return; }
     this.busy = true;
     const u = new SpeechSynthesisUtterance(t);
-    const p = voiceParams(this.style, this.character, this.rate); u.rate = p.rate; u.pitch = p.pitch;
+    const p = voiceParams(this.style, this.character, this.rate); u.rate = p.rate; u.pitch = p.pitch; u.volume = Math.min(1, Math.max(0, this.volume));
     const all = this.voices();
     const v = all.find((x) => x.voiceURI === this.voiceURI) ?? (this.character === 'cute' && !this.voiceURI ? pickCuteVoice(all) : undefined); if (v) u.voice = v;
     let started = false;

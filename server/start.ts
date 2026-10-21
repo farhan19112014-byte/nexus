@@ -5,6 +5,7 @@
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { spawn } from 'node:child_process';
+import { persona } from './prompts/persona';
 import { applyRuntime, configWarnings, loadDotEnv, loadRuntime, readConfig } from './config';
 import { createApp } from './app';
 
@@ -18,7 +19,7 @@ export interface StartOptions {
   runtimeConfigPath?: string;
   log?: (line: string) => void;
 }
-export interface Started { url: string; port: number; server: Server; close: () => Promise<void>; reused?: false; warnings: string[] }
+export interface Started { url: string; port: number; server: Server; close: () => Promise<void>; reused?: false; warnings: string[]; publicMode: boolean }
 export interface Reused { url: string; port: number; reused: true }
 
 /** Is a NEXUS server already answering on this port? (e.g. the user double-clicked the start script twice) */
@@ -30,9 +31,9 @@ export async function isNexusAt(port: number): Promise<boolean> {
   } catch { return false; }
 }
 
-function listen(app: ReturnType<typeof createApp>, port: number): Promise<Server> {
+function listen(app: ReturnType<typeof createApp>, port: number, host: string): Promise<Server> {
   return new Promise((ok, fail) => {
-    const s = app.listen(port, '127.0.0.1');
+    const s = app.listen(port, host);
     s.once('listening', () => ok(s));
     s.once('error', fail);
   });
@@ -44,14 +45,14 @@ export async function startServer(o: StartOptions = {}): Promise<Started | Reuse
   const cfg = readConfig();
   const first = o.port ?? cfg.port;
   const app = createApp(cfg, { serveDist: o.serveDist, distDir: o.distDir, log: o.log });
-  const attempts = first === 0 ? 1 : Math.max(1, o.portAttempts ?? 10);
+  const attempts = first === 0 || cfg.publicMode ? 1 : Math.max(1, o.portAttempts ?? 10);   // a host assigns PORT: never wander to another port
   let lastErr: unknown;
   for (let i = 0; i < attempts; i++) {
     const port = first === 0 ? 0 : first + i;
     try {
-      const server = await listen(app, port);
+      const server = await listen(app, port, cfg.publicMode ? '0.0.0.0' : '127.0.0.1');
       const actual = (server.address() as AddressInfo).port;
-      return { url: `http://localhost:${actual}`, port: actual, server, warnings: configWarnings(cfg.allowRuntimeConfig ? applyRuntime(cfg, loadRuntime(cfg.runtimeConfigPath)) : cfg), close: () => new Promise((r) => server.close(() => r())) };
+      return { url: `http://localhost:${actual}`, port: actual, server, publicMode: cfg.publicMode, warnings: [...configWarnings(cfg.allowRuntimeConfig ? applyRuntime(cfg, loadRuntime(cfg.runtimeConfigPath)) : cfg), ...(persona().note ? [persona().note!] : [])], close: () => new Promise((r) => server.close(() => r())) };
     } catch (e) {
       lastErr = e;
       if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw e;

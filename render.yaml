@@ -1,0 +1,39 @@
+# Render Blueprint — one free web service that runs the NEXUS server (API + app) in public mode.
+# Render → New → Blueprint → pick this repository. Secrets marked `sync: false` are typed into Render's dashboard
+# (they are never stored in this repository). Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: nexus
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: node dist-server/index.js --serve-dist
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: ELECTRON_SKIP_BINARY_DOWNLOAD
+        value: "1"
+      - key: PUBLIC_MODE
+        value: "true"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: ELEVENLABS_API_KEY
+        sync: false
+      - key: ELEVENLABS_VOICE_ID
+        sync: false
+      # the GitHub Pages site may call this server from the browser
+      - key: ALLOWED_ORIGINS
+        value: https://farhan19112014-byte.github.io
+      # daily budgets that protect your free quotas (0 = no limit)
+      - key: DAILY_CHAT_LIMIT
+        value: "400"
+      - key: DAILY_CHAT_LIMIT_PER_VISITOR
+        value: "60"
+      - key: DAILY_SPEECH_CHAR_LIMIT
+        value: "20000"
+      - key: RATE_LIMIT_PER_MIN
+        value: "12"

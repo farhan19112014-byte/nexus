@@ -6,6 +6,9 @@ const SENSITIVE: RegExp[] = [
   /\b\d{4}\s?\d{4}\s?\d{4}\b/,                 // Aadhaar-like 12 digits
   /\b(password|passcode|pin code|otp|cvv|secret key|api[_ -]?key|private key)\b/i,
   /\b(sk|pk|rk)-[A-Za-z0-9_-]{12,}\b/,         // API-key-looking tokens
+  /\bAIza[0-9A-Za-z_-]{20,}/,                  // Google API keys
+  /\bsk_[A-Za-z0-9]{20,}\b/,                   // ElevenLabs-style keys
+  /\b(?:bearer|token)\s*[:=]?\s*[A-Za-z0-9._-]{20,}/i,
 ];
 export const looksSensitive = (t: string) => SENSITIVE.some((r) => r.test(t));
 

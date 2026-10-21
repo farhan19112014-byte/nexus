@@ -7,11 +7,12 @@
  * drives the mouth from it (≈ every animation frame). This is an amplitude approximation — it follows pauses and
  * emphasis in the real audio but does not reproduce individual phonemes.
  */
+import { API_BASE } from '../webDemo';
 import type { ListenCallbacks } from './recognition';
 import type { TTSHooks } from './tts';
 
 export interface SpeechOut {
-  readonly supported: boolean; readonly speaking: boolean; hooks: TTSHooks; rate: number; voiceURI: string | null; boundaryEvents: boolean; character?: 'cute' | 'natural';
+  readonly supported: boolean; readonly speaking: boolean; hooks: TTSHooks; rate: number; voiceURI: string | null; boundaryEvents: boolean; character?: 'cute' | 'natural'; volume?: number;
   enqueue(text: string, style: import('../../shared/schema').SpeakingStyle): void; stop(): void; voices(): SpeechSynthesisVoice[];
   pause?(): void; resume?(): void;
   /** how the mouth is driven right now (shown in Status) */
@@ -30,13 +31,13 @@ type Item = { text: string; audio: Promise<Blob> };
 
 export class ServerSpeechOutput implements SpeechOut {
   readonly supported = typeof window !== 'undefined' && typeof Audio !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function';
-  hooks: TTSHooks = {}; rate = 1; voiceURI: string | null = null; boundaryEvents = false; lipSync = 'audio level (approximation)';
+  hooks: TTSHooks = {}; rate = 1; volume = 1; voiceURI: string | null = null; boundaryEvents = false; lipSync = 'audio level (approximation)';
   private queue: Item[] = []; private busy = false; private gen = 0; private started = false;
   private ctl = new AbortController(); private current: HTMLAudioElement | null = null; private url: string | null = null;
   private ctx: AudioContext | null = null; private analyser: AnalyserNode | null = null; private raf = 0; private pulse: ReturnType<typeof setInterval> | null = null;
   /** called when one sentence could not be generated or played; the router speaks it with the fallback voice */
   onFailure: (message: string, text: string) => void = () => {};
-  constructor(private base = '', private fetchImpl: typeof fetch = (...a) => fetch(...a)) {}
+  constructor(private base = API_BASE, private fetchImpl: typeof fetch = (...a) => fetch(...a)) {}
   voices() { return []; }
   get speaking() { return this.busy || this.queue.length > 0; }
 
@@ -63,7 +64,7 @@ export class ServerSpeechOutput implements SpeechOut {
     if (g !== this.gen) return;
     this.cleanupAudio();
     this.url = URL.createObjectURL(blob);
-    const a = new Audio(this.url); this.current = a; a.playbackRate = this.rate;
+    const a = new Audio(this.url); this.current = a; a.playbackRate = this.rate; a.volume = Math.min(1, Math.max(0, this.volume));
     const done = (failed?: string) => { if (g !== this.gen || this.current !== a) return; this.stopLevels(); this.cleanupAudio(); if (failed) this.onFailure(failed, item.text); void this.next(g); };
     a.onended = () => done(); a.onerror = () => done('The speech audio could not be played.');
     a.onplaying = () => { if (g !== this.gen) return; if (!this.started) { this.started = true; this.hooks.onStart?.(); } this.startLevels(a); };
@@ -123,7 +124,7 @@ export class ServerSpeechInput implements SpeechIn {
   listening = false;
   private rec: MediaRecorder | null = null; private stream: MediaStream | null = null; private ctx: AudioContext | null = null;
   private timer: ReturnType<typeof setInterval> | null = null; private session = 0; private ctl: AbortController | null = null;
-  constructor(private base = '', private fetchImpl: typeof fetch = (...a) => fetch(...a)) {}
+  constructor(private base = API_BASE, private fetchImpl: typeof fetch = (...a) => fetch(...a)) {}
   start(cb: ListenCallbacks) {
     this.abort(); const s = ++this.session;
     if (!this.supported) { cb.onError('Voice recording is not supported here, so please type instead.', 'unsupported'); return; }

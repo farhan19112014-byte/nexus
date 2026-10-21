@@ -12,7 +12,7 @@ startServer({ serveDist, log }).then((s) => {
     process.exit(0);
   }
   for (const w of s.warnings) console.warn(`[nexus] note: ${w}`);
-  console.log(`[nexus] API listening on ${s.url}  (bound to 127.0.0.1 — not reachable from other computers)`);
+  console.log(s.publicMode ? `[nexus] public mode: listening on port ${s.port} (all interfaces, behind the host's HTTPS)` : `[nexus] API listening on ${s.url}  (bound to 127.0.0.1 — not reachable from other computers)`);
   if (serveDist) console.log(`[nexus] app on ${s.url}   ·   press Ctrl+C in this window to stop NEXUS`);
   if (open) openBrowser(s.url);
 }).catch((e: Error) => { console.error(`[nexus] could not start: ${e.message}`); process.exit(1); });

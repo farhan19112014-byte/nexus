@@ -23,6 +23,7 @@ export const api = new ApiClient();
 export const chats = new ChatStore(kv);
 export const reminders = new ReminderStore(kv);
 export const companion = new Companion({ runtime, registry, memory, learning, api, persistent: kv.persistent, chats, reminders });
+api.onWaking = () => companion.notifications.push('info', 'Waking up the NEXUS server — free hosting sleeps when nobody uses it, so this first connection can take up to a minute.', { react: false });
 learning.refinementPolicy = () => memory.settings.refinementPolicy;
 runtime.onFrameError = (e) => companion.diagnostics.log({ type: 'error', code: 'frame', detail: String(e) });
 

@@ -70,7 +70,27 @@ Protection: the server listens on `127.0.0.1` only; it refuses requests whose Ho
 protection) and cross-origin POSTs (no CORS headers are sent, so other websites cannot call it); settings changes are
 accepted only from this computer; rate limits on chat and speech; logs contain method, path, status and duration only.
 
-## 5. What needs the internet
+## 5. Personality, conversation and memory
+
+- **Personality:** the system instruction lives in `server/prompts/persona.ts` (`DEFAULT_PERSONA`). Edit it there, or set
+  `NEXUS_PERSONA_FILE` in `.env` to a text file to replace it without touching code. NEXUS's honesty rules (no invented
+  actions, browsing, files, sensors or memories) are added after it and stay on.
+- **Conversation context:** the current chat is kept in the app and the last messages (16 by default, Settings →
+  Conversation) are sent with each question; older ones are trimmed on the server. **Chats → New chat** starts fresh.
+- **Saved memory (optional):** separate from the conversation. NEXUS saves something only when you ask (“remember that
+  I prefer short answers”) or accept a suggestion; it is stored in this browser (IndexedDB) only — it does not sync
+  between devices. **Memory** panel: view, edit, delete, export, or delete all; **Settings → Privacy → Persistent memory**
+  turns it off. Passwords, card/ID numbers and API keys are refused.
+
+## 6. Voice out
+
+Without ElevenLabs, NEXUS speaks with the browser's built-in voices (free; **Settings → Voice**: voice, rate, volume,
+“Youthful” character). With `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID` it uses your ElevenLabs voice. Either way:
+the speaker button mutes, **Stop** / `Esc` stops at once, a new question interrupts the old answer, and code, JSON,
+links and formatting are shown on screen but not read aloud. The mouth follows the real audio loudness with ElevenLabs,
+and word timing with browser voices — an approximation, not phoneme lip-sync.
+
+## 7. What needs the internet
 
 | Feature | Internet |
 |---|---|
@@ -80,14 +100,14 @@ accepted only from this computer; rate limits on chat and speech; logs contain m
 | Built-in computer voice (no ElevenLabs) | no (some browser "online" voices do use the vendor's servers) |
 | Microphone in Chrome/Edge | Chrome/Edge speech recognition sends audio to Google/Microsoft |
 
-## 6. Microphone
+## 8. Microphone
 
 Press the microphone, talk, press again or pause — the words go into the box for you to check (Enter sends; turn the
 review off in Settings → Voice). Browser speech recognition works in **Chrome and Edge**; **Firefox** and the **desktop
 app** have none — there NEXUS says so, and you can type, or configure a transcription service (Settings → Voice →
 Speech services → Voice input). Access is requested only when you press the microphone.
 
-## 7. Troubleshooting
+## 9. Troubleshooting
 
 | Problem | Fix |
 |---|---|
@@ -104,7 +124,7 @@ Speech services → Voice input). Access is requested only when you press the mi
 | "Port 8787 is being used" | close the other program or set `PORT=8788` in `.env` |
 | Microphone does nothing | use Chrome/Edge, allow the microphone in the address bar's site settings, check Windows *Privacy → Microphone* |
 
-## 8. Deployment
+## 10. Deployment
 
 This prototype is meant to run on your own computer. The GitHub Pages site is static — it cannot run this server or
 hold keys, so it keeps the labelled demo brain. To put the AI version online you need a host that runs a persistent

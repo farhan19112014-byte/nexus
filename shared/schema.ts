@@ -298,6 +298,8 @@ export interface ServerCapabilities {
   speech?: { tts: { configured: boolean; note: string }; stt: { configured: boolean; note: string } };
   promptVersion: string;
   runtimeConfig: boolean;
+  /** a public server set up by its owner: the model and voice cannot be changed from the browser */
+  hosted?: boolean;
   note?: string;
 }
 

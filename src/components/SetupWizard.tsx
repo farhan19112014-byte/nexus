@@ -51,7 +51,7 @@ export function SetupWizard() {
     if (step === 0) {
       const v = validateRobotName(name); if (!v.ok) { setNameErr(v.error); return; }
       const r = await companion.renameRobot(v.name); if (!r.ok) { setNameErr(r.error); return; }
-      setStep(1); return;
+      setStep(snap.caps?.hosted ? 2 : 1); return;   // on a public server the owner chose the brain
     }
     if (step === 1) {
       setResult(null);
@@ -127,7 +127,7 @@ export function SetupWizard() {
         {step === 2 && <>
           <h2 id={ids.title}>Make it yours</h2>
           <p id={ids.desc} className="muted">Small choices — all of them live in Settings too.</p>
-          <label className="field">Theme<select value={s.theme} onChange={(e) => up({ theme: e.target.value as Settings['theme'] })}><option value="dark">Dark</option><option value="light">Light</option><option value="system">Match my computer</option></select></label>
+          <label className="field">Theme<select value={s.theme} onChange={(e) => up({ theme: e.target.value as Settings['theme'] })}><option value="dark">Dark — the classic NEXUS</option><option value="light">Light — white and light-blue NEXUS</option><option value="system">Match my computer</option></select></label>
           <label className="toggle"><input type="checkbox" checked={s.voiceOutput} disabled={!companion.tts.supported} onChange={(e) => up({ voiceOutput: e.target.checked })} /> Read replies aloud{companion.tts.supported ? '' : ' (not supported here)'}</label>
           <label className="toggle"><input type="checkbox" checked={s.reducedMotion} onChange={(e) => up({ reducedMotion: e.target.checked })} /> Reduced motion</label>
           <label className="toggle"><input type="checkbox" checked={s.dailyGreeting} onChange={(e) => up({ dailyGreeting: e.target.checked })} /> A short hello once a day</label>

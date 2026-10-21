@@ -36,6 +36,7 @@ export const SettingsSchema = z.object({
   voiceOutput: z.boolean().default(true),
   voiceURI: z.string().max(200).nullable().default(null),
   speechRate: z.number().min(0.6).max(1.6).default(1),
+  speechVolume: z.number().min(0).max(1).default(1),
   /** cute: raise the pitch of this computer's voices and prefer a youthful one when the voice is "Automatic" */
   voiceCharacter: z.enum(['cute', 'natural']).default('cute'),
   /** if the voice service (ElevenLabs…) fails, speak with this computer's voice instead — off: never substitute silently */

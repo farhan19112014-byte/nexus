@@ -242,7 +242,7 @@ describe('[A97] server integration', () => {
     expect((await post(`${url}/api/chat`, 'x'.repeat(200_000))).status).toBe(413);
     const codes = []; for (let i = 0; i < 6; i++) codes.push((await post(`${url}/api/chat`, chat())).status);
     expect(codes).toContain(429);
-    expect(readFileSync('server/start.ts', 'utf8')).toContain("app.listen(port, '127.0.0.1')");
+    expect(readFileSync('server/start.ts', 'utf8')).toContain("cfg.publicMode ? '0.0.0.0' : '127.0.0.1'");   // loopback only, unless deliberately hosted (PUBLIC_MODE)
   });
   it('[A77] prompt instructs uncertainty, clarification and source distinction', () => {
     const p = buildSystemPrompt(ChatRequestSchema.parse({ messages: [{ role: 'user', content: 'hi' }] }), { streaming: true, sources: [] });
@@ -259,7 +259,7 @@ describe('[A97] server integration', () => {
       const r = httpRequest({ host: '127.0.0.1', port, method, path, headers }, (res) => { res.resume(); ok(res.statusCode ?? 0); }); r.on('error', fail); if (body) r.write(body); r.end();
     });
     expect(await raw('GET', '/api/health', { host: `localhost:${port}` })).toBe(200);
-    expect(await raw('GET', '/api/health', { host: 'evil.example:80' })).toBe(403);
+    expect(await raw('GET', '/api/status', { host: 'evil.example:80' })).toBe(403); expect(await raw('GET', '/api/health', { host: 'evil.example:80' })).toBe(200);   // liveness only, no data
     expect(await raw('PUT', '/api/config', { host: `127.0.0.1:${port}`, origin: 'https://evil.example', 'content-type': 'application/json' }, '{"provider":"demo"}')).toBe(403);
     expect(await raw('POST', '/api/chat', { host: `127.0.0.1:${port}`, origin: `http://localhost:${port}`, 'content-type': 'application/json' }, JSON.stringify(chat()))).toBe(200);
     expect(hostAllowed('[::1]:8787')).toBe(true); expect(hostAllowed('localhost.evil.com')).toBe(false); expect(hostAllowed(undefined)).toBe(false);
@@ -397,6 +397,42 @@ describe('[A97] server integration', () => {
     const { configWarnings } = await import('../../../server/config');
     const w = configWarnings(readConfig({ LLM_PROVIDER: 'gemini', ELEVENLABS_API_KEY: 'el-secret-5555' } as NodeJS.ProcessEnv)).join(' ');
     expect(w).toMatch(/GEMINI_API_KEY is missing/); expect(w).toMatch(/ELEVENLABS_VOICE_ID is missing/); expect(w).not.toContain('el-secret');
+  });
+  it('[A124] public mode (hosted): CORS only for the allowed site, no settings from the browser, hidden key hints, daily budgets per visitor', async () => {
+    const raw = (url: string, o: { method?: string; headers?: Record<string, string>; body?: string } = {}) => new Promise<{ status: number; headers: Record<string, string | string[] | undefined>; body: string }>((ok, fail) => {
+      const u = new URL(url); const r = httpRequest({ host: u.hostname, port: u.port, path: u.pathname, method: o.method ?? 'GET', headers: o.headers }, (res) => { let b = ''; res.on('data', (c) => (b += c)); res.on('end', () => ok({ status: res.statusCode!, headers: res.headers, body: b })); });
+      r.on('error', fail); if (o.body) r.write(o.body); r.end();
+    });
+    process.env.RENDER_EXTERNAL_HOSTNAME = 'nexus-test.onrender.com';
+    const env = { PUBLIC_MODE: 'true', GEMINI_API_KEY: 'AIza-public-secret-9999', GEMINI_MODEL: 'gemini-test', GEMINI_BASE_URL: `${base}/gemini`, ALLOWED_ORIGINS: 'https://farhan.github.io, https://bad/path', DAILY_CHAT_LIMIT_PER_VISITOR: '2', DAILY_CHAT_LIMIT: '3', ELEVENLABS_API_KEY: 'el-secret-5555', ELEVENLABS_VOICE_ID: 'v-bright-01', ELEVENLABS_BASE_URL: `${base}/eleven`, DAILY_SPEECH_CHAR_LIMIT: '20' };
+    const url = await start(env); delete process.env.RENDER_EXTERNAL_HOSTNAME;
+    // the host's own name is accepted (it serves the app); other host names are not
+    expect((await raw(`${url}/api/health`, { headers: { host: 'nexus-test.onrender.com' } })).status).toBe(200);
+    expect((await raw(`${url}/api/status`, { headers: { host: 'evil.example' } })).status).toBe(403);
+    expect((await raw(`${url}/api/health`, { headers: { host: '10.0.0.7:10000' } })).status).toBe(200);   // the host's health checker
+    // CORS: the GitHub Pages origin gets CORS headers and a preflight; another origin gets neither and cannot POST
+    const pre = await raw(`${url}/api/chat`, { method: 'OPTIONS', headers: { origin: 'https://farhan.github.io', 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' } });
+    expect(pre.status).toBe(204); expect(pre.headers['access-control-allow-origin']).toBe('https://farhan.github.io'); expect(pre.headers['access-control-allow-headers']).toBe('content-type');
+    const evil = await raw(`${url}/api/chat`, { method: 'POST', headers: { origin: 'https://evil.example', 'content-type': 'application/json' }, body: JSON.stringify({ message: 'hi', stream: false }) });
+    expect(evil.status).toBe(403); expect(evil.headers['access-control-allow-origin']).toBeUndefined();
+    const st = await (await fetch(`${url}/api/status`, { headers: { origin: 'https://farhan.github.io' } })).json(); expect(st).toMatchObject({ hosted: true, runtimeConfig: false, provider: 'gemini' });
+    // nothing can be reconfigured from the browser; computer-only features are off; even key hints are hidden
+    expect((await fetch(`${url}/api/config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'demo' }) })).status).toBe(403);
+    expect((await fetch(`${url}/api/speech/voices`)).status).toBe(404); expect((await fetch(`${url}/api/local-models`)).status).toBe(404);
+    const cfg = await (await fetch(`${url}/api/config`)).text(); expect(cfg).not.toContain('9999'); expect(cfg).not.toContain('5555'); expect(JSON.parse(cfg).gemini.apiKey).toEqual({ set: true, hint: null });
+    // daily budgets: 2 messages per visitor (by X-Forwarded-For from the host's proxy), 3 in total
+    const chat = (ip: string) => fetch(`${url}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': ip }, body: JSON.stringify({ message: 'hi', stream: false }) });
+    expect((await chat('1.1.1.1')).status).toBe(200); expect((await chat('1.1.1.1')).status).toBe(200);
+    const third = await chat('1.1.1.1'); expect(third.status).toBe(429); expect((await third.json()).error).toMatch(/today's limit of 2 messages/);
+    expect((await chat('2.2.2.2')).status).toBe(200);
+    const full = await chat('3.3.3.3'); expect(full.status).toBe(429); expect((await full.json()).error).toMatch(/as many messages as this public server allows today/);
+    // voice budget: 20 spoken characters a day
+    expect((await post(`${url}/api/speech`, { text: 'Hello there, friend.' })).status).toBe(200);
+    const vb = await post(`${url}/api/speech`, { text: 'More words.' }); expect(vb.status).toBe(429); expect((await vb.json()).code).toBe('quota');
+    // invalid ALLOWED_ORIGINS entries are ignored
+    expect(readConfig({ ALLOWED_ORIGINS: 'https://ok.example, javascript:alert(1), https://x.example/path' } as NodeJS.ProcessEnv).allowedOrigins).toEqual(['https://ok.example']);
+    // on your own computer nothing changes: no budgets, settings allowed
+    const local = readConfig({} as NodeJS.ProcessEnv); expect(local.publicMode).toBe(false); expect(local.budget).toEqual({ chatsPerDay: 0, chatsPerIpPerDay: 0, speechCharsPerDay: 0 }); expect(local.allowRuntimeConfig).toBe(true);
   });
   it('[A94] local models get a longer timeout unless LLM_TIMEOUT_MS is explicit', () => {
     const local = readConfig({ LLM_PROVIDER: 'openai', OPENAI_BASE_URL: 'http://localhost:11434/v1' } as NodeJS.ProcessEnv);

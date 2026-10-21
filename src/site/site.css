@@ -145,3 +145,18 @@
 .brain.on { border-color: var(--c-primary); box-shadow: 0 0 0 1px var(--c-primary) inset; } .brain input { margin-top: 4px; }
 .brain-detail { margin: -2px 0 4px 30px; }
 .brain-detail code { font-family: var(--font-mono); font-size: .9em; }
+
+/* ---- light NEXUS: a sky-blue, airy version of the site (dark stays the classic look) ---- */
+:root[data-theme="light"] .hero {
+  background:
+    radial-gradient(ellipse 22% 10% at 14% 22%, rgba(255, 255, 255, .95), transparent 70%),
+    radial-gradient(ellipse 18% 8% at 30% 78%, rgba(255, 255, 255, .8), transparent 70%),
+    radial-gradient(ellipse 26% 11% at 88% 14%, rgba(255, 255, 255, .9), transparent 70%),
+    radial-gradient(ellipse 60% 55% at 75% 45%, rgba(125, 192, 255, .35), transparent 70%),
+    linear-gradient(180deg, #CFE5FF 0%, #E9F3FF 55%, var(--bg) 100%);
+}
+:root[data-theme="light"] .hero-glow { background: radial-gradient(circle, rgba(255, 255, 255, .95), rgba(147, 197, 253, .35) 55%, transparent 72%); }
+:root[data-theme="light"] .site-header { border-bottom-color: #D6E6FA; }
+:root[data-theme="light"] .feature-card, :root[data-theme="light"] .site .card { border-color: #D6E6FA; background-image: linear-gradient(180deg, #FFFFFF 0%, #F5F9FF 100%); }
+:root[data-theme="light"] .site-footer { background: linear-gradient(180deg, #EAF3FF, #DCEBFF); }
+.nav-theme { margin-inline: 4px; }

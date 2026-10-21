@@ -97,3 +97,46 @@ export function applyCssTokens(root: HTMLElement = document.documentElement) {
   };
   for (const [k, v] of Object.entries(map)) root.style.setProperty(k, v);
 }
+
+/**
+ * Robot skins. The DARK skin is the classic NEXUS (built from COLORS/SHADE — unchanged). The LIGHT skin is the
+ * light-theme NEXUS: a white shell, light-blue limbs and joints, a pale glass face screen with blue LED eyes and a
+ * soft blue outline. Same rig, geometry and animation — only colours differ.
+ */
+export interface RobotSkin {
+  outline: string; deepBlack: string; graphite: string; graphiteLight: string; primaryBlue: string; electricBlue: string; cyan: string; paleBlue: string; textMuted: string;
+  shellHighlight: string; shellMid: string; shellLow: string; shellCore: string; shadeTop: number; shadeBottom: number;
+  cylEdge: string; cylLight: string; cylHighlight: string; cylMid: string; cylLow: string; cylRim: string;
+  cylDarkEdge: string; cylDarkMid: string; cylDarkLight: string; cylDarkShade: string; cylDarkLow: string; cylDarkRim: string;
+  sphereHighlight: string; sphereMid: string; sphereLow: string; socket: string;
+  ledCore: string; ledMid: string; ledOuter: string; ledEdge: string; ledBlueCore: string; ledBlueEdge: string;
+  eyeHigh: string; eyeMid: string; eyeLow: string; pupil: string; lid: string; brow: string; cheek: string; mouth: string;
+  screenTop: string; screenBottom: string; screenEdge: string; bevelTop: string; bevelMid: string; bevelLip: string; insetOpacity: number;
+  chestBg: string; chestRing: string; bootTop: string; bootMid: string; bootLow: string; headStripe: string;
+  ambient: string; ambientOpacity: number; ambientFade: string; floor: string; shadowOpacity: number;
+}
+export const DARK_SKIN: RobotSkin = {
+  outline: COLORS.outline, deepBlack: COLORS.deepBlack, graphite: COLORS.graphite, graphiteLight: COLORS.graphiteLight, primaryBlue: COLORS.primaryBlue, electricBlue: COLORS.electricBlue, cyan: COLORS.cyan, paleBlue: COLORS.paleBlue, textMuted: COLORS.textMuted,
+  shellHighlight: SHADE.shellHighlight, shellMid: COLORS.graphiteLight, shellLow: COLORS.graphite, shellCore: SHADE.shellCore, shadeTop: 0.1, shadeBottom: 0.45,
+  cylEdge: SHADE.cylEdge, cylLight: SHADE.cylLight, cylHighlight: SHADE.cylHighlight, cylMid: COLORS.graphite, cylLow: COLORS.black, cylRim: SHADE.cylRim,
+  cylDarkEdge: SHADE.abyss, cylDarkMid: COLORS.graphite, cylDarkLight: SHADE.cylDarkLight, cylDarkShade: SHADE.cylDarkShade, cylDarkLow: SHADE.socket, cylDarkRim: SHADE.cylDarkRim,
+  sphereHighlight: SHADE.sphereHighlight, sphereMid: COLORS.graphiteLight, sphereLow: COLORS.graphite, socket: SHADE.socket,
+  ledCore: SHADE.ledCore, ledMid: COLORS.cyan, ledOuter: COLORS.electricBlue, ledEdge: COLORS.primaryBlue, ledBlueCore: SHADE.ledBlueCore, ledBlueEdge: SHADE.ledBlueEdge,
+  eyeHigh: SHADE.eyeHigh, eyeMid: COLORS.cyan, eyeLow: SHADE.eyeLow, pupil: COLORS.primaryBlue, lid: '#081120', brow: COLORS.paleBlue, cheek: COLORS.paleBlue, mouth: COLORS.cyan,
+  screenTop: '#0a1426', screenBottom: COLORS.deepBlack, screenEdge: COLORS.electricBlue, bevelTop: SHADE.void, bevelMid: SHADE.bevelMid, bevelLip: SHADE.bevelLip, insetOpacity: 0.75,
+  chestBg: COLORS.deepBlack, chestRing: COLORS.graphiteLight, bootTop: SHADE.bootTop, bootMid: COLORS.graphite, bootLow: SHADE.abyss, headStripe: COLORS.paleBlue,
+  ambient: COLORS.primaryBlue, ambientOpacity: 0.28, ambientFade: COLORS.deepBlack, floor: COLORS.primaryBlue, shadowOpacity: 1,
+};
+export const LIGHT_SKIN: RobotSkin = {
+  outline: '#4a6fa5', deepBlack: '#e6effa', graphite: '#dfe9f6', graphiteLight: '#eef4fb', primaryBlue: '#2f7bf6', electricBlue: '#4c9bff', cyan: '#3ab8f5', paleBlue: '#8cc4ff', textMuted: '#94a3b8',
+  shellHighlight: '#ffffff', shellMid: '#f7faff', shellLow: '#e4edf8', shellCore: '#c4d6ec', shadeTop: 0.35, shadeBottom: 0.12,
+  cylEdge: '#9fc3ee', cylLight: '#cfe4fb', cylHighlight: '#f2f8ff', cylMid: '#b9d6f6', cylLow: '#93bbe9', cylRim: '#6fa6e6',
+  cylDarkEdge: '#88b3e6', cylDarkMid: '#a8cbf2', cylDarkLight: '#d6e8fc', cylDarkShade: '#94bdeb', cylDarkLow: '#7eaae0', cylDarkRim: '#5f97da',
+  sphereHighlight: '#ffffff', sphereMid: '#e3effc', sphereLow: '#b3d1f3', socket: '#a9c6ea',
+  ledCore: '#ffffff', ledMid: '#7cd3ff', ledOuter: '#4c9bff', ledEdge: '#2f7bf6', ledBlueCore: '#eaf4ff', ledBlueEdge: '#3b82f6',
+  eyeHigh: '#7cc6ff', eyeMid: '#3b8df5', eyeLow: '#1f5fd6', pupil: '#0f2f6b', lid: '#dcebfb', brow: '#2f6fd6', cheek: '#ffb3c7', mouth: '#2f7bf6',
+  screenTop: '#f4f9ff', screenBottom: '#cfe2f8', screenEdge: '#7fb4f2', bevelTop: '#a9c3e4', bevelMid: '#d3e3f6', bevelLip: '#ffffff', insetOpacity: 0.12,
+  chestBg: '#eaf3fe', chestRing: '#b6d2f2', bootTop: '#ffffff', bootMid: '#dce9f8', bootLow: '#a9c6ea', headStripe: '#ffffff',
+  ambient: '#7cc0ff', ambientOpacity: 0.35, ambientFade: '#ffffff', floor: '#4c9bff', shadowOpacity: 0.4,
+};
+export const skinFor = (theme: 'dark' | 'light'): RobotSkin => (theme === 'light' ? LIGHT_SKIN : DARK_SKIN);

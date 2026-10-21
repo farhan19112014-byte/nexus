@@ -30,6 +30,12 @@ export interface ServerConfig {
   allowRuntimeConfig: boolean; runtimeConfigPath: string;
   /** Timeout used for models on this computer (Ollama, LM Studio): the first reply loads the model and is slow on laptops. */
   localTimeoutMs: number; timeoutExplicit: boolean;
+  /** PUBLIC_MODE=true: running on a public host (Render…) — listens on all interfaces, no settings changes from the
+   *  browser, key hints hidden, daily budgets protect the owner's API quota. */
+  publicMode: boolean;
+  /** browser origins allowed to call this API from another site (e.g. the GitHub Pages site), exact matches */
+  allowedOrigins: string[];
+  budget: { chatsPerDay: number; chatsPerIpPerDay: number; speechCharsPerDay: number };
   /** auto: compact prompt for local models; full / compact to force. */
   promptMode: 'auto' | 'full' | 'compact';
   /** optional server-side speech (text-to-speech and transcription) */
@@ -47,7 +53,15 @@ export const GEMINI_DEFAULT_MODEL = 'gemini-3.8-flash';
 function linkGeminiKey(c: ServerConfig): ServerConfig { if (c.speech.tts.provider === 'gemini' && !c.speech.tts.apiKey) c.speech.tts.apiKey = c.gemini.apiKey; return c; }
 const n = (v: string | undefined, d: number) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : d);
 
+/** Public mode: PUBLIC_MODE=true (any case, also 1/yes/on), or running on Render (which sets RENDER=true), unless PUBLIC_MODE=false. */
+export function isPublicMode(env: NodeJS.ProcessEnv): boolean {
+  const v = (env.PUBLIC_MODE ?? '').trim().replace(/^["']|["']$/g, '').toLowerCase();
+  if (['false', '0', 'no', 'off'].includes(v)) return false;
+  return ['true', '1', 'yes', 'on'].includes(v) || (env.RENDER ?? '').toLowerCase() === 'true';
+}
+
 export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
+  const pub = isPublicMode(env);
   // without LLM_PROVIDER, a configured Gemini key selects Gemini; otherwise the labelled demo brain
   const p = (env.LLM_PROVIDER || (env.GEMINI_API_KEY ? 'gemini' : 'demo')).toLowerCase();
   const rp = (env.RESEARCH_PROVIDER ?? 'none').toLowerCase();
@@ -59,7 +73,13 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     anthropic: { apiKey: env.ANTHROPIC_API_KEY ?? '', model: env.ANTHROPIC_MODEL ?? '', baseUrl: (env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com').replace(/\/+$/, '') },
     gemini: { apiKey: env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '', model: env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL, baseUrl: (env.GEMINI_BASE_URL ?? '').replace(/\/+$/, '') },
     research: { provider: (['wikipedia', 'searxng', 'tavily'].includes(rp) ? rp : 'none') as ResearchConfig['provider'], searxngUrl: env.SEARXNG_URL ?? '', tavilyKey: env.TAVILY_API_KEY ?? '', wikipediaLang: env.WIKIPEDIA_LANG ?? 'en', wikipediaBase: env.WIKIPEDIA_BASE_URL || undefined, tavilyBase: env.TAVILY_BASE_URL || undefined },
-    allowRuntimeConfig: (env.ALLOW_RUNTIME_CONFIG ?? 'true') !== 'false',
+    allowRuntimeConfig: (env.ALLOW_RUNTIME_CONFIG ?? 'true') !== 'false' && !pub,
+    publicMode: pub,
+    allowedOrigins: (env.ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter((o) => /^https?:\/\/[^/\s]+$/i.test(o)),
+    // 0 = unlimited (the default on your own computer); public hosts get conservative defaults
+    budget: pub
+      ? { chatsPerDay: n(env.DAILY_CHAT_LIMIT, 400), chatsPerIpPerDay: n(env.DAILY_CHAT_LIMIT_PER_VISITOR, 60), speechCharsPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT, 20000) }
+      : { chatsPerDay: n(env.DAILY_CHAT_LIMIT, 0), chatsPerIpPerDay: n(env.DAILY_CHAT_LIMIT_PER_VISITOR, 0), speechCharsPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT, 0) },
     runtimeConfigPath: env.RUNTIME_CONFIG_PATH ?? 'data/runtime-config.json',
     promptMode: (['full', 'compact'].includes(env.PROMPT_MODE ?? '') ? env.PROMPT_MODE : 'auto') as ServerConfig['promptMode'],
     speech: readSpeechConfig(env),
@@ -99,10 +119,13 @@ export function saveRuntime(path: string, rc: RuntimeConfig) {
   writeFileSync(path, JSON.stringify(rc, null, 2), { mode: 0o600 });
   try { chmodSync(path, 0o600); } catch { /* windows */ }
 }
-const hint = (s: string) => (s && !/^replace/.test(s) ? { set: true, hint: `…${s.slice(-4)}` } : { set: false, hint: null });
+const keyHint = (s: string) => (s && !/^replace/.test(s) ? { set: true, hint: `…${s.slice(-4)}` as string | null } : { set: false, hint: null as string | null });
 /** Public, secret-free view of the configuration (Asset 50). */
 export function publicConfig(c: ServerConfig) {
+  // on a public server even the last 4 characters of a key are not shown
+  const hint = (k: string) => (c.publicMode ? { set: !!k && !/^replace/.test(k), hint: null } : keyHint(k));
   return {
+    publicMode: c.publicMode,
     provider: c.provider, allowRuntimeConfig: c.allowRuntimeConfig,
     openai: { baseUrl: c.openai.baseUrl, model: c.openai.model, jsonMode: c.openai.jsonMode, apiKey: hint(c.openai.apiKey) },
     anthropic: { model: c.anthropic.model, apiKey: hint(c.anthropic.apiKey) },
@@ -125,6 +148,7 @@ export function configWarnings(c: ServerConfig): string[] {
   const t = c.speech.tts;
   if (t.provider === 'elevenlabs' && !t.apiKey) w.push('ElevenLabs voice selected but ELEVENLABS_API_KEY is missing — spoken replies will report an error.');
   if (t.provider === 'elevenlabs' && t.apiKey && !t.voice) w.push('ELEVENLABS_VOICE_ID is missing — choose a voice in Settings → Voice → Speech services, or set it in .env.');
+  if (c.publicMode) w.push(`Public mode: settings cannot be changed from the browser; daily limits — ${c.budget.chatsPerDay || '∞'} chats, ${c.budget.chatsPerIpPerDay || '∞'} per visitor, ${c.budget.speechCharsPerDay || '∞'} spoken characters.${c.allowedOrigins.length ? ` Other sites allowed: ${c.allowedOrigins.join(', ')}.` : ''}`);
   if (t.provider === 'none') w.push('No voice service configured — spoken replies use this computer\'s built-in voices. Set ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID for the ElevenLabs voice.');
   return w;
 }

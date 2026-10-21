@@ -188,7 +188,22 @@ try {
 
   // status / model panel
   await page.getByRole('tab', { name: 'Status' }).click();
-  check('[A10] [A49] status panel lists capabilities and all 121 assets', (await page.locator('.assets tbody tr').count()) === 121 && (await page.locator('.caps li').count()) >= 8);
+  check('[A10] [A49] status panel lists capabilities and all 124 assets', (await page.locator('.assets tbody tr').count()) === 124 && (await page.locator('.caps li').count()) >= 8);
+
+  // light mode: one click on the home page turns the site and the robot light; it is remembered; dark is the classic look
+  {
+    const tp = await ctx.newPage(); await tp.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await tp.waitForTimeout(600);
+    const look = () => tp.evaluate(() => ({ theme: document.documentElement.dataset.theme, skin: document.querySelector('.hero svg[role=img], svg[data-skin]')?.getAttribute('data-skin'), bg: getComputedStyle(document.body).backgroundColor, label: document.querySelector('[data-testid=theme-toggle]')?.getAttribute('aria-label') }));
+    const before = await look();
+    await tp.getByTestId('theme-toggle').first().click(); await tp.waitForTimeout(500); const lightNow = await look();
+    await tp.reload({ waitUntil: 'networkidle' }); await tp.waitForTimeout(800); const afterReload = await look();
+    await tp.addScriptTag({ content: readFileSync('node_modules/axe-core/axe.min.js', 'utf8') });
+    const serious = await tp.evaluate(async () => (await window.axe.run(document, { resultTypes: ['violations'] })).violations.filter((x) => x.impact === 'serious' || x.impact === 'critical').map((x) => `${x.id}: ${x.nodes[0]?.target}`));
+    await tp.getByTestId('theme-toggle').first().click(); await tp.waitForTimeout(400); const backDark = await look();
+    check('[A123] light mode: the toggle switches the site and the robot to the white/light-blue version, is remembered after reload, and switches back', before.theme === 'dark' && before.skin === 'dark' && lightNow.theme === 'light' && lightNow.skin === 'light' && lightNow.bg !== before.bg && afterReload.theme === 'light' && afterReload.skin === 'light' && backDark.theme === 'dark' && backDark.skin === 'dark' && before.label === 'Switch to light mode', JSON.stringify({ before, lightNow, afterReload, backDark }));
+    check('[A123] the light home page passes the axe audit (no serious/critical issues)', serious.length === 0, serious.join(' | '));
+    await tp.close();
+  }
 
   // reduced motion preference from the OS
   const rmPage = await ctx.newPage(); await rmPage.emulateMedia({ reducedMotion: 'reduce' }); await rmPage.goto(URL, { waitUntil: 'networkidle' }); await rmPage.waitForTimeout(800);
@@ -543,6 +558,9 @@ try {
     await rv.waitForTimeout(400);
     const after = await R(() => ({ st: nexus.companion.sm.state, mouth: nexus.engine.values['mouth.open'], speaking: nexus.companion.getSnapshot().speaking, cap: document.querySelector('[data-testid=captions]')?.textContent ?? '' }));
     check('[A119] spoken reply: SPEAKING only while the server audio plays; the mouth opens with the sound and closes in the silence; back to idle', ttsCalls.length >= 1 && ttsCalls[0].model === 'mock-tts' && ttsCalls[0].voice === 'mock-voice' && sp.length > 5 && maxM > 0.35 && minM < 0.15 && after.st === 'idle' && !after.speaking && after.mouth < 0.2, `tts calls ${ttsCalls.length}, speaking samples ${sp.length}, mouth max ${maxM.toFixed(2)} min ${minM.toFixed(2)}, end ${after.st} ${after.mouth.toFixed(2)}`);
+    const evs = await R(() => nexus.companion.events.log.map((e) => e.name));
+    const order = ['onProcessingStart', 'onResponseReceived', 'onSpeechStart', 'onSpeechEnd'].map((n) => evs.lastIndexOf(n));
+    check('[A122] robot events fire in order during a spoken reply (processing → response → speech start → speech end)', order.every((i) => i >= 0) && order.every((v, i, a) => i === 0 || v > a[i - 1]), evs.slice(-8).join(','));
     check('[A119] captions show the exchange under the robot (usable without sound)', /introduce yourself/.test(after.cap) && /I'm NEXUS/.test(after.cap), after.cap.slice(0, 120));
     // interruption: Stop while speaking cancels audio, mouth and request; nothing resumes afterwards
     await rv.locator('#composer').fill('Please introduce yourself'); await rv.locator('#composer').press('Enter');

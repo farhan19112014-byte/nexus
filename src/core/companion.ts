@@ -19,6 +19,7 @@ import { buildContext, msgId, SESSION_LIMIT, type UIMessage } from '../ai/contex
 import { planFromResponse, type PlannedStep } from '../ai/planner';
 import { browserCaps, computeCapabilities, type Capability } from '../ai/capabilities';
 import { SkillRunner } from './skillRunner';
+import { RobotEvents } from './robotEvents';
 import { StateMachine, type CompanionState } from './stateMachine';
 import { Notifications } from './notifications';
 import type { CharacterRuntime } from './characterRuntime';
@@ -55,6 +56,8 @@ const REMEMBER_RE = /\b(remember|note|keep in mind|don'?t forget|save (this|that
 
 export class Companion {
   readonly sm = new StateMachine();
+  /** typed robot events (onListeningStart, onSpeechStart, onSpeechEnd, …) derived from the state machine */
+  readonly events = new RobotEvents();
   readonly diagnostics = new Diagnostics();
   readonly notifications: Notifications;
   readonly runner: SkillRunner;
@@ -75,6 +78,7 @@ export class Companion {
   private sessionPrefs: Record<string, string> = {};
 
   constructor(private d: CompanionDeps) {
+    this.events.attach(this.sm);
     this.engine = d.runtime.engine; this.expressions = d.runtime.expressions;
     if (d.tts) this.tts = d.tts; else { const r = new VoiceOutputRouter(); r.onNotice = (m) => this.notifications.push('error', m, { react: false }); this.voiceOut = r; this.tts = r; }
     if (d.stt) this.stt = d.stt; else { const r = new VoiceInputRouter(); this.voiceIn = r; this.stt = r; }
@@ -251,7 +255,7 @@ export class Companion {
     this.expressions.setBaseline(s.defaultExpression);
     applyTheme(s.theme);
     this.expressions.allowPlayful = s.playfulReactions && !s.quietMode;
-    this.tts.rate = s.speechRate; this.tts.voiceURI = s.voiceURI; this.tts.character = s.voiceCharacter; if (this.voiceOut) this.voiceOut.allowFallback = s.voiceFallback; this.voiceOut?.configure(!!this.snap.caps?.speech?.tts.configured, s.voiceEngine); this.voiceIn?.configure(!!this.snap.caps?.speech?.stt.configured, s.voiceEngine);
+    this.tts.rate = s.speechRate; this.tts.volume = s.speechVolume; this.tts.voiceURI = s.voiceURI; this.tts.character = s.voiceCharacter; if (this.voiceOut) this.voiceOut.allowFallback = s.voiceFallback; this.voiceOut?.configure(!!this.snap.caps?.speech?.tts.configured, s.voiceEngine); this.voiceIn?.configure(!!this.snap.caps?.speech?.stt.configured, s.voiceEngine);
     this.diagnostics.includeContent = s.diagnosticsIncludeContent;
   }
   async refreshStatus() { const caps = await this.d.api.status(); this.set({ caps }); this.configureVoice(); this.refreshCaps(); return caps; }

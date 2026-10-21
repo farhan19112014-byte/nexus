@@ -1,55 +1,55 @@
 {
-  "generatedAt": "2026-10-21T08:16:53.943Z",
+  "generatedAt": "2026-10-21T14:52:02.739Z",
   "steps": [
     {
       "name": "typecheck",
       "ok": true,
       "code": 0,
-      "seconds": 9.868
+      "seconds": 9.59
     },
     {
       "name": "build (app + server bundle)",
       "ok": true,
       "code": 0,
-      "seconds": 12.846
+      "seconds": 12.355
     },
     {
       "name": "lint (eslint, 0 warnings)",
       "ok": true,
       "code": 0,
-      "seconds": 6.281
+      "seconds": 7.06
     },
     {
       "name": "unit + integration tests",
       "ok": true,
       "code": 0,
-      "seconds": 26.644
+      "seconds": 28.077
     },
     {
       "name": "end-to-end tests",
       "ok": true,
       "code": 0,
-      "seconds": 190.142
+      "seconds": 194.855
     },
     {
       "name": "desktop app smoke test",
       "ok": true,
       "code": 0,
-      "seconds": 2.752
+      "seconds": 2.705
     }
   ],
   "suites": {
     "unit": {
-      "total": 112,
-      "passed": 112
+      "total": 124,
+      "passed": 124
     },
     "integration": {
-      "total": 52,
-      "passed": 52
+      "total": 53,
+      "passed": 53
     },
     "e2e": {
-      "total": 100,
-      "passed": 100
+      "total": 103,
+      "passed": 103
     }
   },
   "assets": {
@@ -625,19 +625,19 @@
     },
     "A96": {
       "status": "verified",
-      "passed": 112,
+      "passed": 124,
       "failed": 0,
       "missing": []
     },
     "A97": {
       "status": "verified",
-      "passed": 52,
+      "passed": 53,
       "failed": 0,
       "missing": []
     },
     "A98": {
       "status": "verified",
-      "passed": 100,
+      "passed": 103,
       "failed": 0,
       "missing": []
     },
@@ -770,6 +770,24 @@
     "A121": {
       "status": "verified",
       "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A122": {
+      "status": "verified",
+      "passed": 7,
+      "failed": 0,
+      "missing": []
+    },
+    "A123": {
+      "status": "verified",
+      "passed": 6,
+      "failed": 0,
+      "missing": []
+    },
+    "A124": {
+      "status": "verified",
+      "passed": 3,
       "failed": 0,
       "missing": []
     },

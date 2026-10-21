@@ -18,8 +18,15 @@ function WebDemoNote({ what }: { what: string }) {
   return <div className="card warn" data-testid="web-demo-settings">{what} needs the NEXUS server, and this web demo has none — replies come from the scripted demo brain (not an AI). To connect a real model (Google Gemini, OpenAI-compatible, Anthropic or free Ollama), run NEXUS on your computer: <a className="text-link" href={REPO_URL}>{REPO_URL.replace('https://', '')}</a>.</div>;
 }
 
+function HostedNote({ what }: { what: string }) {
+  const snap = useSnapshot();
+  return <div className="card" data-testid="hosted-settings">{what} is set up by the owner of this public NEXUS server and can't be changed from the browser. Active: <b>{snap.caps?.label}</b>{snap.caps?.isLLM && !snap.caps.configured ? ` — not configured: ${snap.caps.note ?? ''}` : ''}. To choose your own model and keys, run NEXUS on your computer: <a className="text-link" href={REPO_URL}>{REPO_URL.replace('https://', '')}</a>.</div>;
+}
+
 function ModelPanel() {
+  const snap = useSnapshot();
   if (WEB_DEMO) return <WebDemoNote what="Choosing an AI model" />;
+  if (snap.caps?.hosted) return <HostedNote what="The AI model" />;
   return <ModelPanelInner />;
 }
 function ModelPanelInner() {
@@ -106,7 +113,9 @@ function ElevenFields({ f, setF, allowed, keySet, keyHint, saved }: { f: SpeechF
 
 /** Optional server speech services (spec §11–§13). Keys are write-only and stay on the NEXUS server. */
 function SpeechServicePanel() {
+  const snap = useSnapshot();
   if (WEB_DEMO) return <WebDemoNote what="A speech service" />;
+  if (snap.caps?.hosted) return <div className="card small" data-testid="hosted-voice">Voice service: {snap.caps.speech?.tts.configured ? `✓ ${snap.caps.speech.tts.note}` : `— ${snap.caps.speech?.tts.note ?? 'not configured'} (replies use this device's voices)`}. Set up by the owner of this server.</div>;
   return <SpeechServicePanelInner />;
 }
 function SpeechServicePanelInner() {
@@ -211,7 +220,7 @@ export default function SettingsPanel() {
       <h4>Animation & appearance</h4>
       <label className="field">Layout<select value={s.layout} onChange={(e) => up({ layout: e.target.value as Settings['layout'] })}><option value="robot">Robot view — the robot fills the window, voice first</option><option value="workspace">Workspace — robot, chat and panels side by side</option></select></label>
       <label className="field">Robot size on the stage<select value={s.robotSize} onChange={(e) => up({ robotSize: e.target.value as Settings['robotSize'] })}><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
-      <label className="field">Theme<select value={s.theme} onChange={(e) => up({ theme: e.target.value as Settings['theme'] })}><option value="dark">Dark</option><option value="light">Light</option><option value="system">Match my computer</option></select></label>
+      <label className="field">Theme<select value={s.theme} onChange={(e) => up({ theme: e.target.value as Settings['theme'] })}><option value="dark">Dark — the classic NEXUS</option><option value="light">Light — white and light-blue NEXUS</option><option value="system">Match my computer</option></select></label>
       <label className="field">Animation intensity ×{s.animationIntensity.toFixed(2)}<input type="range" min={0.3} max={1.3} step={0.05} value={s.animationIntensity} onChange={(e) => up({ animationIntensity: Number(e.target.value) })} /></label>
       <T k="playfulReactions" label="Playful reactions (winks, celebrations)" />
       <T k="completionReaction" label="Small nod when a reply completes" />
@@ -223,6 +232,7 @@ export default function SettingsPanel() {
       <label className="field">Voice<select value={s.voiceURI ?? ''} onChange={(e) => up({ voiceURI: e.target.value || null })} disabled={!voices.length}><option value="">Automatic</option>{voices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>)}</select></label>
       <label className="field">Voice character<select value={s.voiceCharacter} onChange={(e) => up({ voiceCharacter: e.target.value as Settings['voiceCharacter'] })}><option value="cute">Youthful — a little brighter (picks a young-adult voice when “Automatic”)</option><option value="natural">Natural — the voice as it is</option></select></label>
       <label className="field">Speech rate ×{s.speechRate.toFixed(2)}<input type="range" min={0.6} max={1.6} step={0.05} value={s.speechRate} onChange={(e) => up({ speechRate: Number(e.target.value) })} /></label>
+      <label className="field">Speech volume {Math.round(s.speechVolume * 100)}%<input type="range" min={0} max={1} step={0.05} value={s.speechVolume} onChange={(e) => up({ speechVolume: Number(e.target.value) })} /></label>
       <label className="field">Voice engine<select value={s.voiceEngine} onChange={(e) => up({ voiceEngine: e.target.value as Settings['voiceEngine'] })}><option value="auto">Automatic — the speech service when configured, else this computer</option><option value="server">Speech service (when configured)</option><option value="browser">This computer / browser only</option></select></label>
       <div className="muted small" data-testid="voice-engines">Replies use: {companion.voiceOut?.engineName ?? 'browser'} voice · mouth: {companion.voiceOut?.lipSync ?? 'n/a'} · voice input: {companion.voiceIn?.kind ?? 'browser'}</div>
       <T k="voiceFallback" label="If the voice service fails, speak with this computer's voice instead (off: the reply stays as text and you are told why)" />
