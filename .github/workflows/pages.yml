@@ -24,7 +24,8 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: npx vite build
         env:
-          VITE_WEB_DEMO: '1'
+                       VITE_WEB_DEMO: ${{ vars.NEXUS_API_URL == '' && '1' || '0' }}
+             VITE_API_BASE: ${{ vars.NEXUS_API_URL }}
           NEXUS_BASE: /${{ github.event.repository.name }}/
       - run: cp dist/index.html dist/404.html
       - uses: actions/upload-pages-artifact@v3
