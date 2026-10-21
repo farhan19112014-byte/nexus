@@ -6,6 +6,23 @@ import type { SpeakingStyle } from '../../shared/schema';
 const STYLE: Record<SpeakingStyle, { rate: number; pitch: number }> = {
   calm: { rate: 0.95, pitch: 1.05 }, warm: { rate: 1, pitch: 1.15 }, energetic: { rate: 1.1, pitch: 1.25 }, serious: { rate: 0.95, pitch: 1 }, playful: { rate: 1.05, pitch: 1.3 }, soft: { rate: 0.9, pitch: 1.1 },
 };
+export type VoiceCharacter = 'cute' | 'natural';
+/** Young-adult, bright conversational voices commonly shipped with Edge, Chrome, Windows and macOS, best first
+ * (child voices such as "Ana" are deliberately not preferred: NEXUS should sound youthful, not like a small child). */
+const CUTE_VOICES = [/Jenny/i, /Aria/i, /\bAva\b/i, /\bEmma\b/i, /Libby|Maisie|Sonia/i, /Samantha/i, /Google US English/i, /Zira/i, /Female/i];
+/** Pick a cute-sounding voice for "Automatic": prefer the user's language, then any English voice. */
+export function pickCuteVoice(voices: SpeechSynthesisVoice[], lang = typeof navigator !== 'undefined' ? navigator.language : 'en'): SpeechSynthesisVoice | undefined {
+  const base = (lang || 'en').slice(0, 2).toLowerCase();
+  for (const pool of [voices.filter((v) => v.lang?.toLowerCase().startsWith(base)), voices.filter((v) => v.lang?.toLowerCase().startsWith('en'))]) {
+    for (const re of CUTE_VOICES) { const v = pool.find((x) => re.test(x.name)); if (v) return v; }
+  }
+  return undefined;
+}
+/** Pitch/rate for a style; "cute" lifts the pitch a little (capped well below squeaky) and keeps a natural pace. */
+export function voiceParams(style: SpeakingStyle, character: VoiceCharacter, userRate = 1) {
+  const s = STYLE[style] ?? STYLE.warm;
+  return character === 'cute' ? { rate: s.rate * userRate, pitch: Math.min(1.5, s.pitch * 1.12) } : { rate: s.rate * userRate, pitch: s.pitch };
+}
 export interface TTSHooks { onStart?(): void; onWord?(word: string): void; onIdle?(): void; /** mouth openness 0…1 measured from the playing audio (server voice only) */ onLevel?(level: number): void }
 
 /** Approximate mouth shape from a word (used only when the engine reports word boundaries). */
@@ -16,7 +33,7 @@ export function visemeFor(word: string): { open: number; round: number } {
 
 export class SpeechOutput {
   readonly supported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
-  rate = 1; voiceURI: string | null = null;
+  rate = 1; voiceURI: string | null = null; character: VoiceCharacter = 'cute';
   private queue: string[] = []; private busy = false; private gen = 0; private style: SpeakingStyle = 'warm';
   private paused = false; private wd: { g: number; ms: number; h: ReturnType<typeof setTimeout> } | null = null;
   hooks: TTSHooks = {};
@@ -33,10 +50,11 @@ export class SpeechOutput {
     if (!t) { this.busy = false; this.hooks.onIdle?.(); return; }
     this.busy = true;
     const u = new SpeechSynthesisUtterance(t);
-    const s = STYLE[this.style]; u.rate = s.rate * this.rate; u.pitch = s.pitch;
-    const v = this.voices().find((x) => x.voiceURI === this.voiceURI); if (v) u.voice = v;
+    const p = voiceParams(this.style, this.character, this.rate); u.rate = p.rate; u.pitch = p.pitch;
+    const all = this.voices();
+    const v = all.find((x) => x.voiceURI === this.voiceURI) ?? (this.character === 'cute' && !this.voiceURI ? pickCuteVoice(all) : undefined); if (v) u.voice = v;
     let started = false;
-    const wdMs = 2500 + t.length * 120 / (s.rate * this.rate);
+    const wdMs = 2500 + t.length * 120 / p.rate;
     const watchdog = setTimeout(() => { if (!this.paused) this.next(g); }, wdMs); this.wd = { g, ms: wdMs, h: watchdog };
     u.onstart = () => { if (!started) { started = true; this.hooks.onStart?.(); } };
     u.onboundary = (e) => { if (e.name && e.name !== 'word') return; this.boundaryEvents = true; this.hooks.onWord?.(t.slice(e.charIndex, e.charIndex + (e.charLength || 6))); };

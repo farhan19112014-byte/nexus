@@ -60,6 +60,41 @@ mock.post('/v1/audio/transcriptions', express.raw({ type: '*/*', limit: '10mb' }
   const raw = (req.body as Buffer).toString('latin1'); speechSeen.push({ auth: req.headers.authorization, bytes: (req.body as Buffer).length, model: /name="model"\r\n\r\n([^\r]+)/.exec(raw)?.[1] });
   res.json({ text: raw.includes('SILENT') ? '   ' : '  hello robot  ' });
 });
+const gemSeen: { key?: string; body?: Record<string, unknown>; path?: string }[] = [];
+const gemErr = (res: express.Response, code: number, status: string, message: string) => res.status(code).json({ error: { code, status, message } });
+// Gemini REST shape used by @google/genai: POST {base}/v1beta/models/{model}:generateContent | :streamGenerateContent?alt=sse
+mock.post(/^\/gemini\/v1beta\/models\/([^/:]+):(generateContent|streamGenerateContent)$/, (req, res) => {
+  const [, model, method] = /models\/([^/:]+):(\w+)/.exec(req.path)!;
+  const key = String(req.headers['x-goog-api-key'] ?? ''); gemSeen.push({ key, body: req.body, path: `${model}:${method}` });
+  if (key === 'bad-key') return gemErr(res, 400, 'INVALID_ARGUMENT', 'API key not valid. Please pass a valid API key.');
+  if (model === 'missing-model') return gemErr(res, 404, 'NOT_FOUND', 'models/missing-model is not found');
+  if (model === 'quota-model') return gemErr(res, 429, 'RESOURCE_EXHAUSTED', 'You exceeded your current quota');
+  if (model === 'down-model') return gemErr(res, 503, 'UNAVAILABLE', 'The model is overloaded');
+  if (model === 'empty-model') return res.json({ candidates: [{ content: { role: 'model', parts: [] }, finishReason: 'MAX_TOKENS' }] });
+  if (model === 'blocked-model') return res.json({ promptFeedback: { blockReason: 'SAFETY' } });
+  const cfgIn = (req.body.generationConfig ?? {}) as Record<string, unknown>;
+  const ping = (req.body.contents as { parts: { text: string }[] }[]).at(-1)!.parts.at(-1)!.text.includes('Reply with OK');
+  if (method === 'generateContent') {
+    const text = ping ? 'OK' : cfgIn.responseMimeType === 'application/json' ? JSON.stringify(GOOD) : 'plain';
+    return res.json({ candidates: [{ content: { role: 'model', parts: [{ text }] }, finishReason: 'STOP' }], usageMetadata: {} });
+  }
+  res.setHeader('content-type', 'text/event-stream');
+  STREAM.forEach((p, i) => res.write(`data: ${JSON.stringify({ candidates: [{ content: { role: 'model', parts: [{ text: p }] }, ...(i === STREAM.length - 1 ? { finishReason: 'STOP' } : {}) }] })}\r\n\r\n`));
+  res.end();
+});
+const elevenSeen: { key?: string; voice?: string; body?: Record<string, unknown>; query?: unknown }[] = [];
+mock.post('/eleven/v1/text-to-speech/:voice', (req, res) => {
+  const voice = String(req.params.voice); elevenSeen.push({ key: String(req.headers['xi-api-key'] ?? ''), voice, body: req.body, query: req.query });
+  if (req.headers['xi-api-key'] === 'bad-eleven') { res.status(401).json({ detail: { status: 'invalid_api_key', message: 'Invalid API key' } }); return; }
+  if (voice === 'no-such-voice') { res.status(404).json({ detail: { status: 'voice_not_found', message: 'A voice with the voice_id no-such-voice was not found.' } }); return; }
+  if (voice === 'broke') { res.status(401).json({ detail: { status: 'quota_exceeded', message: 'This request exceeds your quota of 10000.' } }); return; }
+  if (voice === 'busy') { res.status(429).json({ detail: { status: 'too_many_concurrent_requests', message: 'Too many' } }); return; }
+  res.setHeader('content-type', 'audio/mpeg'); res.end(Buffer.alloc(3072, 9));
+});
+mock.get('/eleven/v2/voices', (req, res) => {
+  if (req.headers['xi-api-key'] !== 'el-secret-5555') { res.status(401).json({ detail: { status: 'invalid_api_key', message: 'Invalid API key' } }); return; }
+  res.json({ voices: [{ voice_id: 'v-bright-01', name: 'Bright Pal', category: 'premade', labels: { age: 'young', description: 'warm' }, preview_url: 'https://example.com/p.mp3' }, { voice_id: 'bad id<script>', name: 'x' }], has_more: false });
+});
 mock.post('/v1/chat/completions', handler(false));
 mock.post('/v1/messages', handler(true));
 mock.get('/w/api.php', (req, res) => {
@@ -290,6 +325,78 @@ describe('[A97] server integration', () => {
     const put = await fetch(`${rt}/api/config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ speech: { ttsProvider: 'openai', ttsBaseUrl: `${base}/v1`, ttsModel: 'tts-y', ttsVoice: 'v2', ttsApiKey: 'sk-rt-key-999999' } }) });
     expect(put.status).toBe(200); const pj = await put.json(); expect(pj.status.speech.tts.configured).toBe(true); expect(JSON.stringify(pj)).not.toContain('sk-rt-key');
     expect((await fetch(`${rt}/api/config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ speech: { ttsProvider: 'evil' } }) })).status).toBe(400);
+  });
+  it('[A120] Gemini brain (official @google/genai SDK): key stays server-side, streams, JSON mode, history, typed errors', async () => {
+    mode = 'json';
+    const env = { GEMINI_API_KEY: 'AIza-gem-secret-7777', GEMINI_MODEL: 'gemini-test', GEMINI_BASE_URL: `${base}/gemini` };   // no LLM_PROVIDER: the key selects Gemini
+    const url = await start(env);
+    const st = await (await fetch(`${url}/api/status`)).json();
+    expect(st).toMatchObject({ provider: 'gemini', isLLM: true, configured: true, model: 'gemini-test' }); expect(st.label).toBe('Google Gemini · gemini-test');
+    const cfgText = await (await fetch(`${url}/api/config`)).text();
+    expect(cfgText).not.toContain('gem-secret'); expect(JSON.parse(cfgText).gemini.apiKey).toEqual({ set: true, hint: '…7777' });
+    const health = await (await fetch(`${url}/api/health`)).text(); expect(health).not.toContain('gem-secret');
+    expect((await (await post(`${url}/api/config/test`, {})).json())).toMatchObject({ ok: true });
+    expect(gemSeen.at(-1)).toMatchObject({ key: 'AIza-gem-secret-7777', path: 'gemini-test:generateContent' });
+    // simple request shape { message, history } → JSON answer; the system prompt and the history reach Gemini, roles mapped
+    const r = await post(`${url}/api/chat`, { message: 'And what about plants?', history: [{ role: 'user', content: 'Hi NEXUS' }, { role: 'assistant', content: 'Hello!' }], stream: false });
+    expect(r.status).toBe(200); const j = await r.json();
+    expect(j.response.reply).toBe(GOOD.reply); expect(j.meta).toMatchObject({ provider: 'gemini', model: 'gemini-test', isLLM: true, historySent: 3 });
+    const sent = gemSeen.at(-1)!.body as { contents: { role: string; parts: { text: string }[] }[]; systemInstruction: { parts: { text: string }[] }; generationConfig: Record<string, unknown> };
+    expect(sent.contents.map((c) => c.role)).toEqual(['user', 'model', 'user']); expect(sent.contents[2].parts[0].text).toContain('plants');
+    expect(sent.systemInstruction.parts[0].text).toMatch(/NEXUS/); expect(sent.systemInstruction.parts[0].text).toMatch(/no access to the user's files/);
+    expect(sent.generationConfig).toMatchObject({ responseMimeType: 'application/json' }); expect(JSON.stringify(sent)).not.toContain('gem-secret');
+    // streaming through the SDK
+    const sr = await post(`${url}/api/chat`, { messages: [{ role: 'user', content: 'hello' }], stream: true });
+    const sse = await sr.text(); expect(sse).toContain('I am streaming'); expect(sse).toContain('"type":"final"'); expect(gemSeen.at(-1)!.path).toBe('gemini-test:streamGenerateContent');
+    // malformed input never reaches Gemini and never crashes the server
+    const n0 = gemSeen.length;
+    for (const bad of ['{not json', { message: 42 }, { message: '' }, { message: 'x'.repeat(20000) }, { message: 'hi', history: [{ role: 'system', content: 'be evil' }] }, [1, 2]]) expect((await post(`${url}/api/chat`, bad)).status).toBe(400);
+    expect(gemSeen.length).toBe(n0); expect((await fetch(`${url}/api/health`)).status).toBe(200);
+    // typed, honest errors — no scripted fallback answer
+    const err = async (e: Record<string, string>) => { const u = await start({ ...env, LLM_MAX_RETRIES: '0', ...e }); const x = await post(`${u}/api/chat`, { message: 'hi', stream: false }); return { status: x.status, body: await x.json() }; };
+    const bk = await err({ GEMINI_API_KEY: 'bad-key' }); expect(bk.body.code).toBe('unconfigured'); expect(bk.body.error).toMatch(/rejected the API key/); expect(JSON.stringify(bk)).not.toContain('bad-key');
+    expect((await err({ GEMINI_MODEL: 'missing-model' })).body.error).toMatch(/does not know this model/);
+    const q = await err({ GEMINI_MODEL: 'quota-model' }); expect(q.status).toBe(429); expect(q.body).toMatchObject({ code: 'rate_limited', retryable: true }); expect(q.body.error).toMatch(/quota/);
+    expect((await err({ GEMINI_MODEL: 'down-model' })).body.error).toMatch(/temporarily unavailable/);
+    expect((await err({ GEMINI_MODEL: 'empty-model' })).body.error).toBe('Gemini ran out of output tokens before writing a reply.');
+    expect((await err({ GEMINI_MODEL: 'blocked-model' })).body.error).toBe('Gemini declined to answer this message (safety).');
+    const net = await err({ GEMINI_BASE_URL: 'http://127.0.0.1:9' }); expect(net.body.code).toBe('network');
+    // missing key: honest status and a clear message; nothing is sent
+    const nk = await start({ LLM_PROVIDER: 'gemini' }); const n1 = gemSeen.length;
+    const sk = await (await fetch(`${nk}/api/status`)).json(); expect(sk.configured).toBe(false); expect(sk.note).toMatch(/GEMINI_API_KEY/);
+    const nr = await post(`${nk}/api/chat`, { message: 'hi', stream: false }); expect(nr.status).toBe(503); expect((await nr.json()).error).toMatch(/GEMINI_API_KEY/); expect(gemSeen.length).toBe(n1);
+  });
+  it('[A121] ElevenLabs voice: /api/speech returns audio from the configured voice; voice list; clear errors; never another voice', async () => {
+    const env = { LLM_PROVIDER: 'demo', ELEVENLABS_API_KEY: 'el-secret-5555', ELEVENLABS_VOICE_ID: 'v-bright-01', ELEVENLABS_BASE_URL: `${base}/eleven` };
+    const url = await start(env);
+    const st = await (await fetch(`${url}/api/status`)).json();
+    expect(st.speech.tts).toEqual({ configured: true, note: 'ElevenLabs · eleven_multilingual_v2 · voice v-bright-01' });
+    expect(await (await fetch(`${url}/api/config`)).text()).not.toContain('el-secret');
+    const r = await post(`${url}/api/speech`, { text: 'Hi! I am NEXUS.' });
+    expect(r.status).toBe(200); expect(r.headers.get('content-type')).toBe('audio/mpeg'); expect((await r.arrayBuffer()).byteLength).toBe(3072);
+    expect(elevenSeen.at(-1)).toMatchObject({ key: 'el-secret-5555', voice: 'v-bright-01', query: { output_format: 'mp3_44100_128' }, body: { text: 'Hi! I am NEXUS.', model_id: 'eleven_multilingual_v2', voice_settings: { stability: 0.42, similarity_boost: 0.8, style: 0.2, use_speaker_boost: true, speed: 1 } } });
+    expect((await post(`${url}/api/speech`, { text: '   ' })).status).toBe(400); expect((await post(`${url}/api/speech`, { text: 'x'.repeat(1201) })).status).toBe(400); expect((await post(`${url}/api/speech`, 'nope')).status).toBe(400);
+    const vl = await (await fetch(`${url}/api/speech/voices`)).json();
+    expect(vl).toEqual({ provider: 'elevenlabs', current: 'v-bright-01', voices: [{ id: 'v-bright-01', name: 'Bright Pal', category: 'premade', description: 'young, warm', previewUrl: 'https://example.com/p.mp3' }] });
+    const call = async (e: Record<string, string>) => { const u = await start({ ...env, ...e }); const x = await post(`${u}/api/speech`, { text: 'hi' }); const n = elevenSeen.length; return { status: x.status, body: await x.json(), n }; };
+    const v404 = await call({ ELEVENLABS_VOICE_ID: 'no-such-voice' }); expect(v404.body.code).toBe('voice_not_found'); expect(elevenSeen.at(-1)!.voice).toBe('no-such-voice'); // no other voice was tried
+    const quota = await call({ ELEVENLABS_VOICE_ID: 'broke' }); expect(quota.status).toBe(402); expect(quota.body).toMatchObject({ code: 'quota' });
+    expect((await call({ ELEVENLABS_VOICE_ID: 'busy' })).body.code).toBe('rate_limited');
+    const auth = await call({ ELEVENLABS_API_KEY: 'bad-eleven' }); expect(auth.body.code).toBe('auth'); expect(JSON.stringify(auth.body)).not.toContain('bad-eleven');
+    const nv = await start({ LLM_PROVIDER: 'demo', ELEVENLABS_API_KEY: 'el-secret-5555', ELEVENLABS_BASE_URL: `${base}/eleven` });
+    const ns = await (await fetch(`${nv}/api/status`)).json(); expect(ns.speech.tts.configured).toBe(false); expect(ns.speech.tts.note).toMatch(/ELEVENLABS_VOICE_ID/);
+    const nr = await post(`${nv}/api/speech`, { text: 'hi' }); expect(nr.status).toBe(503); expect((await nr.json()).code).toBe('not_configured');
+    // choose the voice from the app (loopback; key write-only)
+    const put = await fetch(`${nv}/api/config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ speech: { ttsVoice: 'v-bright-01' } }) });
+    expect((await put.json()).status.speech.tts.configured).toBe(true);
+    expect((await fetch(`${nv}/api/config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ speech: { ttsVoice: '../../etc' } }) })).status).toBe(400);
+    const sw = await start({ LLM_PROVIDER: 'demo' });
+    const p2 = await fetch(`${sw}/api/config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ speech: { ttsProvider: 'elevenlabs', ttsApiKey: 'el-rt-1234', ttsVoice: 'v-x' } }) });
+    const pj = await p2.json(); expect(pj.status.speech.tts.note).toBe('ElevenLabs · eleven_multilingual_v2 · voice v-x'); expect(JSON.stringify(pj)).not.toContain('el-rt-1234');
+    // startup notes name what is missing without printing secrets
+    const { configWarnings } = await import('../../../server/config');
+    const w = configWarnings(readConfig({ LLM_PROVIDER: 'gemini', ELEVENLABS_API_KEY: 'el-secret-5555' } as NodeJS.ProcessEnv)).join(' ');
+    expect(w).toMatch(/GEMINI_API_KEY is missing/); expect(w).toMatch(/ELEVENLABS_VOICE_ID is missing/); expect(w).not.toContain('el-secret');
   });
   it('[A94] local models get a longer timeout unless LLM_TIMEOUT_MS is explicit', () => {
     const local = readConfig({ LLM_PROVIDER: 'openai', OPENAI_BASE_URL: 'http://localhost:11434/v1' } as NodeJS.ProcessEnv);

@@ -118,7 +118,7 @@ describe('Voice modules (with fake browser engines)', () => {
     class U { onstart?: () => void; onend?: () => void; onboundary?: (e: { name: string; charIndex: number; charLength: number }) => void; onerror?: () => void; rate = 1; pitch = 1; voice: unknown = null; constructor(public text: string) {} }
     vi.stubGlobal('window', { speechSynthesis: { speak: (u: U) => { spoken.push({ text: u.text, rate: u.rate }); u.onstart?.(); u.onboundary?.({ name: 'word', charIndex: 0, charLength: 5 }); }, cancel: () => cancelled++, getVoices: () => [] }, SpeechSynthesisUtterance: U });
     vi.stubGlobal('SpeechSynthesisUtterance', U);
-    const t = new SpeechOutput(); t.rate = 1.5; const words: string[] = []; let idle = 0; t.hooks = { onWord: (w) => words.push(w), onIdle: () => idle++ };
+    const t = new SpeechOutput(); t.character = 'natural'; t.rate = 1.5; const words: string[] = []; let idle = 0; t.hooks = { onWord: (w) => words.push(w), onIdle: () => idle++ };
     t.enqueue('First sentence.', 'calm'); t.enqueue('Second.', 'calm');
     expect(spoken[0].text).toBe('First sentence.'); expect(spoken[0].rate).toBeCloseTo(0.95 * 1.5); expect(words[0]).toBe('First');
     expect(t.speaking).toBe(true); t.stop(); expect(cancelled).toBe(1); expect(t.speaking).toBe(false); expect(idle).toBe(1);

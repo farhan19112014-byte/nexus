@@ -1,51 +1,51 @@
 {
-  "generatedAt": "2026-10-20T18:21:17.991Z",
+  "generatedAt": "2026-10-21T08:16:53.943Z",
   "steps": [
     {
       "name": "typecheck",
       "ok": true,
       "code": 0,
-      "seconds": 8.994
+      "seconds": 9.868
     },
     {
       "name": "build (app + server bundle)",
       "ok": true,
       "code": 0,
-      "seconds": 12.08
+      "seconds": 12.846
     },
     {
       "name": "lint (eslint, 0 warnings)",
       "ok": true,
       "code": 0,
-      "seconds": 5.602
+      "seconds": 6.281
     },
     {
       "name": "unit + integration tests",
       "ok": true,
       "code": 0,
-      "seconds": 26.498
+      "seconds": 26.644
     },
     {
       "name": "end-to-end tests",
       "ok": true,
       "code": 0,
-      "seconds": 189.565
+      "seconds": 190.142
     },
     {
       "name": "desktop app smoke test",
       "ok": true,
       "code": 0,
-      "seconds": 20.416
+      "seconds": 2.752
     }
   ],
   "suites": {
     "unit": {
-      "total": 109,
-      "passed": 109
+      "total": 112,
+      "passed": 112
     },
     "integration": {
-      "total": 50,
-      "passed": 50
+      "total": 52,
+      "passed": 52
     },
     "e2e": {
       "total": 100,
@@ -625,13 +625,13 @@
     },
     "A96": {
       "status": "verified",
-      "passed": 109,
+      "passed": 112,
       "failed": 0,
       "missing": []
     },
     "A97": {
       "status": "verified",
-      "passed": 50,
+      "passed": 52,
       "failed": 0,
       "missing": []
     },
@@ -757,7 +757,19 @@
     },
     "A119": {
       "status": "verified",
-      "passed": 26,
+      "passed": 27,
+      "failed": 0,
+      "missing": []
+    },
+    "A120": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A121": {
+      "status": "verified",
+      "passed": 2,
       "failed": 0,
       "missing": []
     },

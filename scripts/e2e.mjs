@@ -188,7 +188,7 @@ try {
 
   // status / model panel
   await page.getByRole('tab', { name: 'Status' }).click();
-  check('[A10] [A49] status panel lists capabilities and all 119 assets', (await page.locator('.assets tbody tr').count()) === 119 && (await page.locator('.caps li').count()) >= 8);
+  check('[A10] [A49] status panel lists capabilities and all 121 assets', (await page.locator('.assets tbody tr').count()) === 121 && (await page.locator('.caps li').count()) >= 8);
 
   // reduced motion preference from the OS
   const rmPage = await ctx.newPage(); await rmPage.emulateMedia({ reducedMotion: 'reduce' }); await rmPage.goto(URL, { waitUntil: 'networkidle' }); await rmPage.waitForTimeout(800);

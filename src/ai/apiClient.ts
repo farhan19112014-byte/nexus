@@ -124,6 +124,13 @@ export class ApiClient {
     if (!r.ok) throw new ApiError((j as { error?: string }).error ?? `HTTP ${r.status}`, 'invalid_request');
     return j as { ok: boolean; config: unknown; status: ServerCapabilities };
   }
+  /** ElevenLabs voices on the account configured on the server (keys stay on the server) */
+  async speechVoices() {
+    if (this.webDemo) throw noServer();
+    const r = await fetch(`${this.base}/api/speech/voices`); const j = await r.json().catch(() => ({})) as { error?: string; voices?: { id: string; name: string; description: string; category: string }[]; current?: string | null };
+    if (!r.ok || !j.voices) throw new ApiError(j.error ?? 'The voice list is unavailable.', 'network');
+    return { voices: j.voices, current: j.current ?? null };
+  }
   async localModels() { if (this.webDemo) throw noServer(); const r = await fetch(`${this.base}/api/local-models`); if (!r.ok) throw new ApiError('Local model check unavailable', 'network'); return r.json() as Promise<{ ollama: { reachable: boolean; baseUrl: string; models: string[]; note: string } }>; }
   /** Downloads an Ollama model through the NEXUS server, reporting real progress. Resolves with Ollama's final result. */
   async pullModel(model: string, onProgress: (p: { status: string; completed?: number; total?: number }) => void, signal?: AbortSignal): Promise<{ ok: boolean; message: string }> {

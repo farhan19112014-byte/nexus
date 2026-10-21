@@ -1,22 +1,22 @@
 # NEXUS — Release readiness & acceptance report
 
-Generated 2026-10-20T18:21:17.991Z by `npm run report` from actual command results. Do not edit by hand.
+Generated 2026-10-21T08:16:53.943Z by `npm run report` from actual command results. Do not edit by hand.
 
 ## Summary
 
 | | |
 |---|---|
 | Overall | **All checks passed** |
-| typecheck | ✅ pass · 9.0s |
-| build (app + server bundle) | ✅ pass · 12.1s |
-| lint (eslint, 0 warnings) | ✅ pass · 5.6s |
-| unit + integration tests | ✅ pass · 26.5s |
-| end-to-end tests | ✅ pass · 189.6s |
-| desktop app smoke test | ✅ pass · 20.4s |
-| Unit tests | 109/109 passed |
-| Integration tests | 50/50 passed |
+| typecheck | ✅ pass · 9.9s |
+| build (app + server bundle) | ✅ pass · 12.8s |
+| lint (eslint, 0 warnings) | ✅ pass · 6.3s |
+| unit + integration tests | ✅ pass · 26.6s |
+| end-to-end tests | ✅ pass · 190.1s |
+| desktop app smoke test | ✅ pass · 2.8s |
+| Unit tests | 112/112 passed |
+| Integration tests | 52/52 passed |
 | End-to-end checks | 100/100 passed |
-| Assets | 119 verified · 0 implemented but not fully verified · 0 failing · 0 blocked · 0 not done |
+| Assets | 121 verified · 0 implemented but not fully verified · 0 failing · 0 blocked · 0 not done |
 
 **Status meanings.** *verified*: implemented and every test tagged with the asset id passed in this run. *implemented*: code exists but at least one required verification is missing in this run. *failing*: a tagged test failed. Verification uses headless Chromium and mocked external services; see each asset's limitation for what that does not prove.
 
@@ -166,8 +166,8 @@ Generated 2026-10-20T18:21:17.991Z by `npm run report` from actual command resul
 | A93 | Input and Output Validation | ✅ verified | 1/0 | `shared/schema.ts`, `src/security/validation.ts` |  |
 | A94 | Abuse and Resource Limits | ✅ verified | 2/0 | `shared/schema.ts`, `server/app.ts`, `src/animation/engine.ts` |  |
 | A95 | Observability and Diagnostics | ✅ verified | 1/0 | `src/diagnostics/log.ts`, `src/components/StatusPanel.tsx` |  |
-| A96 | Automated Unit Tests | ✅ verified | 109/0 | `src/tests/unit` |  |
-| A97 | Integration Tests | ✅ verified | 50/0 | `src/tests/integration` |  |
+| A96 | Automated Unit Tests | ✅ verified | 112/0 | `src/tests/unit` |  |
+| A97 | Integration Tests | ✅ verified | 52/0 | `src/tests/integration` |  |
 | A98 | End-to-End Tests | ✅ verified | 100/0 | `scripts/e2e.mjs` |  |
 | A99 | Performance and Compatibility | ✅ verified | 5/0 | `scripts/e2e.mjs`, `src/core/characterRuntime.ts` |  |
 | A100 | Release Readiness and Acceptance Report | ✅ verified | 6/0 | `scripts/report.mjs`, `docs/RELEASE_REPORT.md` |  |
@@ -193,13 +193,15 @@ Generated 2026-10-20T18:21:17.991Z by `npm run report` from actual command resul
 | A116 | End-to-end User Journey (spec §23) | ✅ verified | 1/0 | `scripts/e2e.mjs` |  |
 | A117 | One Desktop App (NEXUS.exe) + in-app model download | ✅ verified | 2/0 | `desktop/main.cjs`, `src/components/OllamaDownload.tsx` |  |
 | A118 | Master-prompt Pass: Containment, Icons, Motions, Read-aloud | ✅ verified | 8/0 | `src/components/ErrorBoundary.tsx`, `src/components/Icon.tsx`, `src/animation/builtinMotions.ts` |  |
-| A119 | Robot-first Voice Experience: server TTS/STT, audio lip-sync, PAUSED/RECOVERING | ✅ verified | 26/0 | `src/components/RobotView.tsx`, `src/voice/serverVoice.ts`, `src/voice/router.ts`, `server/speech.ts` |  |
+| A119 | Robot-first Voice Experience: server TTS/STT, audio lip-sync, PAUSED/RECOVERING | ✅ verified | 27/0 | `src/components/RobotView.tsx`, `src/voice/serverVoice.ts`, `src/voice/router.ts`, `server/speech.ts` |  |
+| A120 | Google Gemini brain (official @google/genai SDK) + youthful browser-voice preset | ✅ verified | 3/0 | `server/providers/gemini.ts`, `server/config.ts`, `src/voice/tts.ts`, `src/components/SettingsPanel.tsx` |  |
+| A121 | ElevenLabs voice: /api/speech, account voice picker, no silent voice substitution | ✅ verified | 2/0 | `server/speech.ts`, `server/app.ts`, `src/voice/router.ts`, `src/components/SettingsPanel.tsx` |  |
 | A113 | Compact Prompt for Small Local Models | ✅ verified | 2/0 | `server/prompts/system.ts`, `server/brainService.ts` |  |
 
 ## Laptop & desktop app
 
 - Laptop layouts (1024–1536 px wide, 640–800 px tall, including browser-bar heights such as 1366×657) are checked by the end-to-end suite (asset A90 rows above).
-- Desktop app smoke test (linux-x64): ✅ — `{"ok":true,"title":"NEXUS — your 2D robot companion","nodeAccess":false,"ms":434,"url":"http://localhost:18787","provider":"demo","reused":false,"pages":["Robot","Home page","About","Privacy","Set up again (name, AI brain, theme)…"],"home":true,"back":true}`
+- Desktop app smoke test (linux-x64): ✅ — `{"ok":true,"title":"NEXUS — robot workspace","nodeAccess":false,"ms":308,"url":"http://localhost:18787","provider":"demo","reused":false,"pages":["Robot","Home page","About","Privacy","Set up again (name, AI brain, theme)…"],"home":true,"back":true}`
 - Not verifiable here: the Windows installer (`npm run dist:win`) and the `.bat` start scripts were not run on Windows by this report. Voice input is unavailable inside the desktop app (Electron ships no speech-to-text service); the app says so and voice works in Chrome/Edge.
 
 ## Configuration requirements

@@ -251,7 +251,7 @@ export class Companion {
     this.expressions.setBaseline(s.defaultExpression);
     applyTheme(s.theme);
     this.expressions.allowPlayful = s.playfulReactions && !s.quietMode;
-    this.tts.rate = s.speechRate; this.tts.voiceURI = s.voiceURI; this.voiceOut?.configure(!!this.snap.caps?.speech?.tts.configured, s.voiceEngine); this.voiceIn?.configure(!!this.snap.caps?.speech?.stt.configured, s.voiceEngine);
+    this.tts.rate = s.speechRate; this.tts.voiceURI = s.voiceURI; this.tts.character = s.voiceCharacter; if (this.voiceOut) this.voiceOut.allowFallback = s.voiceFallback; this.voiceOut?.configure(!!this.snap.caps?.speech?.tts.configured, s.voiceEngine); this.voiceIn?.configure(!!this.snap.caps?.speech?.stt.configured, s.voiceEngine);
     this.diagnostics.includeContent = s.diagnosticsIncludeContent;
   }
   async refreshStatus() { const caps = await this.d.api.status(); this.set({ caps }); this.configureVoice(); this.refreshCaps(); return caps; }

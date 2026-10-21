@@ -11,7 +11,7 @@ import type { ListenCallbacks } from './recognition';
 import type { TTSHooks } from './tts';
 
 export interface SpeechOut {
-  readonly supported: boolean; readonly speaking: boolean; hooks: TTSHooks; rate: number; voiceURI: string | null; boundaryEvents: boolean;
+  readonly supported: boolean; readonly speaking: boolean; hooks: TTSHooks; rate: number; voiceURI: string | null; boundaryEvents: boolean; character?: 'cute' | 'natural';
   enqueue(text: string, style: import('../../shared/schema').SpeakingStyle): void; stop(): void; voices(): SpeechSynthesisVoice[];
   pause?(): void; resume?(): void;
   /** how the mouth is driven right now (shown in Status) */
@@ -42,7 +42,10 @@ export class ServerSpeechOutput implements SpeechOut {
 
   enqueue(text: string) {
     const t = text.trim(); if (!t || !this.supported) return;
-    for (const chunk of splitForTts(t)) this.queue.push({ text: chunk, audio: this.fetchAudio(chunk) });  // prefetch keeps order and removes gaps
+    for (const chunk of splitForTts(t)) {
+      const audio = this.fetchAudio(chunk); audio.catch(() => {});   // a prefetch dropped by stop() must not become an unhandled rejection
+      this.queue.push({ text: chunk, audio });                        // prefetch keeps order and removes gaps
+    }
     if (!this.busy) void this.next(this.gen);
   }
   private async fetchAudio(text: string): Promise<Blob> {

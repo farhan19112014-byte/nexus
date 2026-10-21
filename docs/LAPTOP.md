@@ -49,6 +49,15 @@ Honest expectations: small local models are less capable than large hosted ones,
 the model and can take up to a minute (NEXUS waits up to 3 minutes for local models), and replies on a laptop without a
 dedicated GPU can take several seconds. Conversation text stays on your computer.
 
+## Google Gemini brain + ElevenLabs voice
+
+Step-by-step (keys, `.env`, voice choice, troubleshooting): **[AI_BACKEND.md](AI_BACKEND.md)**. In the app: **Settings → Model →
+Google Gemini** (paste the key, Save, Test connection) and **Settings → Voice → Speech services → ElevenLabs voice** (paste the
+key, Save, *Load my voices*, pick one, Save, Test voice). Keys stay in NEXUS's background process.
+
+Without a voice service, **Settings → Voice → Voice character → Youthful** (the default) makes this computer's voice a
+little brighter and, with the voice on *Automatic*, prefers a young-adult voice such as Microsoft Jenny or Aria.
+
 ## Voice
 
 NEXUS opens in the **robot view**: press the big microphone and talk; press it again (or just stop talking) to finish.

@@ -100,9 +100,9 @@ describe('Category A — character identity', () => {
     expect(html({ environment: 'lab', effects: true })).toContain('data-part="ambient"');
     expect(html({ environment: 'lab', effects: false })).not.toContain('data-part="ambient"');
   });
-  it('[A10] asset manifest: 119 unique assets (100 original + 19 website/identity/companion/desktop/voice) with required fields and existing paths', () => {
-    expect(ASSETS).toHaveLength(119);
-    expect(new Set(ASSETS.map((a) => a.id)).size).toBe(119);
+  it('[A10] asset manifest: 121 unique assets (100 original + 21 website/identity/companion/desktop/voice/gemini/elevenlabs) with required fields and existing paths', () => {
+    expect(ASSETS).toHaveLength(121);
+    expect(new Set(ASSETS.map((a) => a.id)).size).toBe(121);
     for (const a of ASSETS) {
       for (const k of ['id', 'name', 'category', 'type', 'version', 'compatibility', 'source', 'license', 'validation'] as const) expect(a[k], `${a.id}.${k}`).toBeTruthy();
       expect(a.tests.length, a.id).toBeGreaterThan(0);

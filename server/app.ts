@@ -6,9 +6,11 @@
  *   GET  /api/config          secret-free configuration view
  *   PUT  /api/config          update runtime config (loopback only; secrets write-only)
  *   POST /api/config/test     connection test against the configured provider
+ *   POST /api/speech          { text } → audio from the configured voice (ElevenLabs / Gemini / OpenAI-compatible); alias /api/tts
+ *   GET  /api/speech/voices   ElevenLabs voices on the account (loopback only)
  * Logs contain method, path, status and duration only — never message content or secrets.
  */
-import { SpeechError, sttStatus, synthesize, transcribe, ttsStatus } from './speech';
+import { listElevenVoices, SpeechError, sttStatus, synthesize, transcribe, ttsStatus } from './speech';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -18,6 +20,7 @@ import { BrainService } from './brainService';
 import { ProviderError, type LLMProvider } from './providers/types';
 import { OpenAICompatibleProvider } from './providers/openai';
 import { AnthropicProvider } from './providers/anthropic';
+import { GeminiProvider } from './providers/gemini';
 import { DemoProvider } from './providers/demo';
 import { makeResearch, type ResearchProvider } from './research';
 import { PROMPT_VERSION } from './prompts/system';
@@ -25,6 +28,7 @@ import { PROMPT_VERSION } from './prompts/system';
 export function makeProvider(c: ServerConfig): LLMProvider {
   if (c.provider === 'openai') return new OpenAICompatibleProvider(c.openai);
   if (c.provider === 'anthropic') return new AnthropicProvider(c.anthropic);
+  if (c.provider === 'gemini') return new GeminiProvider(c.gemini);
   return new DemoProvider();
 }
 
@@ -38,6 +42,18 @@ function rateLimiter(perMin: number) {
   };
 }
 const isLoopback = (req: Request) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '');
+
+/**
+ * Also accepts the simple form { message, history? } (history = earlier { role, content } turns of this session)
+ * and turns it into the full request; anything else is validated as-is by ChatRequestSchema.
+ */
+export function simpleChat(body: unknown): unknown {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return body;
+  const b = body as Record<string, unknown>;
+  if (typeof b.message !== 'string' || 'messages' in b) return body;
+  const { message, history, ...rest } = b;
+  return { ...rest, messages: [...(Array.isArray(history) ? history : []), { role: 'user', content: message.trim() }] };
+}
 
 export interface AppOptions { serveDist?: boolean; distDir?: string; log?: (line: string) => void; persistRuntime?: boolean; ollamaUrl?: string }
 
@@ -63,7 +79,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
 
   const app = express();
   app.disable('x-powered-by');
-  app.use((req, res, next) => { const t0 = Date.now(); res.on('finish', () => opts.log?.(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - t0}ms`)); next(); });
+  app.use((req, res, next) => { const t0 = Date.now(); res.on('finish', () => opts.log?.(`${req.method} ${req.originalUrl.split("?")[0]} ${res.statusCode} ${Date.now() - t0}ms`)); next(); });
   const extraHosts = (process.env.ALLOWED_HOSTS ?? '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
   app.use('/api', (req, res, next) => {
     if (!hostAllowed(req.headers.host, extraHosts)) { res.status(403).json({ error: 'Host not allowed', code: 'forbidden_host' }); return; }
@@ -88,7 +104,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
 
   const limit = rateLimiter(cfg.rateLimitPerMin);
   app.post('/api/chat', limit, async (req, res) => {
-    const parsed = ChatRequestSchema.safeParse(req.body);
+    const parsed = ChatRequestSchema.safeParse(simpleChat(req.body));
     if (!parsed.success) { res.status(400).json({ error: 'Invalid request', code: 'invalid_request', issues: parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`) }); return; }
     const ctl = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ctl.abort('client'); });
@@ -130,7 +146,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     if (!isLoopback(req)) { res.status(403).json({ error: 'Configuration can only be changed from this computer (loopback).' }); return; }
     const p = RuntimeConfigSchema.safeParse(req.body);
     if (!p.success) { res.status(400).json({ error: 'Invalid configuration', issues: p.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`) }); return; }
-    runtime = { ...runtime, ...p.data, openai: { ...runtime.openai, ...p.data.openai }, anthropic: { ...runtime.anthropic, ...p.data.anthropic }, research: { ...runtime.research, ...p.data.research }, speech: { ...runtime.speech, ...p.data.speech } };
+    runtime = { ...runtime, ...p.data, openai: { ...runtime.openai, ...p.data.openai }, anthropic: { ...runtime.anthropic, ...p.data.anthropic }, gemini: { ...runtime.gemini, ...p.data.gemini }, research: { ...runtime.research, ...p.data.research }, speech: { ...runtime.speech, ...p.data.speech } };
     if (opts.persistRuntime !== false) { try { saveRuntime(cfg.runtimeConfigPath, runtime); } catch (e) { res.status(500).json({ error: `Could not write config: ${(e as Error).message}` }); return; } }
     rebuild();
     res.json({ ok: true, config: publicConfig(cfg), status: caps() });
@@ -149,7 +165,8 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
 
   /** Text-to-speech through the configured speech service (spec §12). Returns audio bytes; errors are JSON with a stable code. */
   const speechLimit = rateLimiter(Math.max(60, cfg.rateLimitPerMin * 4));
-  app.post('/api/tts', speechLimit, async (req, res) => {
+  /** POST /api/speech (and the older /api/tts): { text } → audio from the configured voice service. No other voice is substituted on failure. */
+  app.post(['/api/speech', '/api/tts'], speechLimit, async (req, res) => {
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
     if (!text || text.length > 1200) { res.status(400).json({ error: 'Text must be 1–1200 characters', code: 'invalid_request' }); return; }
     const ctl = new AbortController(); res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
@@ -162,6 +179,15 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
       if (!res.headersSent && se.code !== 'cancelled') res.status(se.status).json({ error: se.message, code: se.code });
       else if (!res.writableEnded) res.end();
     } finally { clearTimeout(t); }
+  });
+  /** The voices on the configured ElevenLabs account, for the picker in Settings (this computer only). */
+  app.get('/api/speech/voices', speechLimit, async (req, res) => {
+    if (!isLoopback(req)) { res.status(403).json({ error: 'The voice list is available only on this computer.', code: 'forbidden' }); return; }
+    const t = cfg.speech.tts.provider === 'elevenlabs' ? cfg.speech.tts : { ...cfg.speech.tts, provider: 'elevenlabs' as const, baseUrl: cfg.speech.eleven.baseUrl, apiKey: cfg.speech.eleven.apiKey };
+    const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 15000);
+    try { res.json({ provider: 'elevenlabs', current: cfg.speech.tts.provider === 'elevenlabs' ? cfg.speech.tts.voice : null, voices: await listElevenVoices(t, ctl.signal) }); }
+    catch (e) { const se = e instanceof SpeechError ? e : new SpeechError('Could not load the voice list.', 500, 'internal'); res.status(se.status === 499 ? 504 : se.status).json({ error: se.message, code: se.code }); }
+    finally { clearTimeout(tm); }
   });
   /** Transcribes one recorded utterance (raw audio body, ≤ 8 MB). The audio is forwarded and not stored. */
   app.post('/api/transcribe', speechLimit, express.raw({ type: ['audio/*', 'application/octet-stream'], limit: '8mb' }), async (req, res) => {

@@ -8,7 +8,7 @@ NEXUS is a voice-first AI companion. The interface **is** an original, fully art
 speaks and gestures in step with what the AI is actually doing. Conversation comes from a real language model through
 a small local server that keeps every API key out of the browser.
 
-- **Real LLM brain** — OpenAI-compatible APIs (OpenAI, OpenRouter, Groq, LM Studio…), Anthropic, or a free model on your own
+- **Real LLM brain** — Google Gemini (official SDK) with an ElevenLabs voice, OpenAI-compatible APIs (OpenAI, OpenRouter, Groq, LM Studio…), Anthropic, or a free model on your own
   computer with Ollama (downloadable from inside the app). A clearly labelled demo brain works with no setup — it is not an AI.
 - **Expressive robot** — SVG rig with separately animated head, eyes, brows, mouth, torso, arms, hands, legs and feet;
   19 expressions and 40+ motions run by one animation engine with priorities, blending and safe interruption.
@@ -32,7 +32,7 @@ npm start            # → http://localhost:8787  (opens the home page; the robo
 ```
 
 Or run it as a desktop app: `npm run desktop`. Build a single-file Windows app with `npm run dist:win` (→ `release/NEXUS.exe`).
-To use a real AI, open **Settings → Model** in the app (or copy `.env.example` to `.env`). Windows users can also
+**Gemini + ElevenLabs:** copy `.env.example` to `.env`, add `GEMINI_API_KEY`, `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID`, then `npm start` — step by step for Windows in **[docs/AI_BACKEND.md](docs/AI_BACKEND.md)**. Other providers: **Settings → Model** in the app. Windows users can also
 double-click `start-nexus.bat`. More: **[docs/LAPTOP.md](docs/LAPTOP.md)** and **[docs/SETUP.md](docs/SETUP.md)**.
 
 ## Development
@@ -71,6 +71,7 @@ preferences in your browser. The language model never changes.
 
 ## Docs
 
+- [docs/AI_BACKEND.md](docs/AI_BACKEND.md) — Gemini brain + ElevenLabs voice: keys, Windows setup, API, troubleshooting
 - [docs/LAPTOP.md](docs/LAPTOP.md) — the NEXUS desktop app, free offline AI (Ollama), keyboard shortcuts
 - [docs/SETUP.md](docs/SETUP.md) — install, providers, research, voice, commands
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — modules and data flow
@@ -84,7 +85,7 @@ preferences in your browser. The language model never changes.
 | Path | |
 |---|---|
 | `shared/` | rig channels, schemas for every boundary, stream parser, demo brain |
-| `server/` | Express API, providers (demo / OpenAI-compatible / Anthropic), research adapters, versioned prompts, config; `start.ts` is shared by the CLI and the desktop app |
+| `server/` | Express API, providers (demo / Gemini / OpenAI-compatible / Anthropic), research adapters, versioned prompts, config; `start.ts` is shared by the CLI and the desktop app |
 | `desktop/` | Electron main process for the desktop app (packaging config in `package.json` → `build`) |
 | `build/` | app icon (SVG source, PNG, ICO) |
 | `start-nexus.*`, `setup-offline-ai.*`, `rebuild-nexus.bat` | developer scripts for running from source in a browser (not needed with `NEXUS.exe`) |

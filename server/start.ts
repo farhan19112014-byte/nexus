@@ -5,7 +5,7 @@
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { spawn } from 'node:child_process';
-import { loadDotEnv, readConfig } from './config';
+import { applyRuntime, configWarnings, loadDotEnv, loadRuntime, readConfig } from './config';
 import { createApp } from './app';
 
 export interface StartOptions {
@@ -18,7 +18,7 @@ export interface StartOptions {
   runtimeConfigPath?: string;
   log?: (line: string) => void;
 }
-export interface Started { url: string; port: number; server: Server; close: () => Promise<void>; reused?: false }
+export interface Started { url: string; port: number; server: Server; close: () => Promise<void>; reused?: false; warnings: string[] }
 export interface Reused { url: string; port: number; reused: true }
 
 /** Is a NEXUS server already answering on this port? (e.g. the user double-clicked the start script twice) */
@@ -51,7 +51,7 @@ export async function startServer(o: StartOptions = {}): Promise<Started | Reuse
     try {
       const server = await listen(app, port);
       const actual = (server.address() as AddressInfo).port;
-      return { url: `http://localhost:${actual}`, port: actual, server, close: () => new Promise((r) => server.close(() => r())) };
+      return { url: `http://localhost:${actual}`, port: actual, server, warnings: configWarnings(cfg.allowRuntimeConfig ? applyRuntime(cfg, loadRuntime(cfg.runtimeConfigPath)) : cfg), close: () => new Promise((r) => server.close(() => r())) };
     } catch (e) {
       lastErr = e;
       if ((e as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw e;

@@ -9,10 +9,13 @@ import { api, companion, memory } from '../core/runtime';
 import { useSnapshot, useStore } from './hooks';
 import type { Settings } from '../memory/store';
 
-interface PublicCfg { provider: string; allowRuntimeConfig: boolean; openai: { baseUrl: string; model: string; jsonMode: boolean; apiKey: { set: boolean; hint: string | null } }; anthropic: { model: string; apiKey: { set: boolean; hint: string | null } }; research: { provider: string; searxngUrl: string; tavilyKey: { set: boolean; hint: string | null } } }
+/** Gemini's prebuilt voices that suit a small robot (mirrors server/speech.ts; Google's docs list them all). */
+const GEMINI_VOICES: Record<string, string> = { Leda: 'Youthful', Puck: 'Upbeat', Zephyr: 'Bright', Autonoe: 'Bright', Laomedeia: 'Upbeat', Achird: 'Friendly', Sadachbia: 'Lively', Aoede: 'Breezy', Achernar: 'Soft', Vindemiatrix: 'Gentle', Sulafat: 'Warm', Fenrir: 'Excitable', Kore: 'Firm', Charon: 'Informative', Despina: 'Smooth', Callirrhoe: 'Easy-going' };
+
+interface PublicCfg { provider: string; allowRuntimeConfig: boolean; openai: { baseUrl: string; model: string; jsonMode: boolean; apiKey: { set: boolean; hint: string | null } }; anthropic: { model: string; apiKey: { set: boolean; hint: string | null } }; gemini?: { model: string; apiKey: { set: boolean; hint: string | null } }; research: { provider: string; searxngUrl: string; tavilyKey: { set: boolean; hint: string | null } } }
 
 function WebDemoNote({ what }: { what: string }) {
-  return <div className="card warn" data-testid="web-demo-settings">{what} needs the NEXUS server, and this web demo has none — replies come from the scripted demo brain (not an AI). To connect a real model (OpenAI-compatible, Anthropic or free Ollama), run NEXUS on your computer: <a className="text-link" href={REPO_URL}>{REPO_URL.replace('https://', '')}</a>.</div>;
+  return <div className="card warn" data-testid="web-demo-settings">{what} needs the NEXUS server, and this web demo has none — replies come from the scripted demo brain (not an AI). To connect a real model (Google Gemini, OpenAI-compatible, Anthropic or free Ollama), run NEXUS on your computer: <a className="text-link" href={REPO_URL}>{REPO_URL.replace('https://', '')}</a>.</div>;
 }
 
 function ModelPanel() {
@@ -22,17 +25,17 @@ function ModelPanel() {
 function ModelPanelInner() {
   const snap = useSnapshot();
   const [cfg, setCfg] = useState<PublicCfg | null>(null); const [err, setErr] = useState('');
-  const [form, setForm] = useState({ provider: 'demo', baseUrl: '', model: '', key: '', aModel: '', aKey: '', research: 'none', searx: '', tavily: '' });
+  const [form, setForm] = useState({ provider: 'demo', baseUrl: '', model: '', key: '', aModel: '', aKey: '', gModel: '', gKey: '', research: 'none', searx: '', tavily: '' });
   const [test, setTest] = useState<string>('');
   const [olla, setOlla] = useState<{ reachable: boolean; baseUrl: string; models: string[]; note: string } | null>(null);
   const checkOllama = () => api.localModels().then((r) => setOlla(r.ollama)).catch(() => setOlla(null));
   useEffect(() => { void checkOllama(); }, []);
-  const load = () => api.getConfig().then((c: PublicCfg) => { setCfg(c); setForm((f) => ({ ...f, provider: c.provider, baseUrl: c.openai.baseUrl, model: c.openai.model, aModel: c.anthropic.model, research: c.research.provider, searx: c.research.searxngUrl, key: '', aKey: '', tavily: '' })); }).catch(() => setErr('The API server is not reachable, so the model cannot be configured from here.'));
+  const load = () => api.getConfig().then((c: PublicCfg) => { setCfg(c); setForm((f) => ({ ...f, provider: c.provider, baseUrl: c.openai.baseUrl, model: c.openai.model, aModel: c.anthropic.model, gModel: c.gemini?.model ?? '', research: c.research.provider, searx: c.research.searxngUrl, key: '', aKey: '', gKey: '', tavily: '' })); }).catch(() => setErr('The API server is not reachable, so the model cannot be configured from here.'));
   useEffect(() => { void load(); }, []);
   const save = async () => {
     setErr(''); setTest('');
     try {
-      const body: Record<string, unknown> = { provider: form.provider, openai: { baseUrl: form.baseUrl || undefined, model: form.model || undefined, ...(form.key ? { apiKey: form.key } : {}) }, anthropic: { model: form.aModel || undefined, ...(form.aKey ? { apiKey: form.aKey } : {}) }, research: { provider: form.research, searxngUrl: form.searx || undefined, ...(form.tavily ? { tavilyKey: form.tavily } : {}) } };
+      const body: Record<string, unknown> = { provider: form.provider, openai: { baseUrl: form.baseUrl || undefined, model: form.model || undefined, ...(form.key ? { apiKey: form.key } : {}) }, anthropic: { model: form.aModel || undefined, ...(form.aKey ? { apiKey: form.aKey } : {}) }, gemini: { model: form.gModel || undefined, ...(form.gKey ? { apiKey: form.gKey } : {}) }, research: { provider: form.research, searxngUrl: form.searx || undefined, ...(form.tavily ? { tavilyKey: form.tavily } : {}) } };
       await api.putConfig(body); await load(); await companion.refreshStatus(); setTest('Saved. Secrets are stored only on the server and are never shown again.');
     } catch (e) { setErr((e as Error).message); }
   };
@@ -55,11 +58,16 @@ function ModelPanelInner() {
         {olla?.reachable && olla.models.length > 0 && <div className="muted small">Pick a model, then press Save and Test connection.</div>}
         <OllamaDownload reachable={!!olla?.reachable} onDone={(m) => { void checkOllama(); if (olla) setForm((f) => ({ ...f, provider: 'openai', baseUrl: olla.baseUrl, model: m, key: '' })); }} />
       </div>
-      <label className="field">Provider<select {...F('provider')} disabled={!cfg.allowRuntimeConfig}><option value="demo">Demo brain (no credentials, not an LLM)</option><option value="openai">OpenAI-compatible (OpenAI, Ollama, OpenRouter, Groq…)</option><option value="anthropic">Anthropic</option></select></label>
+      <label className="field">Provider<select {...F('provider')} disabled={!cfg.allowRuntimeConfig}><option value="demo">Demo brain (no credentials, not an LLM)</option><option value="openai">OpenAI-compatible (OpenAI, Ollama, OpenRouter, Groq…)</option><option value="gemini">Google Gemini</option><option value="anthropic">Anthropic</option></select></label>
       {form.provider === 'openai' && <>
         <label className="field">Base URL<input {...F('baseUrl')} placeholder="https://api.openai.com/v1 or http://localhost:11434/v1" /></label>
         <label className="field">Model<input {...F('model')} placeholder="model id, e.g. llama3.1:8b for Ollama" /></label>
         <label className="field">API key {cfg.openai.apiKey.set ? <span className="muted">(set {cfg.openai.apiKey.hint} — leave blank to keep)</span> : <span className="muted">(not set; not needed for local servers)</span>}<input type="password" autoComplete="off" {...F('key')} /></label>
+      </>}
+      {form.provider === 'gemini' && <>
+        <label className="field">Gemini model<input {...F('gModel')} placeholder="gemini-3.8-flash" /></label>
+        <label className="field">Gemini API key {cfg.gemini?.apiKey.set ? <span className="muted">(set {cfg.gemini.apiKey.hint} — leave blank to keep)</span> : <span className="muted">(not set — create one at aistudio.google.com/apikey)</span>}<input type="password" autoComplete="off" {...F('gKey')} /></label>
+        <div className="muted small">The same key also gives NEXUS the Gemini voice (Settings → Voice → Speech services).</div>
       </>}
       {form.provider === 'anthropic' && <>
         <label className="field">Model<input {...F('aModel')} placeholder="a current model id from Anthropic's docs" /></label>
@@ -76,7 +84,25 @@ function ModelPanelInner() {
   );
 }
 
-interface SpeechPub { tts: { provider: string; baseUrl: string; model: string; voice: string; apiKey: { set: boolean; hint: string | null }; configured: boolean; note: string }; stt: { provider: string; baseUrl: string; model: string; language: string; apiKey: { set: boolean; hint: string | null }; configured: boolean; note: string } }
+interface SpeechPub { tts: { provider: string; baseUrl: string; model: string; voice: string; style?: string; apiKey: { set: boolean; hint: string | null }; configured: boolean; note: string }; stt: { provider: string; baseUrl: string; model: string; language: string; apiKey: { set: boolean; hint: string | null }; configured: boolean; note: string } }
+
+type SpeechForm = { ttsProvider: string; ttsBaseUrl: string; ttsModel: string; ttsVoice: string; ttsApiKey: string; ttsStyle: string; sttProvider: string; sttBaseUrl: string; sttModel: string; sttApiKey: string; sttLanguage: string };
+/** ElevenLabs: API key (write-only), a voice picked from the account's voices, and the model id. */
+function ElevenFields({ f, setF, allowed, keySet, keyHint, saved }: { f: SpeechForm; setF: (x: SpeechForm) => void; allowed: boolean; keySet: boolean; keyHint: string | null; saved: boolean }) {
+  const [list, setList] = useState<{ id: string; name: string; description: string; category: string }[] | null>(null);
+  const [msg, setMsg] = useState('');
+  const load = async () => { setMsg('Loading your ElevenLabs voices…'); try { const r = await api.speechVoices(); setList(r.voices); setMsg(r.voices.length ? '' : 'This ElevenLabs account has no voices yet — add one in ElevenLabs (My Voices / Voice Library), then load again.'); } catch (e) { setList(null); setMsg(`✗ ${(e as Error).message}`); } };
+  const known = list?.some((v) => v.id === f.ttsVoice);
+  return <>
+    <label className="field">ElevenLabs API key {keySet ? <span className="muted">(set {keyHint} — leave blank to keep)</span> : <span className="muted">(not set — or put ELEVENLABS_API_KEY in .env)</span>}<input type="password" autoComplete="off" value={f.ttsApiKey} disabled={!allowed} onChange={(e) => setF({ ...f, ttsApiKey: e.target.value })} /></label>
+    <div className="row wrap"><button type="button" onClick={() => void load()} disabled={!saved}>Load my voices</button>{!saved && <span className="muted small">Save first (with the key), then load the voice list.</span>}</div>
+    {list && list.length > 0 && <label className="field">Voice<select value={known ? f.ttsVoice : ''} disabled={!allowed} onChange={(e) => setF({ ...f, ttsVoice: e.target.value })}><option value="">Choose a voice…</option>{list.map((v) => <option key={v.id} value={v.id}>{v.name}{v.description ? ` — ${v.description}` : ''}</option>)}</select></label>}
+    <label className="field">Voice id<input value={f.ttsVoice} disabled={!allowed} onChange={(e) => setF({ ...f, ttsVoice: e.target.value.trim() })} placeholder="from the list above, or ELEVENLABS_VOICE_ID" /></label>
+    <label className="field">Model<input value={f.ttsModel} disabled={!allowed} onChange={(e) => setF({ ...f, ttsModel: e.target.value.trim() })} placeholder="eleven_multilingual_v2" /></label>
+    {msg && <div className="small" role="status">{msg}</div>}
+    <div className="muted small">Tip: in the ElevenLabs Voice Library, search for a young, warm, bright conversational voice and add it to My Voices; it then appears here. ElevenLabs plans have monthly character limits, and some library voices need a paid plan for API use.</div>
+  </>;
+}
 
 /** Optional server speech services (spec §11–§13). Keys are write-only and stay on the NEXUS server. */
 function SpeechServicePanel() {
@@ -86,27 +112,39 @@ function SpeechServicePanel() {
 function SpeechServicePanelInner() {
   const snap = useSnapshot();
   const [pub, setPub] = useState<SpeechPub | null>(null); const [allowed, setAllowed] = useState(false);
-  const [f, setF] = useState({ ttsProvider: 'none', ttsBaseUrl: '', ttsModel: '', ttsVoice: '', ttsApiKey: '', sttProvider: 'none', sttBaseUrl: '', sttModel: '', sttApiKey: '', sttLanguage: '' });
+  const [f, setF] = useState<SpeechForm>({ ttsProvider: 'none', ttsBaseUrl: '', ttsModel: '', ttsVoice: '', ttsApiKey: '', ttsStyle: '', sttProvider: 'none', sttBaseUrl: '', sttModel: '', sttApiKey: '', sttLanguage: '' });
   const [msg, setMsg] = useState('');
   const load = () => api.getConfig().then((c: { allowRuntimeConfig: boolean; speech?: SpeechPub }) => {
     setAllowed(c.allowRuntimeConfig); if (!c.speech) return; setPub(c.speech);
-    setF((x) => ({ ...x, ttsProvider: c.speech!.tts.provider, ttsBaseUrl: c.speech!.tts.baseUrl, ttsModel: c.speech!.tts.model, ttsVoice: c.speech!.tts.voice, sttProvider: c.speech!.stt.provider, sttBaseUrl: c.speech!.stt.baseUrl, sttModel: c.speech!.stt.model, sttLanguage: c.speech!.stt.language, ttsApiKey: '', sttApiKey: '' }));
+    setF((x) => ({ ...x, ttsProvider: c.speech!.tts.provider, ttsBaseUrl: c.speech!.tts.baseUrl, ttsModel: c.speech!.tts.model, ttsVoice: c.speech!.tts.voice, ttsStyle: c.speech!.tts.style ?? '', sttProvider: c.speech!.stt.provider, sttBaseUrl: c.speech!.stt.baseUrl, sttModel: c.speech!.stt.model, sttLanguage: c.speech!.stt.language, ttsApiKey: '', sttApiKey: '' }));
   }).catch(() => setPub(null));
   useEffect(() => { void load(); }, []);
   if (!pub) return <p className="muted small">Server speech settings are unavailable (the NEXUS server did not answer).</p>;
   const F = (k: keyof typeof f) => ({ value: f[k], disabled: !allowed, onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value }) });
   const save = async () => {
     setMsg('');
-    const clean = Object.fromEntries(Object.entries(f).filter(([, v]) => v !== ''));
+    const switching = pub && f.ttsProvider !== pub.tts.provider;
+    // when switching services, the old service's URL/model/style must not carry over (ElevenLabs and Gemini fill in their own
+    // defaults); a voice picked for ElevenLabs in this form is kept
+    const keepVoice = f.ttsProvider === 'elevenlabs';
+    const clean = Object.fromEntries(Object.entries(f).filter(([k, v]) => v !== '' && !(switching && (/^tts(BaseUrl|Model|Style)$/.test(k) || (k === 'ttsVoice' && !keepVoice)))));
     try { await api.putConfig({ speech: clean }); await load(); await companion.refreshStatus(); setMsg('Saved. Keys are kept on the NEXUS server and never shown again.'); } catch (e) { setMsg(`✗ ${(e as Error).message}`); }
   };
   const test = () => { setMsg(companion.readAloud(`Hello, I am ${memory.settings.robotName}. This is how my voice sounds.`) ? `Speaking with the ${companion.voiceOut?.engineName ?? 'browser'} voice…` : 'No voice is available.'); };
   return (
     <div className="card speech-svc" data-testid="speech-service">
-      <div><b>Speech services (optional)</b> — a speech service gives NEXUS a generated voice whose mouth follows the real audio, and voice input that also works in the desktop app. Any OpenAI-compatible audio API works (hosted or on this computer).</div>
+      <div><b>Speech services (optional)</b> — a speech service gives NEXUS a generated voice whose mouth follows the real audio, and voice input that also works in the desktop app. ElevenLabs, Google Gemini or any OpenAI-compatible audio API works.</div>
       <div className="small" role="status">Voice: {snap.caps?.speech?.tts.configured ? '✓ ' : '— '}{pub.tts.note}<br />Voice input: {snap.caps?.speech?.stt.configured ? '✓ ' : '— '}{pub.stt.note}</div>
       <fieldset className="field"><legend>Spoken replies (text-to-speech)</legend>
-        <label className="field">Service<select {...F('ttsProvider')}><option value="none">Off — use this computer's voices</option><option value="openai">OpenAI-compatible speech API</option></select></label>
+        <label className="field">Service<select {...F('ttsProvider')}><option value="none">Off — use this computer's voices</option><option value="elevenlabs">ElevenLabs voice</option><option value="gemini">Google Gemini voice</option><option value="openai">OpenAI-compatible speech API</option></select></label>
+        {f.ttsProvider === 'elevenlabs' && <ElevenFields f={f} setF={setF} allowed={allowed} keySet={pub.tts.provider === 'elevenlabs' && pub.tts.apiKey.set} keyHint={pub.tts.apiKey.hint} saved={pub.tts.provider === 'elevenlabs'} />}
+        {f.ttsProvider === 'gemini' && pub.tts.provider === 'gemini' && <>
+          <label className="field">Gemini voice<select {...F('ttsVoice')}>{Object.entries(GEMINI_VOICES).map(([n, d]) => <option key={n} value={n}>{n} — {d.toLowerCase()}</option>)}</select></label>
+          <label className="field">Speaking style<input {...F('ttsStyle')} maxLength={200} placeholder="e.g. bright, cheerful and cute" /></label>
+          <label className="field">Speech model<input {...F('ttsModel')} placeholder="gemini-3.8-flash-tts" /></label>
+          <label className="field">API key {pub.tts.apiKey.set ? <span className="muted">(set {pub.tts.apiKey.hint} — leave blank to keep)</span> : <span className="muted">(blank uses the Gemini key from Settings → Model)</span>}<input type="password" autoComplete="off" {...F('ttsApiKey')} /></label>
+        </>}
+        {f.ttsProvider === 'gemini' && pub.tts.provider !== 'gemini' && <div className="muted small">Press Save to switch to the Gemini voice: it starts as “Leda” (youthful) with a cheerful, cute style, and uses your Gemini key from Settings → Model.</div>}
         {f.ttsProvider === 'openai' && <>
           <label className="field">Base URL<input {...F('ttsBaseUrl')} placeholder="https://api.openai.com/v1 or a local speech server" /></label>
           <label className="field">Speech model<input {...F('ttsModel')} placeholder="a speech model id from your provider" /></label>
@@ -183,9 +221,11 @@ export default function SettingsPanel() {
       <h4>Voice</h4>
       <T k="voiceOutput" label={`Spoken replies${companion.tts.supported ? '' : ' (unsupported in this browser)'}`} disabled={!companion.tts.supported} />
       <label className="field">Voice<select value={s.voiceURI ?? ''} onChange={(e) => up({ voiceURI: e.target.value || null })} disabled={!voices.length}><option value="">Automatic</option>{voices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>)}</select></label>
+      <label className="field">Voice character<select value={s.voiceCharacter} onChange={(e) => up({ voiceCharacter: e.target.value as Settings['voiceCharacter'] })}><option value="cute">Youthful — a little brighter (picks a young-adult voice when “Automatic”)</option><option value="natural">Natural — the voice as it is</option></select></label>
       <label className="field">Speech rate ×{s.speechRate.toFixed(2)}<input type="range" min={0.6} max={1.6} step={0.05} value={s.speechRate} onChange={(e) => up({ speechRate: Number(e.target.value) })} /></label>
       <label className="field">Voice engine<select value={s.voiceEngine} onChange={(e) => up({ voiceEngine: e.target.value as Settings['voiceEngine'] })}><option value="auto">Automatic — the speech service when configured, else this computer</option><option value="server">Speech service (when configured)</option><option value="browser">This computer / browser only</option></select></label>
       <div className="muted small" data-testid="voice-engines">Replies use: {companion.voiceOut?.engineName ?? 'browser'} voice · mouth: {companion.voiceOut?.lipSync ?? 'n/a'} · voice input: {companion.voiceIn?.kind ?? 'browser'}</div>
+      <T k="voiceFallback" label="If the voice service fails, speak with this computer's voice instead (off: the reply stays as text and you are told why)" />
       <T k="speakingMouth" label="Move the robot's mouth while it speaks (follows the audio level with a speech service; otherwise word timing — an approximation, not phoneme lip-sync)" />
       <T k="reviewTranscript" label="Let me review recognised speech before sending" />
       <div className="muted small">Microphone: {snap.mic}. {companion.voiceIn?.kind === 'server' ? 'Recognition is done by the configured transcription service.' : 'Recognition is provided by your browser; some browsers send audio to their vendor\'s servers.'}</div>

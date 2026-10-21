@@ -5,9 +5,9 @@ const placeholder = (s: string) => !s || /^replace|^your-|^<|^\*+$/i.test(s);
 
 /** Any OpenAI-compatible /chat/completions endpoint (OpenAI, OpenRouter, Groq, Together, Ollama, LM Studio, vLLM…). */
 export class OpenAICompatibleProvider implements LLMProvider {
-  readonly id = 'openai';
+  readonly id: string = 'openai';
   readonly supportsStreaming = true;
-  constructor(private cfg: OpenAIConfig) {}
+  constructor(protected cfg: OpenAIConfig) {}
   get model() { return this.cfg.model || null; }
   private local() { return /localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal/.test(this.cfg.baseUrl); }
   configured() {

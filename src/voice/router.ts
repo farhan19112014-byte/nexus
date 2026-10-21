@@ -1,7 +1,7 @@
 /**
  * Picks the voice engines (spec §11–§12): the server speech service when it is configured, otherwise the browser's
- * engines. A sentence the server voice fails to produce is spoken by the browser voice instead (when there is one),
- * and the user is told once — a failure is never silent and never leaves the mouth moving.
+ * engines. When the configured voice service fails, the user is told once per reply and the reply stays as text — a
+ * different voice is used only if the user turned on the fallback. A failure never leaves the mouth moving.
  */
 import { SpeechInput, type ListenCallbacks } from './recognition';
 import { SpeechOutput, type TTSHooks } from './tts';
@@ -13,13 +13,17 @@ export type VoiceEngine = 'auto' | 'server' | 'browser';
 export class VoiceOutputRouter implements SpeechOut {
   readonly browser: SpeechOut; readonly server: ServerSpeechOutput;
   private serverReady = false; private pref: VoiceEngine = 'auto'; private warned = false;
+  /** speak with this computer's voice when the configured voice service fails (Settings → Voice; off by default) */
+  allowFallback = false;
   private h: TTSHooks = {};
   onNotice: (msg: string) => void = () => {};
   constructor(browser?: SpeechOut, server?: ServerSpeechOutput) {
     this.browser = browser ?? new SpeechOutput(); this.server = server ?? new ServerSpeechOutput();
     this.server.onFailure = (msg, text) => {
-      if (!this.warned) { this.warned = true; this.onNotice(`Server voice failed (${msg})${this.browser.supported ? ' — using this computer\'s voice instead.' : '.'}`); }
-      if (this.browser.supported) this.browser.enqueue(text, 'warm');
+      const fallback = this.allowFallback && this.browser.supported;
+      if (!this.warned) { this.warned = true; this.onNotice(fallback ? `The voice service failed (${msg}) — using this computer's voice instead, as set in Settings → Voice.` : `The voice service failed (${msg}). The reply is shown as text; NEXUS did not switch to a different voice.`); }
+      if (fallback) this.browser.enqueue(text, 'warm');
+      else this.server.stop();                                   // the rest of this reply stays silent instead of half-speaking
     };
     this.wire();
   }
@@ -31,6 +35,7 @@ export class VoiceOutputRouter implements SpeechOut {
   get speaking() { return this.server.speaking || this.browser.speaking; }
   get lipSync() { return this.active.lipSync ?? 'n/a'; }
   get rate() { return this.browser.rate; } set rate(v: number) { this.browser.rate = v; this.server.rate = v; }
+  get character() { return this.browser.character ?? 'natural'; } set character(v: 'cute' | 'natural') { this.browser.character = v; }
   get voiceURI() { return this.browser.voiceURI; } set voiceURI(v: string | null) { this.browser.voiceURI = v; }
   get boundaryEvents() { return this.active.boundaryEvents; } set boundaryEvents(v: boolean) { this.browser.boundaryEvents = v; }
   get hooks() { return this.h; }
@@ -44,7 +49,7 @@ export class VoiceOutputRouter implements SpeechOut {
     this.browser.hooks = hooks; this.server.hooks = hooks;
   }
   voices() { return this.browser.voices(); }
-  enqueue(text: string, style: SpeakingStyle) { this.active.enqueue(text, style); }
+  enqueue(text: string, style: SpeakingStyle) { if (!this.speaking) this.warned = false; this.active.enqueue(text, style); }
   pause() { this.active.pause?.(); }
   resume() { this.active.resume?.(); }
   stop() { this.server.stop(); this.browser.stop(); }

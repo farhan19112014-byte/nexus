@@ -14,7 +14,7 @@ import type { Settings } from '../memory/store';
 export const SETUP_EVENT = 'nexus:setup';
 export const openSetup = () => window.dispatchEvent(new Event(SETUP_EVENT));
 
-type Brain = 'demo' | 'ollama' | 'openai' | 'anthropic';
+type Brain = 'demo' | 'ollama' | 'gemini' | 'openai' | 'anthropic';
 type Olla = { reachable: boolean; baseUrl: string; models: string[]; note: string } | null;
 
 export function SetupWizard() {
@@ -29,6 +29,7 @@ export function SetupWizard() {
   const [olla, setOlla] = useState<Olla>(null);
   const [model, setModel] = useState('');
   const [hosted, setHosted] = useState({ baseUrl: 'https://api.openai.com/v1', model: '', key: '' });
+  const [gem, setGem] = useState({ model: 'gemini-3.8-flash', key: '' });
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const ids = { title: useId(), desc: useId() };
@@ -56,12 +57,14 @@ export function SetupWizard() {
       setResult(null);
       if (brain === 'demo') { setStep(2); return; }
       if (!snap.caps?.runtimeConfig) { setResult({ ok: false, text: 'This server does not allow changing the model from the app — edit .env instead (see docs/SETUP.md).' }); return; }
-      const body = brain === 'ollama'
+      const body = brain === 'gemini'
+        ? { provider: 'gemini', gemini: { model: gem.model.trim() || undefined, ...(gem.key ? { apiKey: gem.key } : {}) } }
+        : brain === 'ollama'
         ? { provider: 'openai', openai: { baseUrl: olla?.baseUrl || 'http://127.0.0.1:11434/v1', model } }
         : brain === 'openai'
           ? { provider: 'openai', openai: { baseUrl: hosted.baseUrl, model: hosted.model, ...(hosted.key ? { apiKey: hosted.key } : {}) } }
           : { provider: 'anthropic', anthropic: { model: hosted.model, ...(hosted.key ? { apiKey: hosted.key } : {}) } };
-      if ((brain === 'ollama' && !model) || (brain !== 'ollama' && !hosted.model.trim())) { setResult({ ok: false, text: 'Please choose or type a model name first.' }); return; }
+      if ((brain === 'ollama' && !model) || (brain !== 'ollama' && brain !== 'gemini' && !hosted.model.trim())) { setResult({ ok: false, text: 'Please choose or type a model name first.' }); return; }
       setBusy(true);
       try {
         await api.putConfig(body); await companion.refreshStatus();
@@ -104,6 +107,12 @@ export function SetupWizard() {
               {olla?.reachable && olla.models.length > 0 && <label className="field">Model<select value={model} onChange={(e) => setModel(e.target.value)}>{olla.models.map((m) => <option key={m} value={m}>{m}</option>)}</select></label>}
               {olla && <OllamaDownload reachable={olla.reachable} onDone={(m) => { setModel(m); void checkOllama(); }} />}
               <button type="button" className="link" onClick={() => { setOlla(null); void checkOllama(); }}>Check again</button>
+            </div>}
+            <label className={`brain ${brain === 'gemini' ? 'on' : ''}`}><input type="radio" name="brain" checked={brain === 'gemini'} disabled={WEB_DEMO} onChange={() => setBrain('gemini')} /><span><b>Google Gemini</b> — a strong hosted AI. Needs a Gemini API key (aistudio.google.com/apikey); Google's free tier has limits, paid use costs money.</span></label>
+            {brain === 'gemini' && <div className="brain-detail">
+              <label className="field">Gemini model<input value={gem.model} onChange={(e) => setGem({ ...gem, model: e.target.value })} /></label>
+              <label className="field">Gemini API key<input type="password" autoComplete="off" value={gem.key} onChange={(e) => setGem({ ...gem, key: e.target.value })} placeholder="kept on the NEXUS server, never shown again" /></label>
+              <p className="small muted">For a generated voice, add ElevenLabs later in Settings → Voice → Speech services.</p>
             </div>}
             <label className={`brain ${brain === 'openai' ? 'on' : ''}`}><input type="radio" name="brain" checked={brain === 'openai'} disabled={WEB_DEMO} onChange={() => setBrain('openai')} /><span><b>Hosted AI (OpenAI-compatible)</b> — OpenAI, OpenRouter, Groq, LM Studio… Needs an API key; may cost money per message.</span></label>
             <label className={`brain ${brain === 'anthropic' ? 'on' : ''}`}><input type="radio" name="brain" checked={brain === 'anthropic'} disabled={WEB_DEMO} onChange={() => setBrain('anthropic')} /><span><b>Anthropic (Claude)</b> — needs an API key; may cost money per message.</span></label>

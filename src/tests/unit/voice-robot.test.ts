@@ -76,18 +76,31 @@ describe('[A119] server voice output', () => {
     const o = new ServerSpeechOutput('', okFetch([])); o.enqueue('Hello.'); await flush();
     o.pause(); expect(FakeAudio.all[0].paused).toBe(true); o.resume(); expect(FakeAudio.all[0].paused).toBe(false);
   });
-  it('[A119] a failed sentence falls back to the browser voice, with one notice; the queue continues', async () => {
+  it('[A119] when the user allows the fallback, a failed sentence is spoken by the browser voice, with one notice; the queue continues', async () => {
     let n = 0;
     const flaky = (async () => { n++; return n === 1 ? new Response(JSON.stringify({ error: 'rate limited' }), { status: 429 }) : new Response(new Uint8Array(500), { status: 200 }); }) as unknown as typeof fetch;
     const browserSaid: string[] = [];
     const browser = { supported: true, speaking: false, hooks: {}, rate: 1, voiceURI: null, boundaryEvents: false, enqueue: (t: string) => browserSaid.push(t), stop: () => {}, voices: () => [] };
-    const r = new VoiceOutputRouter(browser, new ServerSpeechOutput('', flaky)); const notes: string[] = []; r.onNotice = (m) => notes.push(m);
+    const r = new VoiceOutputRouter(browser, new ServerSpeechOutput('', flaky)); const notes: string[] = []; r.onNotice = (m) => notes.push(m); r.allowFallback = true;
     r.configure(true, 'auto'); expect(r.engineName).toBe('server');
     r.enqueue('Broken one.', 'warm'); r.enqueue('Good one.', 'warm'); await flush();
     expect(browserSaid).toEqual(['Broken one.']); expect(notes.length).toBe(1); expect(notes[0]).toMatch(/rate limited/);
     expect(FakeAudio.all.length).toBe(1);
     r.configure(false, 'auto'); expect(r.engineName).toBe('browser');      // not configured → this computer's voice
     r.configure(true, 'browser'); expect(r.engineName).toBe('browser');    // user preference wins
+  });
+  it('[A121] by default a failed voice is never replaced: one honest notice, nothing else plays, mouth closed, idle', async () => {
+    const failing = (async () => new Response(JSON.stringify({ error: 'ElevenLabs does not know this voice id', code: 'voice_not_found' }), { status: 502 })) as unknown as typeof fetch;
+    const browserSaid: string[] = [];
+    const browser = { supported: true, speaking: false, hooks: {}, rate: 1, voiceURI: null, boundaryEvents: false, enqueue: (t: string) => browserSaid.push(t), stop: () => {}, voices: () => [] };
+    const r = new VoiceOutputRouter(browser, new ServerSpeechOutput('', failing)); const notes: string[] = []; r.onNotice = (m) => notes.push(m);
+    const ev: string[] = []; r.hooks = { onLevel: (l) => ev.push(`lvl${l}`), onIdle: () => ev.push('idle') };
+    r.configure(true, 'auto'); expect(r.allowFallback).toBe(false);
+    r.enqueue('First.', 'warm'); r.enqueue('Second.', 'warm'); await flush();
+    expect(browserSaid).toEqual([]); expect(FakeAudio.all.length).toBe(0);
+    expect(notes).toHaveLength(1); expect(notes[0]).toMatch(/does not know this voice id/); expect(notes[0]).toMatch(/did not switch/);
+    expect(r.speaking).toBe(false);
+    r.enqueue('Next reply.', 'warm'); await flush(); expect(notes).toHaveLength(2);   // a new reply that fails is reported again
   });
   it('[A119] long replies are split for the speech service without losing text', () => {
     const t = 'word '.repeat(400).trim(); const parts = splitForTts(t);
@@ -125,5 +138,22 @@ describe('[A119] state machine and character additions', () => {
     const ids = new Set(BUILTIN_EXPRESSIONS.map((e) => e.id));
     for (const id of ['neutral', 'happy', 'excited', 'curious', 'interested', 'surprised', 'confused', 'thinking', 'listening', 'speaking', 'concerned', 'sympathetic', 'determined', 'playful', 'sleepy', 'reassuring', 'success', 'error']) expect(ids.has(id), id).toBe(true);
     for (const id of ['explain', 'speak_beat', 'reassure', 'head_tilt', 'open_arms']) { const m = BUILTIN_MOTIONS.find((x) => x.id === id); expect(m, id).toBeTruthy(); expect(validateSkill(m, { origin: 'builtin' }).report.ok, id).toBe(true); }
+  });
+});
+
+describe('[A120] cute voice preset (this computer\'s voices)', () => {
+  it('[A120] "youthful" lifts the pitch a little (capped well below squeaky); "natural" leaves the style untouched', async () => {
+    const { voiceParams } = await import('../../voice/tts');
+    const nat = voiceParams('warm', 'natural'); const cute = voiceParams('warm', 'cute');
+    expect(nat).toEqual({ rate: 1, pitch: 1.15 }); expect(cute.pitch).toBeCloseTo(1.288); expect(cute.rate).toBe(1);   // brighter, natural pace
+    expect(voiceParams('playful', 'cute', 1.5).pitch).toBeLessThanOrEqual(1.5); expect(voiceParams('calm', 'cute', 0.8).rate).toBeCloseTo(0.95 * 0.8);  // never squeaky
+  });
+  it('[A120] "Automatic" picks a young-adult voice in the user\'s language when one exists, else none (never a random one)', async () => {
+    const { pickCuteVoice } = await import('../../voice/tts');
+    const v = (name: string, lang: string) => ({ name, lang, voiceURI: name }) as SpeechSynthesisVoice;
+    const list = [v('Microsoft Guy Online', 'en-US'), v('Microsoft Jenny Online (Natural)', 'en-US'), v('Microsoft Ana Online (Natural)', 'en-US'), v('Google Deutsch', 'de-DE')];
+    expect(pickCuteVoice(list, 'en-US')?.name).toMatch(/Jenny/);             // a young-adult voice, not the child voice "Ana"
+    expect(pickCuteVoice(list, 'de-DE')?.name).toMatch(/Jenny/);             // no youthful German voice → falls back to English
+    expect(pickCuteVoice([v('Microsoft Guy Online', 'en-US')], 'en-US')).toBeUndefined();
   });
 });
