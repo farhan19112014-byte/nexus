@@ -1,19 +1,19 @@
 # NEXUS — Release readiness & acceptance report
 
-Generated 2026-10-21T14:52:02.739Z by `npm run report` from actual command results. Do not edit by hand.
+Generated 2026-10-21T21:19:59.403Z by `npm run report` from actual command results. Do not edit by hand.
 
 ## Summary
 
 | | |
 |---|---|
 | Overall | **All checks passed** |
-| typecheck | ✅ pass · 9.6s |
-| build (app + server bundle) | ✅ pass · 12.4s |
-| lint (eslint, 0 warnings) | ✅ pass · 7.1s |
-| unit + integration tests | ✅ pass · 28.1s |
-| end-to-end tests | ✅ pass · 194.9s |
-| desktop app smoke test | ✅ pass · 2.7s |
-| Unit tests | 124/124 passed |
+| typecheck | ✅ pass · 7.3s |
+| build (app + server bundle) | ✅ pass · 11.4s |
+| lint (eslint, 0 warnings) | ✅ pass · 5.4s |
+| unit + integration tests | ✅ pass · 25.6s |
+| end-to-end tests | ✅ pass · 191.6s |
+| desktop app smoke test | ✅ pass · 21.1s |
+| Unit tests | 126/126 passed |
 | Integration tests | 53/53 passed |
 | End-to-end checks | 103/103 passed |
 | Assets | 124 verified · 0 implemented but not fully verified · 0 failing · 0 blocked · 0 not done |
@@ -166,7 +166,7 @@ Generated 2026-10-21T14:52:02.739Z by `npm run report` from actual command resul
 | A93 | Input and Output Validation | ✅ verified | 1/0 | `shared/schema.ts`, `src/security/validation.ts` |  |
 | A94 | Abuse and Resource Limits | ✅ verified | 2/0 | `shared/schema.ts`, `server/app.ts`, `src/animation/engine.ts` |  |
 | A95 | Observability and Diagnostics | ✅ verified | 1/0 | `src/diagnostics/log.ts`, `src/components/StatusPanel.tsx` |  |
-| A96 | Automated Unit Tests | ✅ verified | 124/0 | `src/tests/unit` |  |
+| A96 | Automated Unit Tests | ✅ verified | 126/0 | `src/tests/unit` |  |
 | A97 | Integration Tests | ✅ verified | 53/0 | `src/tests/integration` |  |
 | A98 | End-to-End Tests | ✅ verified | 103/0 | `scripts/e2e.mjs` |  |
 | A99 | Performance and Compatibility | ✅ verified | 5/0 | `scripts/e2e.mjs`, `src/core/characterRuntime.ts` |  |
@@ -196,15 +196,15 @@ Generated 2026-10-21T14:52:02.739Z by `npm run report` from actual command resul
 | A119 | Robot-first Voice Experience: server TTS/STT, audio lip-sync, PAUSED/RECOVERING | ✅ verified | 27/0 | `src/components/RobotView.tsx`, `src/voice/serverVoice.ts`, `src/voice/router.ts`, `server/speech.ts` |  |
 | A120 | Google Gemini brain (official @google/genai SDK) + youthful browser-voice preset | ✅ verified | 3/0 | `server/providers/gemini.ts`, `server/config.ts`, `src/voice/tts.ts`, `src/components/SettingsPanel.tsx` |  |
 | A121 | ElevenLabs voice: /api/speech, account voice picker, no silent voice substitution | ✅ verified | 2/0 | `server/speech.ts`, `server/app.ts`, `src/voice/router.ts`, `src/components/SettingsPanel.tsx` |  |
-| A122 | Master-prompt pass: editable persona file, speech-safe text, typed robot events, speech volume, secret-safe memory | ✅ verified | 7/0 | `server/prompts/persona.ts`, `src/voice/speakable.ts`, `src/core/robotEvents.ts`, `src/security/validation.ts` |  |
+| A122 | Master-prompt pass: editable persona file, speech-safe text, typed robot events, speech volume, secret-safe memory | ✅ verified | 8/0 | `server/prompts/persona.ts`, `src/voice/speakable.ts`, `src/core/robotEvents.ts`, `src/security/validation.ts` |  |
 | A123 | Light mode: white and light-blue NEXUS robot, sky-blue site, one-click theme switch | ✅ verified | 6/0 | `src/character/tokens.ts`, `src/character/Robot.tsx`, `src/components/ThemeToggle.tsx`, `src/site/site.css` |  |
-| A124 | Hosted NEXUS: public mode, Render blueprint, CORS for the Pages site, daily quota budgets, wake-up notice | ✅ verified | 3/0 | `server/budget.ts`, `server/app.ts`, `render.yaml`, `src/webDemo.ts` |  |
+| A124 | Hosted NEXUS: public mode, Render blueprint, CORS for the Pages site, daily quota budgets, wake-up notice | ✅ verified | 4/0 | `server/budget.ts`, `server/app.ts`, `render.yaml`, `src/webDemo.ts` |  |
 | A113 | Compact Prompt for Small Local Models | ✅ verified | 2/0 | `server/prompts/system.ts`, `server/brainService.ts` |  |
 
 ## Laptop & desktop app
 
 - Laptop layouts (1024–1536 px wide, 640–800 px tall, including browser-bar heights such as 1366×657) are checked by the end-to-end suite (asset A90 rows above).
-- Desktop app smoke test (linux-x64): ✅ — `{"ok":true,"title":"NEXUS — robot workspace","nodeAccess":false,"ms":315,"url":"http://localhost:18787","provider":"demo","reused":false,"pages":["Robot","Home page","About","Privacy","Set up again (name, AI brain, theme)…"],"home":true,"back":true}`
+- Desktop app smoke test (linux-x64): ✅ — `{"ok":true,"title":"NEXUS — robot workspace","nodeAccess":false,"ms":360,"url":"http://localhost:18787","provider":"demo","reused":false,"pages":["Robot","Home page","About","Privacy","Set up again (name, AI brain, theme)…"],"home":true,"back":true}`
 - Not verifiable here: the Windows installer (`npm run dist:win`) and the `.bat` start scripts were not run on Windows by this report. Voice input is unavailable inside the desktop app (Electron ships no speech-to-text service); the app says so and voice works in Chrome/Edge.
 
 ## Configuration requirements

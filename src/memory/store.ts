@@ -41,6 +41,8 @@ export const SettingsSchema = z.object({
   voiceCharacter: z.enum(['cute', 'natural']).default('cute'),
   /** if the voice service (ElevenLabs…) fails, speak with this computer's voice instead — off: never substitute silently */
   voiceFallback: z.boolean().default(false),
+  /** say hello and introduce itself (name + who made it) each time the robot is opened */
+  introduceOnOpen: z.boolean().default(true),
   reviewTranscript: z.boolean().default(true),
   reducedMotion: z.boolean().default(false),
   highContrast: z.boolean().default(false),

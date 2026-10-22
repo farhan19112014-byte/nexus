@@ -197,6 +197,7 @@ export default function SettingsPanel() {
       </div>
       <label className="field">Resting face<select value={s.defaultExpression} onChange={(e) => up({ defaultExpression: e.target.value as Settings['defaultExpression'] })}><option value="neutral">Neutral</option><option value="happy">Happy</option><option value="curious">Curious</option><option value="determined">Determined</option><option value="sleepy">Sleepy</option></select></label>
       <label className="field">Greeting<select value={s.greetingStyle} onChange={(e) => up({ greetingStyle: e.target.value as Settings['greetingStyle'] })}><option value="greeting">Hop and wave</option><option value="wave">Simple wave</option><option value="bounce">Excited bounce</option><option value="nod">Polite nod</option><option value="none">No greeting</option></select></label>
+      <T k="introduceOnOpen" label="Introduce itself each time I open it (its name and who made it)" />
       <T k="dailyGreeting" label="Say good morning / afternoon once a day, with today's reminders" />
       <T k="ambientBehaviours" label="Little idle behaviours now and then (look around, stretch, antenna wiggle)" disabled={s.reducedMotion || s.quietMode} />
       <T k="greetEverySession" label="Greet me every time I open the app (otherwise only the first time)" disabled={s.greetingStyle === 'none'} />

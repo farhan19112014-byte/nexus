@@ -64,3 +64,15 @@ describe('[A122] secrets never become memories', () => {
     expect(looksSensitive('I like short answers and robots')).toBe(false);
   });
 });
+
+describe('[A122] self-introduction and creator', () => {
+  it('[A122] the robot introduces itself with the name the user chose and says who made it; the AI knows its creator', async () => {
+    const { introduction, CREATOR } = await import('../../../shared/identity');
+    expect(introduction('Pixel', 'Good evening')).toBe("Good evening! I'm Pixel, your robot companion. I was made by Farhan, a determined innovator in AI, who is 12 years old. Ask me anything, or tell me to wave!");
+    expect(CREATOR.name).toBe('Farhan');
+    const { buildSystemPrompt } = await import('../../../server/prompts/system');
+    const { ChatRequestSchema } = await import('../../../shared/schema');
+    const p = buildSystemPrompt(ChatRequestSchema.parse({ messages: [{ role: 'user', content: 'who made you?' }], profile: { robotName: 'Pixel' } }), { streaming: false, sources: [] });
+    expect(p).toContain('You were made by Farhan, a determined innovator in AI, who is 12 years old.'); expect(p).toContain('Your name is "Pixel"');
+  });
+});

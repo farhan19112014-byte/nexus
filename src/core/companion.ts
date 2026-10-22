@@ -7,7 +7,7 @@
  * Every turn has a token: a cancelled or superseded turn can never overwrite a newer one (Asset 46).
  * Success reactions only follow verified results (Asset 36); failures get an explanation + retry (35, 47).
  */
-import { validateRobotName } from '../../shared/identity';
+import { introduction, validateRobotName } from '../../shared/identity';
 import { BrainResponseSchema, type BrainResponse, type ExpressionPreset, type ServerCapabilities, type Pose } from '../../shared/schema';
 import type { AnimationEngine } from '../animation/engine';
 import type { ExpressionController } from '../expressions/expressionController';
@@ -202,8 +202,20 @@ export class Companion {
     } finally { this.renaming = false; }
   }
 
+  /** Each time the robot is opened: a local (non-AI) self-introduction with its current name and who made it, spoken aloud when voice is on. */
+  introduce(now = new Date()) {
+    if (!this.settings.introduceOnOpen) return false;
+    const h = now.getHours();
+    const part = h < 5 ? 'Hi, up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+    const text = introduction(this.robotName, part);
+    this.push({ role: 'system', text, status: 'complete' });
+    if (this.settings.voiceOutput && this.tts.supported && !this.tts.speaking) this.tts.enqueue(text, 'warm');
+    if (!this.settings.quietMode && !this.settings.reducedMotion && !this.snap.busy) this.expressions.set('reaction', 'happy', 0.7, 2.5, 0);
+    return true;
+  }
+
   /** Once per calendar day: a local (non-AI) hello with today's reminders. */
-  async dailyGreeting(now = new Date()) {
+  async dailyGreeting(now = new Date(), introduced = false) {
     if (!this.settings.dailyGreeting) return false;
     const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     if (this.settings.lastGreetDay === day) return false;
@@ -213,7 +225,8 @@ export class Companion {
     const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
     const today = (this.d.reminders?.pending() ?? []).filter((r) => r.dueAt <= endOfDay.getTime());
     const list = today.length ? ` You have ${today.length} reminder${today.length > 1 ? 's' : ''} today: ${today.slice(0, 3).map((r) => `${r.text} (${new Date(r.dueAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })})`).join(', ')}${today.length > 3 ? '…' : ''}.` : '';
-    this.push({ role: 'system', text: `${part}! ${this.robotName} is here.${list}`, status: 'complete' });
+    if (introduced && !list) return true;   // the introduction already said hello today
+    this.push({ role: 'system', text: introduced ? list.trim() : `${part}! ${this.robotName} is here.${list}`, status: 'complete' });
     // low priority (0): never overrides the face the AI chose for a reply that is already on screen
     if (!this.settings.quietMode && !this.settings.reducedMotion && this.settings.greeted && !this.snap.busy) this.expressions.set('reaction', 'happy', 0.7, 2, 0);
     return true;
@@ -242,7 +255,8 @@ export class Companion {
       if (!this.settings.greeted) { try { await this.d.memory.updateSettings({ greeted: true }); } catch { /* ignore */ } }
       if (this.sm.state === 'greeting') this.sm.go('idle');
     }
-    await this.dailyGreeting();
+    const introduced = this.introduce();
+    await this.dailyGreeting(new Date(), introduced);
     this.armRest(); this.armAmbient();
   }
   applySettings() {

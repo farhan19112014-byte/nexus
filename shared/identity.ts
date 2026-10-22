@@ -12,6 +12,12 @@ export const CHARACTER_ID = 'nexus-robot-v2';
 export const DEFAULT_ROBOT_NAME = 'NEXUS';
 export const ROBOT_NAME_MAX = 32;
 
+/** Who made the robot — used in its self-introduction and in what the AI says when asked who created it. Edit here. */
+export const CREATOR = { name: 'Farhan', about: 'a determined innovator in AI', age: 12 } as const;
+export const creatorLine = () => `${CREATOR.name}, ${CREATOR.about}, who is ${CREATOR.age} years old`;
+/** The robot's self-introduction, with whatever name the user gave it. */
+export const introduction = (robotName: string, greeting = 'Hi') => `${greeting}! I'm ${robotName}, your robot companion. I was made by ${creatorLine()}. Ask me anything, or tell me to wave!`;
+
 export type NameCheck = { ok: true; name: string } | { ok: false; error: string };
 
 /** Characters that change text direction or are invisible: allowed nowhere in a name. */
