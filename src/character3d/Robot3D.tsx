@@ -12,22 +12,28 @@ import { useResolvedTheme } from '../themeHook';
 import { withBase } from '../webDemo';
 import { applyChannels, RIG_NODES, type Glow, type Rig, type Rest } from './rig3d';
 import { SKIN_3D } from './skins3d';
+import { applyMotion, gesturingFrom, Motion3D, type MotionState } from './motion3d';
+import { softwareRenderer } from './webgl';
 
 type Three = typeof import('three');
 interface Ctx {
   THREE: Three; renderer: import('three').WebGLRenderer; scene: import('three').Scene; camera: import('three').PerspectiveCamera;
   rig: Rig; rest: Rest; mats: Record<string, import('three').MeshStandardMaterial>; base: Record<string, number>;
-  env: import('three').Object3D[]; dirty: boolean; raf: number; ro: ResizeObserver | null; dispose: () => void;
+  env: import('three').Object3D[]; dirty: boolean; raf: number; ro: ResizeObserver | null; dispose: () => void; lastT: number;
 }
 
 export interface Robot3DProps extends RobotProps { onFail?: (reason: string) => void; onReady?: () => void }
 
 export const MODEL_URL = () => withBase('/models/nexus.glb');
+const sameChannels = (a: Record<string, number>, b: Record<string, number>) => { for (const k in b) if (Math.abs((a[k] ?? 0) - b[k]) > 1e-4) return false; return true; };
 
 export const Robot3D = forwardRef<RigHandle, Robot3DProps>(function Robot3D(props, ref) {
   const host = useRef<HTMLDivElement>(null);
   const ctx = useRef<Ctx | null>(null);
   const pending = useRef<{ v: Record<Channel, number> | null; ind: Indicator }>({ v: null, ind: 'idle' });
+  // the 3D robot's own body language (src/character3d/motion3d.ts) — one per renderer, created once
+  const motion = useRef(new Motion3D());
+  const scratch = useRef<Record<string, number>>({});
   const theme = useResolvedTheme();
   const skin = props.skin ?? theme;
   const skinRef = useRef(skin); skinRef.current = skin;
@@ -74,7 +80,21 @@ export const Robot3D = forwardRef<RigHandle, Robot3DProps>(function Robot3D(prop
     svg: () => null,
     setSeat() { /* the 3D robot has no stool yet; sitting poses still bend the legs */ },
     setIndicator(i) { pending.current.ind = i; indicate(i); },
-    apply(v) { pending.current.v = v; const c = ctx.current; if (!c) return; glowTo(applyChannels(c.rig, c.rest, v)); clipLids(); request(); },
+    setMotion(state: MotionState, reduced: boolean) { motion.current.amplitude = reduced ? 0 : 1; motion.current.setState(state); host.current?.setAttribute('data-motion', state); },
+    busy: () => motion.current.busy(),
+    apply(v) {
+      const prev = pending.current.v; pending.current.v = { ...v };
+      const c = ctx.current; if (!c) return;
+      const now = performance.now(); const dt = c.lastT ? (now - c.lastT) / 1000 : 0; c.lastT = now;
+      const M = motion.current;
+      if (prev && !c.dirty && !M.busy() && sameChannels(prev, v) && M.active() === null && dt < 0.5) { M.update(dt, false); return; } // nothing moved: no GPU work
+      c.dirty = false;
+      const m = M.update(dt, gesturingFrom(v));
+      const s = Object.assign(scratch.current, v); s['pupil.x'] = v['pupil.x'] + m.gazeX; s['pupil.y'] = v['pupil.y'] + m.gazeY;
+      glowTo(applyChannels(c.rig, c.rest, s as Record<Channel, number>)); applyMotion(c.rig as unknown as Parameters<typeof applyMotion>[0], m); clipLids(); request();
+      const pose = `${c.rig.Arm_R.rotation.z.toFixed(3)} ${c.rig.Head.rotation.z.toFixed(3)} ${c.rig.Body.rotation.y.toFixed(3)}`;
+      if (host.current && host.current.dataset.pose !== pose) host.current.dataset.pose = pose;   // for tests / debugging
+    },
   }), [skin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // create the renderer and load the model once
@@ -89,8 +109,10 @@ export const Robot3D = forwardRef<RigHandle, Robot3DProps>(function Robot3D(prop
       let gltf;
       try { gltf = await new GLTFLoader().loadAsync(MODEL_URL()); } catch (e) { onFail?.(`The 3D model could not be loaded (${(e as Error).message})`); return; }
       if (dead) return;
-      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      // without graphics hardware (software WebGL) draw fewer pixels so the page stays responsive
+      const soft = softwareRenderer();
+      const renderer = new THREE.WebGLRenderer({ antialias: !soft, alpha: true, powerPreference: 'low-power' });
+      renderer.setPixelRatio(soft ? Math.min(1, (window.devicePixelRatio || 1) * 0.75) : Math.min(window.devicePixelRatio || 1, 2));
       renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.domElement.setAttribute('role', 'presentation');
       el.append(renderer.domElement);
@@ -115,7 +137,7 @@ export const Robot3D = forwardRef<RigHandle, Robot3DProps>(function Robot3D(prop
       // a soft contact shadow and the stage floor
       const shadowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d')!; const gr = g.createRadialGradient(64, 64, 4, 64, 64, 64); gr.addColorStop(0, 'rgba(0,0,0,.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
       const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false })); shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.005; scene.add(shadow);
-      const c: Ctx = { THREE, renderer, scene, camera, rig, rest, mats, base, env: [shadow], dirty: true, raf: 0, ro: null, dispose: () => {} };
+      const c: Ctx = { THREE, renderer, scene, camera, rig, rest, mats, base, env: [shadow], dirty: true, raf: 0, ro: null, dispose: () => {}, lastT: 0 };
       ctx.current = c;
       const fit = () => {
         const w = el.clientWidth || 300, h = el.clientHeight || 360;
@@ -145,6 +167,7 @@ export const Robot3D = forwardRef<RigHandle, Robot3DProps>(function Robot3D(prop
       for (const [name, col] of Object.entries(k.materials)) { const m = c.mats[name]; if (!m) continue; m.color.set(col.color); if (col.emissive) m.emissive.set(col.emissive); }
       for (const s of ['L', 'R']) c.mats[`NX_Lid_${s}`]?.color.set(k.materials.NX_Screen.color);
       c.renderer.toneMappingExposure = k.exposure;
+      c.dirty = true; if (pending.current.v) { glowTo(applyChannels(c.rig, c.rest, pending.current.v)); clipLids(); }
       indicate(pending.current.ind);
     }, 30);
     return () => clearInterval(id);

@@ -51,16 +51,39 @@ Materials (named, so they can be recoloured): `NX_Shell`, `NX_Limb`, `NX_Joint`,
 `NX_Pupil`, `NX_Spark`, `NX_Lid`, `NX_Brow`, `NX_Mouth`, `NX_Cheek`, `NX_LED_Blue`, `NX_Trim`, `NX_Core`, `NX_Accent`,
 `NX_ChestPanel`, `NX_Boot`.
 
-## In the NEXUS app
+## In the NEXUS app and website
 
-**Settings → Animation & appearance → Robot style → 3D NEXUS**, or the **3D / 2D** button in the top bar. The 3D robot
-is driven by the same animation engine as the 2D one (`src/character3d/rig3d.ts`), so every expression, gesture, skill,
-gaze, state light and speech mouth movement works in both. three.js and the model load only when 3D is chosen. Without
-WebGL, or if the model can't load, NEXUS shows the 2D robot and says why. Mouth movement follows the speech audio level
-(an approximation), as in 2D — the model has no phoneme shapes yet.
+NEXUS is 3D wherever the browser has WebGL — on the home page and the robot page. three.js and the model load on demand.
+The classic 2D robot is kept only as a fallback: no WebGL at all (decided before three.js is downloaded), or the model fails
+to load (with a notice). Without graphics hardware (software WebGL) the 3D view draws fewer pixels so the page stays usable.
+While the model downloads, the stage says "Loading the 3D NEXUS…".
 
-The 2D robot stays the default; to make 3D the default, change `robotStyle: z.enum(['2d', '3d']).default('2d')` to
-`.default('3d')` in `src/memory/store.ts`.
+## Motion engine (`src/character3d/motion3d.ts`)
+
+The model is made of rigid parts on pivoted nodes (no skeleton, no animation clips). Two layers drive it:
+
+1. **Shared animation channels** (`rig3d.ts`) — the same engine as the 2D robot: expressions (eyes, brows, mouth, blinks),
+   gaze, speech mouth (audio level), and the gestures the AI or the user asks for (wave, nod…).
+2. **3D Motion Engine** — the robot's own body language, which replaces the old 2D-style idle bob/arm sway and ambient
+   motions when 3D is shown:
+   - per-state base pose: idle, listening (leans in), thinking (looks up, tilts), speaking, curious, confused, resting,
+     interrupted, error, acting (an engine gesture is running — the motion engine stays out of its way);
+   - primitives: head tilt, head turn, gaze shift, posture shift, nod, small arm gesture, return-to-neutral — combined into
+     short sequences chosen per state with a seeded RNG (varied, never the same twice in a row, reproducible for debugging);
+   - critically-damped springs per joint (no snapping), an under-damped antenna that lags the head (follow-through), legs
+     counter-rotated against body lean so the boots stay planted;
+   - limits: `MOTION_LIMITS` (this engine's offsets) and `JOINT_LIMITS` (total head angle) — all tuning is in one place
+     at the top of the file;
+   - priority: interruption > speech > engine gestures (the motion engine fades its arm offsets out while the arms are
+     gesturing) > thinking/listening > idle/resting. A state change cancels the running sequence; an interrupt settles
+     everything to neutral in ~0.3 s.
+
+The state comes from the companion's real state machine (`companion.ts → runtime.setMotion`): "thinking" only while a
+request is pending, "speaking" only while speech audio plays, "curious" while you type a question, "confused" when a reply
+came back empty or unreadable. No AI call drives any of it. Reduced motion turns the procedural layer off.
+
+Limits (honest): the mouth follows speech loudness (no phoneme visemes); there are no fingers or torso-vs-hips joint, so
+"lean" bends at the hips; a skinned rig with a spine and fingers would be the next asset step for richer gestures.
 
 ## Using the model in another website
 

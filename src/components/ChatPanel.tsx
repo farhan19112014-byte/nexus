@@ -140,7 +140,7 @@ export default function ChatPanel({ inDrawer = false }: { inDrawer?: boolean } =
         <label className="sr-only" htmlFor={inDrawer ? 'composer-full' : 'composer'}>Message</label>
         <textarea id={inDrawer ? 'composer-full' : 'composer'} ref={input} value={text} rows={2} maxLength={4000} aria-label="Message"
           placeholder={snap.listening ? 'Listening…' : `Message ${s.robotName} — Enter to send, Shift+Enter for a new line`}
-          onChange={(e) => { setText(e.target.value); companion.noteTyping(e.target.value.length > 0); }}
+          onChange={(e) => { setText(e.target.value); companion.noteTyping(e.target.value.length > 0, e.target.value); }}
           onBlur={() => companion.noteTyping(false)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }} />
         <div className="row wrap">

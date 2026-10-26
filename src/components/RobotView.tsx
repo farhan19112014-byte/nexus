@@ -49,7 +49,7 @@ export default function RobotView({ onOpenConversation }: { onOpenConversation: 
         <form className="type-bar" onSubmit={(e) => { e.preventDefault(); submit(); }}>
           <label className="sr-only" htmlFor="composer">Message</label>
           <input id="composer" ref={input} value={text} maxLength={4000} autoComplete="off" placeholder={`Message ${s.robotName}`}
-            onChange={(e) => { setText(e.target.value); companion.noteTyping(e.target.value.length > 0); }} onBlur={() => companion.noteTyping(false)}
+            onChange={(e) => { setText(e.target.value); companion.noteTyping(e.target.value.length > 0, e.target.value); }} onBlur={() => companion.noteTyping(false)}
             onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setTyping(false); } }} />
           <button type="submit" className="primary" disabled={!text.trim()} aria-label="Send"><Icon name="send" /></button>
         </form>

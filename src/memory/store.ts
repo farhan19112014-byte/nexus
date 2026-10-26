@@ -27,7 +27,7 @@ export type MemoryItem = z.infer<typeof MemoryItemSchema>;
 export interface Suggestion extends MemoryCandidate { id: string; at: number }
 export interface Summary { id: string; text: string; createdAt: number; messages: number }
 
-export const SETTINGS_VERSION = 3;
+export const SETTINGS_VERSION = 4;
 export const SettingsSchema = z.object({
   memoryEnabled: z.boolean().default(true),
   responseStyle: z.enum(['concise', 'balanced', 'detailed']).default('balanced'),
@@ -44,7 +44,8 @@ export const SettingsSchema = z.object({
   /** say hello and introduce itself (name + who made it) each time the robot is opened */
   introduceOnOpen: z.boolean().default(true),
   /** the classic 2D robot or the 3D NEXUS (same animations, expressions and voice) */
-  robotStyle: z.enum(['2d', '3d']).default('2d'),
+  /** auto: the 3D NEXUS where WebGL works, else the classic 2D robot (silently); 2d / 3d: the user's explicit choice */
+  robotStyle: z.enum(['auto', '2d', '3d']).default('auto').catch('auto'),
   reviewTranscript: z.boolean().default(true),
   reducedMotion: z.boolean().default(false),
   highContrast: z.boolean().default(false),
@@ -122,7 +123,8 @@ export class MemoryStore {
       const prefs = await this.kv.get<Record<string, string>>('kv', 'prefs');
       if (prefs && typeof prefs === 'object') this.prefs = Object.fromEntries(Object.entries(prefs).filter(([k, v]) => typeof k === 'string' && typeof v === 'string'));
       const st = SettingsSchema.safeParse({ ...(await this.kv.get<object>('kv', 'settings')) });
-      if (st.success) this.settings = st.data; else this.loadErrors.push('Saved settings were invalid and were reset to defaults.');
+      // v4: 'auto' (3D where WebGL works) became the default; before v4, '2d' was simply the old default
+      if (st.success) this.settings = st.data.settingsVersion < 4 && st.data.robotStyle === '2d' ? { ...st.data, robotStyle: 'auto', settingsVersion: SETTINGS_VERSION } : st.data; else this.loadErrors.push('Saved settings were invalid and were reset to defaults.');
     } catch (e) { this.loadErrors.push(`Memory storage unavailable: ${(e as Error).message}`); }
     this.changed();
   }

@@ -9,6 +9,7 @@ import { skinFor } from '../character/tokens';
 import { useResolvedTheme } from '../themeHook';
 import { applyTheme } from '../theme';
 import { ThemeToggle } from '../components/ThemeToggle';
+import type { RobotStyle } from '../character3d/webgl';
 
 /** Original NEXUS mark: the robot's rounded head with its two happy eyes, shaded like the robot (same artwork as build/icon.svg). */
 export function Logo({ size = 28 }: { size?: number }) {
@@ -42,21 +43,23 @@ export function Wordmark() {
   return <Link to={PATHS.home} className="wordmark" aria-label={`${PRODUCT_NAME} home`}><Logo /><span>{PRODUCT_NAME}</span></Link>;
 }
 
-/** The robot's display name, read from the same saved settings the workspace uses (single source of truth). */
-let cachedName: string | null = null;
-export function useRobotName(): string {
-  const [name, setName] = useState(cachedName ?? DEFAULT_ROBOT_NAME);
+/** The robot's display name and style, read from the same saved settings the workspace uses (single source of truth). */
+let cached: { name: string; style: RobotStyle } | null = null;
+function useSaved() {
+  const [v, setV] = useState(cached ?? { name: DEFAULT_ROBOT_NAME, style: 'auto' as RobotStyle });
   useEffect(() => {
     let live = true; let off = () => {};
     void import('../core/runtime').then(async ({ memory }) => {
       await memory.ready; if (!live) return;
-      const upd = () => { cachedName = memory.settings.robotName; setName(cachedName); applyTheme(memory.settings.theme); };
+      const upd = () => { const s = memory.settings; if (!cached || cached.name !== s.robotName || cached.style !== s.robotStyle) cached = { name: s.robotName, style: s.robotStyle }; setV(cached); applyTheme(s.theme); };
       upd(); off = memory.subscribe(upd);
-    }).catch(() => { /* storage unavailable: keep the default */ });
+    }).catch(() => { /* storage unavailable: keep the defaults */ });
     return () => { live = false; off(); };
   }, []);
-  return name;
+  return v;
 }
+export const useRobotName = (): string => useSaved().name;
+export const useRobotStyle = (): RobotStyle => useSaved().style;
 
 export type LiveStatus = { kind: 'checking' } | { kind: 'offline' } | { kind: 'demo' } | { kind: 'web' } | { kind: 'llm'; model: string | null; configured: boolean; note?: string };
 /** Real server status (GET /api/status) — never inferred from the page having loaded. */
@@ -103,7 +106,7 @@ export function SiteHeader() {
     <header className="site-header">
       <div className="site-wrap site-header-row">
         <Wordmark />
-        <span className="tagline">your 2D robot companion</span>
+        <span className="tagline">your 3D robot companion</span>
         <button className="menu-btn" aria-expanded={open} aria-controls={menuId} onClick={() => setOpen(!open)}>
           <Icon name={open ? 'close' : 'menu'} size={20} /><span className="sr-only">{open ? 'Close menu' : 'Open menu'}</span>
         </button>
@@ -122,7 +125,7 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="site-wrap footer-row">
-        <div className="footer-brand"><Wordmark /><p className="muted small">An original robot companion app that runs on your own computer.</p></div>
+        <div className="footer-brand"><Wordmark /><p className="muted small">An original robot companion — in your browser or on your own computer.</p></div>
         <nav aria-label="Footer">
           <Link to={PATHS.home}>Home</Link>
           <Link to={PATHS.app}>Robot app</Link>
@@ -131,7 +134,7 @@ export function SiteFooter() {
           <Link to={PATHS.privacy}>Privacy</Link>
         </nav>
       </div>
-      <div className="site-wrap"><p className="muted small copy">{PRODUCT_NAME} — original character and code. Language-model replies come from the provider you configure.</p></div>
+      <div className="site-wrap"><p className="muted small copy">{PRODUCT_NAME} — original character and code, made by Muhammad Farhan Khan. Language-model replies come from the configured AI provider.</p></div>
     </footer>
   );
 }

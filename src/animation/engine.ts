@@ -83,6 +83,8 @@ export class AnimationEngine {
   intensity = 1;           // Asset 57 animation intensity (0.3..1.3)
   reducedMotion = false;   // Asset 88
   idleEnabled = true;
+  /** the 2D-style breathing bob / arm sway; off while the 3D robot (with its own motion engine) is shown */
+  bodyIdle = true;
   /** fastest normalized channel speed in the last frame (range units per second) */
   motion = 1;
   /**
@@ -234,11 +236,13 @@ export class AnimationEngine {
     if (this.idleEnabled && this.idleScale > 0) {
       const im = motionScale * this.idleScale;
       const b = Math.sin(t * 1.9);
-      T['body.squash'] += b * 0.012 * im;
-      T['head.y'] += b * 0.8 * im;
-      T['antenna.rot'] += Math.sin(t * 1.1) * 3 * im;
       T['chest.glow'] += (Math.sin(t * 1.6) * 0.5 + 0.5) * 0.2 - 0.1;
-      T['armL.raise'] += Math.sin(t * 1.2) * 1.2 * im; T['armR.raise'] += Math.sin(t * 1.2 + 0.6) * 1.2 * im;
+      if (this.bodyIdle) {
+        T['body.squash'] += b * 0.012 * im;
+        T['head.y'] += b * 0.8 * im;
+        T['antenna.rot'] += Math.sin(t * 1.1) * 3 * im;
+        T['armL.raise'] += Math.sin(t * 1.2) * 1.2 * im; T['armR.raise'] += Math.sin(t * 1.2 + 0.6) * 1.2 * im;
+      }
     }
 
     // queue promotion

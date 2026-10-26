@@ -3,13 +3,32 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>NEXUS — your 2D robot companion</title>
+    <title>NEXUS — your 3D robot companion</title>
+    <meta name="description" content="NEXUS is a small, curious 3D robot companion that talks through a real AI model and shows how it feels with its face and body." />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0B1733" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <script>try{var t=localStorage.getItem('nexus-theme');if(t==='system')t=matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';document.documentElement.dataset.theme=t==='light'?'light':'dark'}catch(e){}</script>
+    <style>
+      /* startup transition: NEXUS powers on while the app loads (no progress bar — nothing here pretends to measure anything) */
+      #boot{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;align-content:center;gap:14px;background:radial-gradient(ellipse 60% 50% at 50% 45%,#13285a,#0B1733 70%);color:#E8F1FF;font:800 15px/1 system-ui,sans-serif;letter-spacing:.32em;pointer-events:none;transition:opacity .45s ease,visibility .45s;animation:boot-out .4s ease 6s forwards}
+      :root[data-theme=light] #boot{background:radial-gradient(ellipse 60% 50% at 50% 45%,#ffffff,#DCEBFF 70%);color:#0B1733}
+      #boot svg{width:84px;height:84px;filter:drop-shadow(0 0 18px rgba(56,189,248,.45))}
+      #boot .eye{transform-origin:center;transform-box:fill-box;animation:boot-eye 1.1s cubic-bezier(.3,1.4,.5,1) .15s both}
+      #boot .word{animation:boot-word .7s ease .35s both}
+      #boot.done{opacity:0;visibility:hidden}
+      @keyframes boot-eye{from{transform:scaleY(.05);opacity:.2}60%{transform:scaleY(1.1);opacity:1}to{transform:scaleY(1)}}
+      @keyframes boot-out{to{opacity:0;visibility:hidden}}
+      @keyframes boot-word{from{opacity:0;letter-spacing:.6em}to{opacity:1}}
+      @media (prefers-reduced-motion:reduce){#boot{transition:none;animation:boot-out 0s 6s forwards}#boot .eye,#boot .word{animation:none}}
+    </style>
   </head>
   <body>
+    <div id="boot" aria-hidden="true">
+      <svg viewBox="0 0 64 64"><line x1="32" y1="17" x2="32" y2="10" stroke="#5b6b85" stroke-width="3" stroke-linecap="round"/><circle cx="32" cy="9" r="3.6" fill="#38BDF8"/><rect x="12" y="17" width="40" height="35" rx="12" fill="#2a3448" stroke="#3B82F6" stroke-width="1.5"/><rect x="17" y="23" width="30" height="23" rx="8" fill="#0d1118" stroke="#3B82F6" stroke-width="1.6"/><path class="eye" d="M22 34.5a4.5 4.5 0 0 1 9 0z"  fill="#22c6f0"/><path class="eye" d="M33 34.5a4.5 4.5 0 0 1 9 0z" fill="#22c6f0"/><path d="M28 39q4 4 8 0" fill="none" stroke="#22c6f0" stroke-width="2" stroke-linecap="round"/></svg>
+      <div class="word">NEXUS</div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

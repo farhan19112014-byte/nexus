@@ -32,7 +32,13 @@ export interface RobotProps {
   skin?: 'dark' | 'light';
 }
 
-export interface RigHandle { apply(v: Record<Channel, number>): void; setIndicator(i: Indicator): void; setSeat(on: boolean): void; svg(): SVGSVGElement | null }
+export interface RigHandle {
+  apply(v: Record<Channel, number>): void; setIndicator(i: Indicator): void; setSeat(on: boolean): void; svg(): SVGSVGElement | null;
+  /** 3D robot only: the body-language state for its own motion engine (the 2D rig ignores it) */
+  setMotion?(state: import('../character3d/motion3d').MotionState, reduced: boolean): void;
+  /** 3D robot only: true while its procedural motion is still moving (keeps the frame rate up) */
+  busy?(): boolean;
+}
 
 type Refs = Record<string, SVGElement | null>;
 const set = (el: SVGElement | null | undefined, attr: string, val: string | number) => { if (el) el.setAttribute(attr, String(val)); };

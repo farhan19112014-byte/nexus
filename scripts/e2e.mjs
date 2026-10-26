@@ -55,11 +55,15 @@ await new Promise((res, rej) => { llmServer.stdout.on('data', (d) => String(d).i
 
 const PORT = 8799; const ORIGIN = `http://127.0.0.1:${PORT}`; const URL = `${ORIGIN}/app`;
 const results = [];
+/** the startup overlay (index.html #boot) is gone — it never blocks clicks, but it would show in screenshots */
+const noBoot = (pg) => pg.waitForSelector('#boot', { state: 'detached', timeout: 8000 }).catch(() => {});
 const check = (name, ok, detail = '') => { results.push({ name, ok: !!ok, detail: String(detail) }); console.log(`${ok ? '✔' : '✘'} ${name}${detail ? ' — ' + detail : ''}`); };
 const rc = 'test-results/e2e-runtime-config.json'; rmSync(rc, { force: true });
 const server = spawn(process.execPath, ['dist-server/index.js', '--serve-dist'], { env: { ...process.env, PORT: String(PORT), LLM_PROVIDER: 'demo', RUNTIME_CONFIG_PATH: rc, LOG_REQUESTS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
 await new Promise((res, rej) => { server.stdout.on('data', (d) => String(d).includes('listening') && res()); server.on('exit', (c) => rej(new Error(`server exited ${c}`))); setTimeout(() => rej(new Error('server start timeout')), 30000); });
-const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium' });
+// the main browser has WebGL switched off, so it exercises the 2D FALLBACK path (DOM-inspectable rig); the 3D robot is tested in WebGL browsers below
+const NO_GL = ['--disable-3d-apis'];
+const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: NO_GL });
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
 const page = await ctx.newPage();
 const errors = []; page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
@@ -188,7 +192,7 @@ try {
 
   // status / model panel
   await page.getByRole('tab', { name: 'Status' }).click();
-  check('[A10] [A49] status panel lists capabilities and all 125 assets', (await page.locator('.assets tbody tr').count()) === 125 && (await page.locator('.caps li').count()) >= 8);
+  check('[A10] [A49] status panel lists capabilities and all 127 assets', (await page.locator('.assets tbody tr').count()) === 127 && (await page.locator('.caps li').count()) >= 8);
 
   // light mode: one click on the home page turns the site and the robot light; it is remembered; dark is the classic look
   {
@@ -205,29 +209,88 @@ try {
     await tp.close();
   }
 
-  // 3D NEXUS: the 2D/3D switch loads the 3D model (WebGL via SwiftShader here), the same animations move it, and errors never blank the stage
+  // 3D NEXUS on the robot page: shown by default where WebGL exists (SwiftShader here), driven by the same engine + its own motion engine
   {
     const gb = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
     const gp = await (await gb.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); const gErr = [];
     gp.on('pageerror', (e) => gErr.push(e.message));
-    await gp.goto(URL, { waitUntil: 'networkidle' }); await gp.waitForTimeout(800);
+    await gp.goto(URL, { waitUntil: 'networkidle' }); await noBoot(gp);
     await gp.evaluate(async () => { await nexus.memory.updateSettings({ setupDone: true, layout: 'robot' }); nexus.companion.applySettings(); }); await gp.keyboard.press('Escape');
-    const label2d = await gp.getByTestId('style-toggle').getAttribute('aria-label');
-    await gp.getByTestId('style-toggle').click();
-    await gp.waitForSelector('.robot3d[data-ready="1"]', { timeout: 30000 }).catch(() => null);
-    const st = await gp.evaluate(() => ({ ready: document.querySelector('.robot3d')?.getAttribute('data-ready'), canvas: !!document.querySelector('.robot3d canvas'), svg: !!document.querySelector('.stage-box svg[role=img]'), style: nexus.memory.settings.robotStyle }));
+    await gp.waitForSelector('.robot3d[data-ready="1"]', { timeout: 40000 }).catch(() => null);
+    const st = await gp.evaluate(() => ({ ready: document.querySelector('.robot3d')?.getAttribute('data-ready'), canvas: !!document.querySelector('.robot3d canvas'), svg: !!document.querySelector('.stage-box svg[role=img]'), toggle: !!document.querySelector('[data-testid=style-toggle]'), is3d: nexus.runtime.is3d, bodyIdle: nexus.engine.bodyIdle }));
+    check('[A125] [A127] the robot page shows the 3D NEXUS by default (model loaded, WebGL canvas, no 2D robot, no 2D/3D switch)', st.ready === '1' && st.canvas && !st.svg && !st.toggle && st.is3d && !st.bodyIdle, JSON.stringify(st));
     const box = await gp.locator('.robot3d').boundingBox();
     const shot = async () => (await gp.screenshot({ clip: box })).toString('base64');
     const still = await shot(); await gp.waitForTimeout(300);
     await gp.evaluate(() => { void nexus.companion.send('wave please'); }); await gp.waitForTimeout(1500);
-    const moved = (await shot()) !== still;
-    await gp.reload({ waitUntil: 'networkidle' }); await gp.waitForSelector('.robot3d[data-ready="1"]', { timeout: 30000 }).catch(() => null);
-    const kept = await gp.evaluate(() => !!document.querySelector('.robot3d[data-ready="1"]'));
-    await gp.getByTestId('style-toggle').click(); await gp.waitForTimeout(400);
-    const back = await gp.evaluate(() => ({ svg: !!document.querySelector('.stage-box svg[role=img]'), gl: !!document.querySelector('.robot3d') }));
-    check('[A125] the 2D/3D switch shows the 3D NEXUS (model loaded, WebGL canvas, no 2D robot), and the setting is remembered', label2d === 'Show the 3D robot' && st.ready === '1' && st.canvas && !st.svg && st.style === '3d' && kept, JSON.stringify({ label2d, st, kept }));
-    check('[A125] the same animation engine moves the 3D robot (a wave changes the picture)', moved);
-    check('[A125] switching back restores the classic 2D robot; no page errors in 3D', back.svg && !back.gl && gErr.length === 0, JSON.stringify({ back, gErr }));
+    check('[A125] the same animation engine moves the 3D robot (a requested wave changes the picture)', (await shot()) !== still);
+    // motion states follow the REAL companion state: thinking only while a request is pending, then back; a failure never leaves it stuck
+    await gp.waitForFunction(() => !nexus.companion.getSnapshot().busy && nexus.companion.sm.state === 'idle', null, { timeout: 20000 }).catch(() => {});
+    const seen = await gp.evaluate(async () => {
+      const el = document.querySelector('.robot3d'); const log = []; const mo = new MutationObserver(() => log.push(el.getAttribute('data-motion'))); mo.observe(el, { attributes: true, attributeFilter: ['data-motion'] });
+      void nexus.companion.send('tell me something nice');          // not awaited: a spoken reply could keep the promise open
+      for (let i = 0; i < 100 && (nexus.companion.getSnapshot().busy || nexus.companion.sm.state === 'processing'); i++) await new Promise((r) => setTimeout(r, 100));
+      await new Promise((r) => setTimeout(r, 600)); mo.disconnect();
+      return { log, now: el.getAttribute('data-motion') };
+    });
+    check('[A127] 3D motion state follows the real request: thinking while waiting, then not thinking once answered', seen.log.includes('thinking') && seen.now !== 'thinking', JSON.stringify(seen));
+    const intr = await gp.evaluate(async () => {
+      const el = document.querySelector('.robot3d'); void nexus.companion.send('tell me a long story about stars'); await new Promise((r) => setTimeout(r, 120));
+      nexus.companion.cancel(); const right = el.getAttribute('data-motion'); await new Promise((r) => setTimeout(r, 4500));
+      return { right, later: el.getAttribute('data-motion'), active: nexus.engine.active().filter((a) => a.phase !== 'out').map((a) => a.skillId), state: nexus.companion.sm.state };
+    });
+    check('[A127] interrupting stops the motion at once and nothing stale keeps running afterwards', ['interrupted', 'idle'].includes(intr.right) && intr.later !== 'thinking' && intr.later !== 'interrupted' && intr.active.length === 0, JSON.stringify(intr));
+    const typing = await gp.evaluate(async () => { nexus.companion.noteTyping(true, 'what is a quasar?'); const a = document.querySelector('.robot3d').getAttribute('data-motion'); nexus.companion.noteTyping(false); return { a, b: document.querySelector('.robot3d').getAttribute('data-motion') }; });
+    check('[A127] typing a question makes the 3D robot curious; stopping returns it to idle', typing.a === 'curious' && typing.b === 'idle', JSON.stringify(typing));
+    // frame cost of the 3D robot page in this software renderer (no GPU) — measured, not assumed
+    const fps = await gp.evaluate(async () => { const f0 = nexus.runtime.frames; const t0 = performance.now(); nexus.companion.noteTyping(true, 'why?'); await new Promise((r) => setTimeout(r, 2500)); nexus.companion.noteTyping(false); return { fps: ((nexus.runtime.frames - f0) * 1000) / (performance.now() - t0), ...nexus.runtime.stats() }; });
+    check('[A127] performance measured: 3D robot page frame rate in software WebGL (no GPU in the test machine)', fps.fps > 5, `${fps.fps.toFixed(1)} fps · avg JS frame ${fps.avgFrameMs.toFixed(2)} ms (excludes GPU/software raster time)`);
+    check('[A125] no page errors with the 3D robot', gErr.length === 0, gErr.slice(0, 3).join(' | '));
+    await gb.close();
+  }
+
+  // [A126] website redesign: the real 3D NEXUS in the landing hero, the state demo, startup transition, reduced motion, About/Privacy
+  {
+    const gb = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+    const gctx = await gb.newContext({ viewport: { width: 1280, height: 800 } }); const hp = await gctx.newPage(); const hErr = [];
+    hp.on('pageerror', (e) => hErr.push(e.message));
+    await hp.goto(URL, { waitUntil: 'networkidle' }); await noBoot(hp);
+    await hp.goto(`${ORIGIN}/`); await hp.waitForSelector('#boot', { state: 'detached', timeout: 15000 }).catch(() => {});
+    const at = await hp.evaluate(() => ({ ready: !!document.querySelector('.hero .robot3d[data-ready="1"] canvas'), svg: !!document.querySelector('.hero svg[role=img]'), label: document.querySelector('.hero .robot3d')?.getAttribute('aria-label') ?? '' }));
+    check('[A126] landing hero shows the actual 3D NEXUS model (WebGL canvas, accessible label, no 2D stand-in)', at.ready && !at.svg && /NEXUS/.test(at.label), JSON.stringify(at));
+    const statesOk = [];
+    for (const [name, core] of [['Listening', 'listening'], ['Thinking', 'processing'], ['Speaking', 'speaking'], ['Curious', 'idle'], ['Confused', 'idle'], ['Resting', 'idle'], ['Error', 'error'], ['Idle', 'idle']]) {
+      await hp.getByRole('group', { name: /states/ }).getByRole('button', { name }).click(); await hp.waitForTimeout(450);
+      const r = await hp.evaluate(() => ({ core: document.querySelector('.hero .robot3d')?.getAttribute('data-core'), note: document.querySelector('.state-note')?.textContent ?? '', pressed: document.querySelector('.state-panel [aria-pressed="true"]')?.textContent }));
+      statesOk.push(r.core === core && r.note.includes(name) && r.pressed === name ? name : `${name}✗(${r.core})`);
+    }
+    check('[A126] the hero state demo drives the 3D robot: idle, listening, thinking, speaking, curious, confused, resting, error (face, light, label)', statesOk.every((x) => !x.includes('✗')), statesOk.join(' '));
+    const box = await hp.locator('.hero-stage').boundingBox(); const a = (await hp.screenshot({ clip: box })).toString('base64');
+    await hp.getByRole('group', { name: /states/ }).getByRole('button', { name: 'Curious' }).click(); await hp.waitForTimeout(1200);
+    const motionNow = await hp.evaluate(() => document.querySelector('.hero .robot3d')?.getAttribute('data-motion'));
+    check('[A126] [A127] state changes move the 3D hero robot with its motion engine (picture changes, motion state set)', (await hp.screenshot({ clip: box })).toString('base64') !== a && motionNow === 'curious', motionNow);
+    check('[A127] the old 2D-style motion buttons are gone from the home page', await hp.getByRole('button', { name: /^(Wave|Greeting|Celebrate)$/ }).count() === 0);
+    const three = await hp.evaluate(() => performance.getEntriesByType('resource').filter((e) => /three\.module|nexus\.glb/.test(e.name)).map((e) => ({ n: e.name.split('/').pop(), kb: Math.round((e.encodedBodySize || e.transferSize) / 1024), ms: Math.round(e.duration) })));
+    check('[A126] performance: the 3D code and model are measured (loaded on demand)', three.length >= 2, JSON.stringify(three));
+    // reduced motion: the 3D hero does not greet or sway by itself
+    const rm = await gctx.newPage(); await rm.emulateMedia({ reducedMotion: 'reduce' }); await rm.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' });
+    await rm.waitForSelector('.hero .robot3d[data-ready="1"]', { timeout: 20000 }).catch(() => {}); const rmBoot = await rm.evaluate(() => !document.getElementById('boot'));
+    const poses = []; for (let i = 0; i < 6; i++) { poses.push(await rm.evaluate(() => document.querySelector('.hero .robot3d')?.getAttribute('data-pose') ?? '')); await rm.waitForTimeout(250); }
+    check('[A126] reduced motion: the 3D hero robot stays still and the startup overlay is skipped', new Set(poses).size === 1 && poses[0] !== '' && rmBoot, `${poses[0]} · overlay gone: ${rmBoot}`);
+    await rm.close();
+    // light theme: switching the theme re-skins the live 3D NEXUS (white and light blue) without reloading it
+    await hp.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await hp.waitForSelector('.hero .robot3d[data-ready="1"]', { timeout: 30000 }).catch(() => {});
+    const darkSkin = await hp.evaluate(() => document.querySelector('.hero .robot3d')?.getAttribute('data-skin'));
+    await hp.getByTestId('theme-toggle').first().click();
+    await hp.waitForSelector('.hero .robot3d[data-skin="light"][data-ready="1"]', { timeout: 15000 }).catch(() => {});
+    const lightNow = await hp.evaluate(() => ({ theme: document.documentElement.dataset.theme, skin: document.querySelector('.hero .robot3d')?.getAttribute('data-skin') }));
+    check('[A126] light theme: the theme switch re-skins the live 3D hero robot (dark → light NEXUS)', darkSkin === 'dark' && lightNow.theme === 'light' && lightNow.skin === 'light', JSON.stringify({ darkSkin, ...lightNow }));
+    await hp.goto(`${ORIGIN}/about`, { waitUntil: 'networkidle' });
+    check('[A126] About page credits "Made by Muhammad Farhan Khan"', (await hp.getByTestId('maker').textContent()) === 'Made by Muhammad Farhan Khan');
+    await hp.goto(`${ORIGIN}/privacy`, { waitUntil: 'networkidle' });
+    const priv = await hp.locator('main').textContent();
+    check('[A126] Privacy page describes the actual data practices (browser storage, provider, IP limits, hosting) without compliance claims', ['IndexedDB', 'free tier', 'IP address', 'GitHub Pages', 'Render'].every((w) => priv.includes(w)) && !/compliant/i.test(priv));
+    check('[A126] no page errors on the redesigned 3D pages', hErr.length === 0, hErr.slice(0, 3).join(' | '));
     await gb.close();
   }
 
@@ -239,9 +302,14 @@ try {
   // responsive layout
   const mobile = await browser.newPage({ viewport: { width: 375, height: 760 } }); await mobile.goto(URL, { waitUntil: 'networkidle' }); await mobile.evaluate(() => nexus.memory.updateSettings({ setupDone: true, layout: 'workspace' })); await mobile.waitForTimeout(600);
   const ratio = (p) => p.evaluate(() => { const r = document.querySelector('.stage [data-part="torso"]').getBoundingClientRect(); const h = document.querySelector('.stage [data-part="head"]').getBoundingClientRect(); return { torso: r.width / r.height, head: h.width / h.height }; });
+  // compare proportions at rest (a gesture or head tilt in progress changes the bounding boxes)
+  // freeze both robots in the neutral pose (this check is about layout proportions, not animation)
+  const calm = (p) => p.evaluate(async () => { nexus.engine.idleEnabled = false; nexus.engine.reset(); for (const s of ['user', 'reaction', 'attention', 'system']) nexus.expressions.release(s); await new Promise((r) => setTimeout(r, 900)); });
+  await calm(page); await calm(mobile);
   const desk = await ratio(page);
   const m = await mobile.evaluate(() => ({ overflow: document.documentElement.scrollWidth - window.innerWidth, composer: (document.querySelector('#composer')?.getBoundingClientRect().width ?? 0) > 200 }));
   const mr = await ratio(mobile);
+  for (const p of [page, mobile]) await p.evaluate(() => { nexus.engine.idleEnabled = true; });
   check('[A90] mobile width: no horizontal scroll, robot keeps its proportions, composer usable', m.overflow <= 1 && Math.abs(mr.torso - desk.torso) < 0.05 && Math.abs(mr.head - desk.head) < 0.12 && m.composer, JSON.stringify({ overflow: m.overflow, desk, mobile: mr }));
   await mobile.screenshot({ path: 'test-results/e2e-mobile.png' }); await mobile.close();
   const tablet = await browser.newPage({ viewport: { width: 820, height: 1100 } }); await tablet.goto(URL, { waitUntil: 'networkidle' });
@@ -439,8 +507,9 @@ try {
   await home.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await home.waitForTimeout(700);
   const hero = await home.evaluate(() => ({ h1: document.querySelector('h1')?.textContent, robots: document.querySelectorAll('.hero svg[role=img] [data-part="face"]').length, pill: document.querySelector('.status-pill')?.textContent ?? '', cta: [...document.querySelectorAll('.hero a')].map((a) => a.textContent), lead: document.querySelector('.lead')?.textContent ?? '' }));
   check('[A101] landing: headline, the real robot rig, live status from /api/status, and the custom name', /digital companion/.test(hero.h1) && hero.robots === 1 && /Demo brain — not an LLM/.test(hero.pill) && hero.cta.includes('Meet Nova') && hero.lead.includes('Nova is your NEXUS robot'), JSON.stringify(hero));
-  await home.getByRole('button', { name: 'Wave' }).click(); await home.waitForTimeout(400);
-  check('[A101] personality preview plays a real motion', (await home.getByRole('status').filter({ hasText: 'Now showing' }).textContent().catch(() => '')).includes('Wave'));
+  await home.getByRole('button', { name: 'Listening' }).click(); await home.waitForTimeout(400);
+  check('[A101] the state preview works on the 2D fallback too (no WebGL in this browser)', (await home.getByRole('status').filter({ hasText: 'Now showing' }).textContent().catch(() => '')).includes('Listening') && await home.evaluate(() => document.querySelector('.hero svg[role=img]')?.getAttribute('data-core') === 'listening'));
+  await home.getByRole('button', { name: 'Reset' }).click();
   await home.getByRole('link', { name: 'Explore features' }).click(); await home.waitForTimeout(600);
   check('[A102] "Explore features" scrolls to the features section and moves focus there', await home.evaluate(() => document.activeElement?.id === 'features' && document.getElementById('features').getBoundingClientRect().top < 120));
   await home.evaluate(() => { window.__noReload = true; });
@@ -474,6 +543,17 @@ try {
   check('[A101] [A98] no page errors on the public pages', homeErrors.length === 0, homeErrors.slice(0, 3).join(' | '));
   await home.close();
 
+  // [A126] startup transition on a first visit: shown while the page loads, cleared once the robot is drawn, 1–3 s
+  {
+    const bp = await browser.newPage(); await bp.goto(`${ORIGIN}/`); const seen = await bp.evaluate(() => !!document.getElementById('boot'));
+    await bp.waitForSelector('#boot', { state: 'detached', timeout: 10000 }).catch(() => {});
+    const r = await bp.evaluate(() => ({ ms: Number(document.documentElement.dataset.bootMs), robot: !!document.querySelector('.hero svg[role=img], .hero .robot3d[data-ready]') }));
+    await bp.reload(); await bp.waitForSelector('#boot', { state: 'detached', timeout: 10000 }).catch(() => {});
+    const again = await bp.evaluate(() => Number(document.documentElement.dataset.bootMs));
+    check('[A126] startup transition: shown on a first visit and cleared once the robot is drawn (1–3 s); a reload in the same tab is not held', seen && r.robot && r.ms >= 900 && r.ms <= 3000 && again < r.ms, `first ${r.ms} ms · reload ${again} ms`);
+    await bp.close();
+  }
+
   // responsive public pages + mobile menu
   const widths = [320, 375, 430, 768, 1024, 1280, 1440];
   const over = [];
@@ -481,13 +561,13 @@ try {
     const rp = await browser.newPage({ viewport: { width: w, height: 800 } });
     for (const path of ['/', '/about', '/privacy']) { await rp.goto(`${ORIGIN}${path}`, { waitUntil: 'networkidle' }); const o = await rp.evaluate(() => document.documentElement.scrollWidth - innerWidth); if (o > 1) over.push(`${w}${path}:${o}`); }
     if (w === 375) {
-      await rp.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await rp.screenshot({ path: 'test-results/e2e-home-mobile.png' });
+      await rp.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await noBoot(rp); await rp.screenshot({ path: 'test-results/e2e-home-mobile.png' });
       const btn = rp.getByRole('button', { name: 'Open menu' }); const hiddenBefore = !(await rp.getByRole('navigation', { name: 'Main' }).isVisible());
       await btn.click(); const shown = await rp.getByRole('link', { name: 'Privacy' }).first().isVisible();
       await rp.keyboard.press('Escape'); const closed = !(await rp.getByRole('navigation', { name: 'Main' }).isVisible());
       check('[A102] [A88] mobile header: menu button opens the navigation, Esc closes it', hiddenBefore && shown && closed);
     }
-    if (w === 1440) { await rp.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await rp.waitForTimeout(900); await rp.screenshot({ path: 'test-results/e2e-home-desktop.png' }); }
+    if (w === 1440) { await rp.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await noBoot(rp); await rp.waitForTimeout(900); await rp.screenshot({ path: 'test-results/e2e-home-desktop.png' }); }
     await rp.close();
   }
   check('[A101] [A90] public pages have no horizontal scroll from 320 to 1440 px', over.length === 0, over.join(' '));
@@ -569,7 +649,7 @@ try {
   {
     // fake microphone: 0.3 s quiet, 1.2 s of "speech" (a tone), then quiet — the end-of-speech detector should stop on its own
     writeFileSync('test-results/fake-mic.wav', toneWav(5, (t) => t > 0.3 && t < 1.5, 48000));
-    const vb = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${process.cwd()}/test-results/fake-mic.wav%noloop`] });
+    const vb = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: [...NO_GL, '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${process.cwd()}/test-results/fake-mic.wav%noloop`] });
     const vctx = await vb.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['microphone'] });
     const rv = await vctx.newPage(); const rvErr = []; rv.on('pageerror', (e) => rvErr.push(e.message));
     const R = (fn, arg) => rv.evaluate(fn, arg);

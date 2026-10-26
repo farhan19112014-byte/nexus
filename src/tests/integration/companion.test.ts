@@ -376,3 +376,37 @@ describe('[A97] companion integration', () => {
     m.stop();
   }, 15000);
 });
+
+describe('[A126] website redesign: motion-engine states', () => {
+  it('[A126] typing a question makes the face curious; a plain sentence keeps the listening face', async () => {
+    const t = rig(); await t.ready();
+    t.c.noteTyping(true, 'what is a black hole?'); t.expressions.update(1); expect(t.expressions.current()).toBe('curious');
+    t.c.noteTyping(true, 'tell me a story'); t.expressions.update(1); expect(t.expressions.current()).toBe('listening');
+    t.c.noteTyping(false); t.stop();
+  });
+  it('[A126] an empty/unreadable reply shows a confused face (still reported as a failure); other errors show the error face', async () => {
+    let code: 'malformed' | 'provider' = 'malformed';
+    const t = rig(async () => { throw new ApiError(code === 'malformed' ? 'Gemini returned an empty reply.' : 'Gemini is temporarily unavailable.', code, true); }); await t.ready();
+    await t.c.send('hi'); await until(() => t.c.sm.state === 'error'); t.expressions.update(1);
+    expect(t.expressions.current()).toBe('confused');
+    expect(t.c.getSnapshot().messages.at(-1)?.status).toBe('failed');
+    await until(() => t.c.sm.state === 'idle', 8000);
+    code = 'provider'; await t.c.send('hi again'); await until(() => t.c.sm.state === 'error'); t.expressions.update(1);
+    expect(t.expressions.current()).toBe('error');
+    t.stop();
+  }, 15000);
+  it('[A126] the self-introduction is not spoken on a cold page load (no user interaction yet) — text only', async () => {
+    const nav = globalThis.navigator as unknown as { userActivation?: unknown };
+    const had = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { ...nav, userActivation: { hasBeenActive: false } } });
+    try {
+      const t = rig(); await t.memory.ready; await t.memory.updateSettings({ greeted: true, introduceOnOpen: true, voiceOutput: true });
+      const spoken: string[] = []; (t.c as unknown as { tts: { supported: boolean; speaking: boolean; enqueue: (x: string) => void } }).tts = { supported: true, speaking: false, enqueue: (x: string) => spoken.push(x) } as never;
+      expect(t.c.introduce()).toBe(true);
+      expect(spoken).toEqual([]);
+      expect(t.c.getSnapshot().messages.at(-1)?.text).toMatch(/Muhammad Farhan Khan|Farhan/);
+      t.stop();
+    } finally { if (had) Object.defineProperty(globalThis, 'navigator', had); }
+  });
+});
+

@@ -6,6 +6,7 @@ import { AnimationEngine } from '../animation/engine';
 import { ExpressionController } from '../expressions/expressionController';
 import type { RigHandle, Indicator } from '../character/Robot';
 import type { Channel } from '../../shared/channels';
+import type { MotionState } from '../character3d/motion3d';
 
 export class CharacterRuntime {
   private rigs = new Set<RigHandle>();
@@ -22,8 +23,15 @@ export class CharacterRuntime {
     engine.setFaceSource(expressions);
     engine.on('start', () => this.kick()); // a new action never waits for a slow (power-saving) frame
   }
-  attach(r: RigHandle) { this.rigs.add(r); r.setIndicator(this.indicator); r.apply(this.engine.values); return () => { this.rigs.delete(r); }; }
+  attach(r: RigHandle) { this.rigs.add(r); r.setIndicator(this.indicator); r.setMotion?.(this.motion, this.engine.reducedMotion); r.apply(this.engine.values); return () => { this.rigs.delete(r); }; }
   setIndicator(i: Indicator) { this.indicator = i; this.rigs.forEach((r) => r.setIndicator(i)); }
+  /** body-language state for the 3D robot's motion engine (ignored by the 2D rig) */
+  motion: MotionState = 'idle';
+  private motionKey = '';
+  setMotion(m: MotionState) { const key = `${m}|${this.engine.reducedMotion}`; if (key === this.motionKey) return; this.motionKey = key; this.motion = m; this.rigs.forEach((r) => r.setMotion?.(m, this.engine.reducedMotion)); this.kick(); }
+  /** true while the 3D robot is on screen: its motion engine replaces the 2D-style idle sway of the animation engine */
+  is3d = false;
+  set3d(on: boolean) { this.is3d = on; this.engine.bodyIdle = !on; this.motionKey = ''; this.rigs.forEach((r) => r.setMotion?.(this.motion, this.engine.reducedMotion)); }
 
   step(dt: number): Record<Channel, number> {
     this.expressions.update(dt);
@@ -52,7 +60,7 @@ export class CharacterRuntime {
       this.last = now;
       const ft = performance.now() - t0;
       this.frameTimes.push(ft); if (this.frameTimes.length > 120) this.frameTimes.shift();
-      const calm = this.powerSaving && this.engine.isCalm() && this.expressions.settled();
+      const calm = this.powerSaving && this.engine.isCalm() && this.expressions.settled() && ![...this.rigs].some((r) => r.busy?.());
       if (calm) this.timer = setTimeout(() => { this.raf = requestAnimationFrame(loop); }, this.resting ? 120 : 45);
       else this.raf = requestAnimationFrame(loop);
     };

@@ -22,6 +22,7 @@ export default function Stage({ compact = false }: { compact?: boolean }) {
   useEffect(() => { if (!rig.current) return; const off = runtime.attach(rig.current); runtime.start(); return () => { off(); }; }, [s.environment, s.effects, accKey]);
   const live = usePoll(useCallback(() => ({ acts: engine.active().filter((a) => a.phase !== 'out' && !a.preview).map((a) => a.name), expr: expressions.current(), pose: engine.getPose() }), []), 200);
   useEffect(() => { rig.current?.setSeat(live.pose === 'sitting'); }, [live.pose]);
+  useEffect(() => () => runtime.set3d(false), []);
   const onMove = (e: React.PointerEvent) => {
     if (snap.state === 'listening' || snap.state === 'responding') return;
     const r = box.current!.getBoundingClientRect();
@@ -30,7 +31,7 @@ export default function Stage({ compact = false }: { compact?: boolean }) {
   return (
     <section className={`stage${compact ? ' compact' : ''}`} aria-label={`${s.robotName}, your robot`}>
       <div className={`stage-box env-${s.environment} size-${s.robotSize}`} ref={box} onPointerMove={onMove} onPointerLeave={() => engine.lookAt(null)}>
-        <RobotAuto ref={rig} style3d={s.robotStyle === '3d'} onFallback={(why) => companion.notifications.push('info', `Showing the 2D robot: ${why}.`, { react: false })} environment={s.environment} effects={s.effects && !s.highContrast} accessories={s.accessories} className="robot" title={`${s.robotName} — ${STATE_TEXT[snap.state] ?? snap.state}, expression ${live.expr}`} />
+        <RobotAuto ref={rig} mode="auto" onReady3d={() => runtime.set3d(true)} onFallback={(why) => { runtime.set3d(false); companion.notifications.push('info', `Showing the 2D robot: ${why}.`, { react: false }); }} environment={s.environment} effects={s.effects && !s.highContrast} accessories={s.accessories} className="robot" title={`${s.robotName} — ${STATE_TEXT[snap.state] ?? snap.state}, expression ${live.expr}`} />
         <div className="stage-status" role="status" aria-live="polite">
           <span className={`dot st-${snap.state}`} aria-hidden /> {STATE_TEXT[snap.state] ?? snap.state}
           {!compact && <span className="muted"> · face: {live.expr}{live.acts.length ? ` · ${live.acts.join(', ')}` : ''}</span>}

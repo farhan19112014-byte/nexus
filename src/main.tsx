@@ -8,6 +8,7 @@ import './components/depth.css';
 import { routeFor, useLocation } from './router';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { initTheme } from './theme';
+import { finishBoot } from './boot';
 
 initTheme();
 
@@ -28,3 +29,4 @@ function Root() {
 }
 
 createRoot(document.getElementById('root')!).render(<StrictMode><Root /></StrictMode>);
+finishBoot();

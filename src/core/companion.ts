@@ -23,6 +23,7 @@ import { RobotEvents } from './robotEvents';
 import { StateMachine, type CompanionState } from './stateMachine';
 import { Notifications } from './notifications';
 import type { CharacterRuntime } from './characterRuntime';
+import type { MotionState } from '../character3d/motion3d';
 import { takeSentences, visemeFor } from '../voice/tts';
 import type { SpeechIn, SpeechOut } from '../voice/serverVoice';
 import { VoiceInputRouter, VoiceOutputRouter } from '../voice/router';
@@ -209,7 +210,9 @@ export class Companion {
     const part = h < 5 ? 'Hi, up late' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
     const text = introduction(this.robotName, part);
     this.push({ role: 'system', text, status: 'complete' });
-    if (this.settings.voiceOutput && this.tts.supported && !this.tts.speaking) this.tts.enqueue(text, 'warm');
+    // spoken only after the visitor has interacted with the page (e.g. clicked "Meet …"): never autoplay on a cold page load
+    const interacted = (globalThis.navigator as { userActivation?: { hasBeenActive: boolean } } | undefined)?.userActivation?.hasBeenActive ?? true;
+    if (interacted && this.settings.voiceOutput && this.tts.supported && !this.tts.speaking) this.tts.enqueue(text, 'warm');
     if (!this.settings.quietMode && !this.settings.reducedMotion && !this.snap.busy) this.expressions.set('reaction', 'happy', 0.7, 2.5, 0);
     return true;
   }
@@ -262,7 +265,7 @@ export class Companion {
   applySettings() {
     const s = this.settings;
     this.engine.intensity = s.animationIntensity;
-    this.engine.reducedMotion = s.reducedMotion;
+    this.engine.reducedMotion = s.reducedMotion; this.d.runtime.setMotion(this.d.runtime.motion);
     this.engine.idleEnabled = !s.reducedMotion && s.idleLevel !== 'off';
     this.engine.idleScale = { off: 0, calm: 0.5, normal: 1, lively: 1.6 }[s.idleLevel];
     this.engine.speechMouth = s.speakingMouth;
@@ -294,6 +297,7 @@ export class Companion {
     else if (s === 'resting') X.set('system', 'resting', 1, null, 0);
     else if (s === 'speaking') X.set('system', 'speaking', 0.9, null, 1); // only while speech audio actually plays
     else X.release('system');
+    this.d.runtime.setMotion(this.motionFor(s));
     // the chest core / forehead light mirror the real state: "speaking" only while audio plays, "responding" while text streams
     if (!this.successFlash) this.d.runtime.setIndicator(this.indicatorFor(s));
     if (s === 'listening') { this.engine.lookAt(0, 0, 'user'); void this.runner.run({ skillId: 'listen_lean' }, { tag: 'listening' }); }
@@ -305,6 +309,19 @@ export class Companion {
     this.diagnostics.log({ type: 'state', code: `${prev}->${s}` });
     this.set({});
   }
+  /** the 3D robot's body-language state for a companion state (src/character3d/motion3d.ts) */
+  private motionFor(s: CompanionState): MotionState {
+    switch (s) {
+      case 'listening': return 'listening';
+      case 'processing': return 'thinking';
+      case 'speaking': return 'speaking';
+      case 'resting': return 'resting';
+      case 'interrupted': return 'interrupted';
+      case 'error': return 'error';
+      case 'acting': case 'greeting': return 'acting';
+      default: return 'idle';
+    }
+  }
   private armRest() {
     if (this.restTimer) clearTimeout(this.restTimer);
     this.restTimer = setTimeout(() => { if (this.sm.state === 'idle' && !this.engine.active().length) this.sm.go('resting'); }, this.d.restAfterMs ?? 120000);
@@ -314,20 +331,24 @@ export class Companion {
   /* ---------------- liveliness ---------------- */
   private typingTimer: ReturnType<typeof setTimeout> | null = null;
   private typingSince = 0;
-  /** While you type, the robot looks at the chat with an attentive face (and leans in once per message). */
-  noteTyping(active: boolean) {
+  /** While you type, the robot looks at the chat with an attentive face (and leans in once per message);
+   *  when what you are typing is a question (ends with "?"), the face turns curious. */
+  noteTyping(active: boolean, text = '') {
     if (this.typingTimer) clearTimeout(this.typingTimer);
     const idleish = this.sm.state === 'idle' || this.sm.state === 'resting';
-    if (!active || !idleish) { this.expressions.release('attention'); if (!active) this.typingSince = 0; if (this.gazeOnChat) { this.engine.lookAt(null); this.gazeOnChat = false; } return; }
+    if (!active || !idleish) { if (this.d.runtime.motion === 'curious') this.d.runtime.setMotion(this.motionFor(this.sm.state)); this.expressions.release('attention'); if (!active) this.typingSince = 0; if (this.gazeOnChat) { this.engine.lookAt(null); this.gazeOnChat = false; } return; }
     if (this.sm.state === 'resting') this.wake(); else this.armAmbient();
     this.engine.lookAt(0.85, 0.2, 'chat'); this.gazeOnChat = true;
-    this.expressions.set('attention', 'listening', 0.55, null, 1);
+    const question = text.trimEnd().endsWith('?');
+    if (question) this.expressions.set('attention', 'curious', 0.7, null, 1);
+    else this.expressions.set('attention', 'listening', 0.55, null, 1);
+    this.d.runtime.setMotion(question ? 'curious' : 'idle');
     if (!this.typingSince) {
       this.typingSince = Date.now();
       const s = this.settings;
       if (!s.reducedMotion && !s.quietMode && !this.engine.active().length) void this.runner.run({ skillId: 'head_forward', amplitude: 0.4 }, { tag: 'attention' }).catch(() => {});
     }
-    this.typingTimer = setTimeout(() => { this.expressions.release('attention'); this.engine.lookAt(null); this.gazeOnChat = false; this.typingSince = 0; }, 2500);
+    this.typingTimer = setTimeout(() => { this.expressions.release('attention'); this.engine.lookAt(null); this.gazeOnChat = false; this.typingSince = 0; if (this.d.runtime.motion === 'curious') this.d.runtime.setMotion(this.motionFor(this.sm.state)); }, 2500);
   }
   private gazeOnChat = false;
   private ambientTimer: ReturnType<typeof setTimeout> | null = null;
@@ -342,6 +363,7 @@ export class Companion {
     const allowed = s.ambientBehaviours && !s.quietMode && !s.reducedMotion && s.idleLevel !== 'off';
     const quiet = this.sm.state !== 'idle' || this.snap.busy || this.snap.listening || this.tts.speaking || this.engine.active().some((a) => a.phase !== 'out') || (typeof document !== 'undefined' && document.hidden);
     if (!force && (!allowed || quiet)) { this.armAmbient(); return null; }
+    if (this.d.runtime.is3d && !force) { this.armAmbient(); return null; }  // the 3D robot's motion engine does its own idle variation
     const pool = ['look_around', 'stretch', 'antenna_wiggle', 'head_tilt'].filter((x) => x !== this.lastAmbient && this.d.registry.get(x));
     const pick = pool[Math.floor(Math.random() * pool.length)] ?? null;
     if (pick) { this.lastAmbient = pick; await this.runner.run({ skillId: pick, amplitude: s.idleLevel === 'calm' ? 0.6 : 1 }, { tag: 'ambient' }).catch(() => {}); }
@@ -519,6 +541,8 @@ export class Companion {
     this.patch(asstId, { status: 'failed', stage: undefined, text: partial, error: { message: err.message + hint, code: err.code, retryable: err.retryable || err.code === 'timeout' || err.code === 'network' || err.code === 'offline' } });
     if (['offline', 'network', 'timeout', 'provider', 'unconfigured', 'rate_limited', 'malformed'].includes(err.code)) this.recordConnection('failed', err.message);
     this.go('error');
+    // a reply that came back empty or unreadable is shown as confusion rather than alarm (still a failure, still explained)
+    if (err.code === 'malformed') { this.expressions.set('system', 'confused', 1, null, 5); this.d.runtime.setMotion('confused'); }
     this.set({ error: err.message, busy: false, speaking: false });
     this.diagnostics.log({ type: 'error', code: err.code, detail: err.message });
     this.notifications.push('error', err.message, { essential: true, react: false, sound: true });
@@ -637,7 +661,7 @@ export class Companion {
         if (this.settings.reviewTranscript) { this.set({ draft: t, interim: '' }); if (this.sm.state === 'listening' || this.sm.state === 'processing') this.go('idle'); }
         else void this.send(t, { voice: true });
       },
-      onError: (m, code) => { this.diagnostics.log({ type: 'voice', code }); this.set({ listening: false, interim: '' }); if (this.sm.state === 'listening' || (this.sm.state === 'processing' && !this.snap.busy)) this.go('idle'); this.notifications.push(code === 'no-speech' ? 'info' : 'error', m, { react: false, essential: code === 'not-allowed' }); if (code === 'not-allowed') this.set({ mic: 'denied' }); },
+      onError: (m, code) => { this.diagnostics.log({ type: 'voice', code }); this.set({ listening: false, interim: '' }); if (this.sm.state === 'listening' || (this.sm.state === 'processing' && !this.snap.busy)) this.go('idle'); if (code === 'no-speech') this.expressions.set('reaction', 'confused', 0.8, 1.8); this.notifications.push(code === 'no-speech' ? 'info' : 'error', m, { react: false, essential: code === 'not-allowed' }); if (code === 'not-allowed') this.set({ mic: 'denied' }); },
       onState: (on) => { this.set({ listening: on }); if (on) this.set({ mic: 'granted' }); if (!on && this.sm.state === 'listening') this.go('idle'); },
     });
   }

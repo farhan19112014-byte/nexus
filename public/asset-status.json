@@ -1,55 +1,55 @@
 {
-  "generatedAt": "2026-10-26T13:09:56.055Z",
+  "generatedAt": "2026-10-26T15:24:49.800Z",
   "steps": [
     {
       "name": "typecheck",
       "ok": true,
       "code": 0,
-      "seconds": 9.931
+      "seconds": 9.429
     },
     {
       "name": "build (app + server bundle)",
       "ok": true,
       "code": 0,
-      "seconds": 15.948
+      "seconds": 15.768
     },
     {
       "name": "lint (eslint, 0 warnings)",
       "ok": true,
       "code": 0,
-      "seconds": 6.655
+      "seconds": 6.524
     },
     {
       "name": "unit + integration tests",
       "ok": true,
       "code": 0,
-      "seconds": 26.205
+      "seconds": 37.526
     },
     {
       "name": "end-to-end tests",
       "ok": true,
       "code": 0,
-      "seconds": 221.881
+      "seconds": 333.167
     },
     {
       "name": "desktop app smoke test",
       "ok": true,
       "code": 0,
-      "seconds": 2.803
+      "seconds": 2.791
     }
   ],
   "suites": {
     "unit": {
-      "total": 129,
-      "passed": 129
+      "total": 145,
+      "passed": 145
     },
     "integration": {
-      "total": 53,
-      "passed": 53
+      "total": 56,
+      "passed": 56
     },
     "e2e": {
-      "total": 107,
-      "passed": 107
+      "total": 122,
+      "passed": 122
     }
   },
   "assets": {
@@ -625,19 +625,19 @@
     },
     "A96": {
       "status": "verified",
-      "passed": 129,
+      "passed": 145,
       "failed": 0,
       "missing": []
     },
     "A97": {
       "status": "verified",
-      "passed": 53,
+      "passed": 56,
       "failed": 0,
       "missing": []
     },
     "A98": {
       "status": "verified",
-      "passed": 107,
+      "passed": 122,
       "failed": 0,
       "missing": []
     },
@@ -794,6 +794,18 @@
     "A125": {
       "status": "verified",
       "passed": 7,
+      "failed": 0,
+      "missing": []
+    },
+    "A126": {
+      "status": "verified",
+      "passed": 21,
+      "failed": 0,
+      "missing": []
+    },
+    "A127": {
+      "status": "verified",
+      "passed": 16,
       "failed": 0,
       "missing": []
     },
