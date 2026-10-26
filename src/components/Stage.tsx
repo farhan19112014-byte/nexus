@@ -1,7 +1,8 @@
 /** Main companion stage: the robot, pointer-driven gaze (Asset 23), live status text and body controls. */
 import { Icon } from './Icon';
 import { useCallback, useEffect, useRef } from 'react';
-import { Robot, type RigHandle } from '../character/Robot';
+import type { RigHandle } from '../character/Robot';
+import { RobotAuto } from '../character3d/RobotAuto';
 import { companion, engine, expressions, memory, runtime } from '../core/runtime';
 import { usePoll, useSnapshot, useStore } from './hooks';
 
@@ -29,7 +30,7 @@ export default function Stage({ compact = false }: { compact?: boolean }) {
   return (
     <section className={`stage${compact ? ' compact' : ''}`} aria-label={`${s.robotName}, your robot`}>
       <div className={`stage-box env-${s.environment} size-${s.robotSize}`} ref={box} onPointerMove={onMove} onPointerLeave={() => engine.lookAt(null)}>
-        <Robot ref={rig} environment={s.environment} effects={s.effects && !s.highContrast} accessories={s.accessories} className="robot" title={`${s.robotName} — ${STATE_TEXT[snap.state] ?? snap.state}, expression ${live.expr}`} />
+        <RobotAuto ref={rig} style3d={s.robotStyle === '3d'} onFallback={(why) => companion.notifications.push('info', `Showing the 2D robot: ${why}.`, { react: false })} environment={s.environment} effects={s.effects && !s.highContrast} accessories={s.accessories} className="robot" title={`${s.robotName} — ${STATE_TEXT[snap.state] ?? snap.state}, expression ${live.expr}`} />
         <div className="stage-status" role="status" aria-live="polite">
           <span className={`dot st-${snap.state}`} aria-hidden /> {STATE_TEXT[snap.state] ?? snap.state}
           {!compact && <span className="muted"> · face: {live.expr}{live.acts.length ? ` · ${live.acts.join(', ')}` : ''}</span>}

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEXUS 3D — minimal three.js example</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b1733; color: #e8f1ff; font: 14px system-ui, sans-serif; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  button { background: #101b35; color: inherit; border: 1px solid #2563eb; border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+</style>
+<!-- three.js from a CDN, pinned to the version NEXUS uses -->
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/" } }</script>
+</head>
+<body>
+<div class="bar">
+  <button id="talk">Talk</button><button id="happy">Happy eyes</button><button id="wave">Wave</button><button id="nod">Nod</button>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// 1. renderer, camera, lights
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.localClippingEnabled = true;
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color('#0b1733');
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+const key = new THREE.DirectionalLight(0xffffff, 2.1); key.position.set(-3, 6, 5);
+const rim = new THREE.DirectionalLight(0x6fb6ff, 2.2); rim.position.set(4, 2, -4);
+scene.add(key, rim, new THREE.HemisphereLight(0xbfd8ff, 0x0b1733, 0.5));
+const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 100); camera.position.set(0, 2.9, 11); camera.lookAt(0, 2.2, 0);
+const resize = () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); };
+addEventListener('resize', resize); resize();
+
+// 2. load the model (same folder) and grab its named parts
+const gltf = await new GLTFLoader().loadAsync('./nexus.glb');
+scene.add(gltf.scene);
+const $ = (name) => gltf.scene.getObjectByName(name);
+const head = $('Head'), eyes = [$('Eye_L'), $('Eye_R')], mouthLine = $('Mouth_Line'), mouthOpen = $('Mouth_Open');
+const armL = $('Arm_L'), forearmL = $('Forearm_L'), lids = [$('EyeLid_L'), $('EyeLid_R')], pupils = [$('Pupil_L'), $('Pupil_R'), $('EyeSpark_L'), $('EyeSpark_R')];
+const lidY = lids.map((l) => l.position.y);
+
+// 3. simple state you would normally get from your animation / speech system
+let talking = 0, happy = 0, waving = 0, nodding = 0;
+document.getElementById('talk').onclick = () => (talking = 3);
+document.getElementById('happy').onclick = () => (happy = happy ? 0 : 1);
+document.getElementById('wave').onclick = () => (waving = 2.5);
+document.getElementById('nod').onclick = () => (nodding = 1.2);
+addEventListener('pointermove', (e) => { head.userData.lookX = (e.clientX / innerWidth) * 2 - 1; head.userData.lookY = (e.clientY / innerHeight) * 2 - 1; });
+
+// 4. animate: head follows the pointer, idle sway, blinking, talking mouth, happy eyes, wave, nod
+const clock = new THREE.Clock(); let nextBlink = 2;
+renderer.setAnimationLoop(() => {
+  const dt = clock.getDelta(), t = clock.elapsedTime;
+  const lx = head.userData.lookX ?? 0, ly = head.userData.lookY ?? 0;
+  nodding = Math.max(0, nodding - dt); waving = Math.max(0, waving - dt); talking = Math.max(0, talking - dt);
+  head.rotation.y += ((lx * 0.35) - head.rotation.y) * 0.1;                                           // turn toward the pointer
+  head.rotation.x += ((ly * 0.15 + Math.sin(nodding * 10) * 0.2 * Math.min(1, nodding)) - head.rotation.x) * 0.15;
+  head.rotation.z = Math.sin(t * 1.3) * 0.03;                                                          // idle sway
+  const blink = t > nextBlink ? Math.max(0.06, Math.abs(Math.cos((t - nextBlink) * 14))) : 1; if (t > nextBlink + 0.22) nextBlink = t + 2 + Math.random() * 3;
+  eyes.forEach((e) => e.scale.set(1, blink, 1));
+  const open = talking > 0 ? 0.15 + 0.85 * Math.abs(Math.sin(t * 13) * Math.sin(t * 7.3)) : 0;          // fake speech level
+  mouthOpen.scale.y = Math.max(0.001, open);
+  mouthLine.morphTargetInfluences[mouthLine.morphTargetDictionary.smile] = 0.25 + happy * 0.6;        // morph target "smile"
+  lids.forEach((l, i) => { l.scale.set(happy ? 1 : 0.001, happy ? 1 : 0.001, 1); l.position.y = lidY[i] + happy * 0.26; });
+  pupils.forEach((p) => (p.visible = !happy));
+  armL.rotation.z = waving > 0 ? 2.5 : 0.14; forearmL.rotation.z = waving > 0 ? 0.4 * Math.sin(t * 12) : 0.1; // wave
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

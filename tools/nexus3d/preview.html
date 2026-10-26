@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><title>NEXUS 3D preview</title>
+<style>html,body{margin:0;background:#0b1733;overflow:hidden}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"/node_modules/three/build/three.module.js","three/addons/":"/node_modules/three/examples/jsm/"}}</script></head>
+<body><script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+const q = new URLSearchParams(location.search);
+const W = +(q.get('w') ?? 600), Hh = +(q.get('h') ?? 760);
+const r = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true }); r.setSize(W, Hh); r.setPixelRatio(1);
+r.toneMapping = THREE.ACESFilmicToneMapping; r.outputColorSpace = THREE.SRGBColorSpace; document.body.append(r.domElement);
+const scene = new THREE.Scene(); scene.background = new THREE.Color(q.get('bg') ?? '#0b1733');
+const pm = new THREE.PMREMGenerator(r); scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.55;
+const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(-3, 6, 5); scene.add(key);
+const rim = new THREE.DirectionalLight(0x6fb6ff, 2.4); rim.position.set(4, 2, -4); scene.add(rim);
+scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x0b1733, 0.5));
+const cam = new THREE.PerspectiveCamera(28, W / Hh, 0.1, 100);
+const az = +(q.get('az') ?? 0) * Math.PI / 180, el = +(q.get('el') ?? 6) * Math.PI / 180, dist = +(q.get('d') ?? 11);
+cam.position.set(Math.sin(az) * Math.cos(el) * dist, 2.2 + Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist); cam.lookAt(0, 2.15, 0);
+const g = await new GLTFLoader().loadAsync('/public/models/nexus.glb');
+scene.add(g.scene);
+const n = (x) => g.scene.getObjectByName(x);
+if (q.get('pose') === 'wave') { n('Arm_L').rotation.z = 2.6; n('Forearm_L').rotation.z = 0.5; n('Head').rotation.z = -0.12; const ml = n('Mouth_Line'); ml.morphTargetInfluences[0] = 1; n('Mouth_Open').scale.y = 0.6; }
+r.render(scene, cam); window.done = true;
+</script></body></html>

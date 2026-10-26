@@ -18,3 +18,8 @@ test-results/
 *.pem
 *.key
 data/
+
+# your own voice recordings — never commit
+*.wav
+*.m4a
+voice-preview.mp3

@@ -43,6 +43,8 @@ export const SettingsSchema = z.object({
   voiceFallback: z.boolean().default(false),
   /** say hello and introduce itself (name + who made it) each time the robot is opened */
   introduceOnOpen: z.boolean().default(true),
+  /** the classic 2D robot or the 3D NEXUS (same animations, expressions and voice) */
+  robotStyle: z.enum(['2d', '3d']).default('2d'),
   reviewTranscript: z.boolean().default(true),
   reducedMotion: z.boolean().default(false),
   highContrast: z.boolean().default(false),

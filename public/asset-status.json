@@ -1,55 +1,55 @@
 {
-  "generatedAt": "2026-10-21T21:19:59.403Z",
+  "generatedAt": "2026-10-26T13:09:56.055Z",
   "steps": [
     {
       "name": "typecheck",
       "ok": true,
       "code": 0,
-      "seconds": 7.312
+      "seconds": 9.931
     },
     {
       "name": "build (app + server bundle)",
       "ok": true,
       "code": 0,
-      "seconds": 11.41
+      "seconds": 15.948
     },
     {
       "name": "lint (eslint, 0 warnings)",
       "ok": true,
       "code": 0,
-      "seconds": 5.371
+      "seconds": 6.655
     },
     {
       "name": "unit + integration tests",
       "ok": true,
       "code": 0,
-      "seconds": 25.644
+      "seconds": 26.205
     },
     {
       "name": "end-to-end tests",
       "ok": true,
       "code": 0,
-      "seconds": 191.646
+      "seconds": 221.881
     },
     {
       "name": "desktop app smoke test",
       "ok": true,
       "code": 0,
-      "seconds": 21.057
+      "seconds": 2.803
     }
   ],
   "suites": {
     "unit": {
-      "total": 126,
-      "passed": 126
+      "total": 129,
+      "passed": 129
     },
     "integration": {
       "total": 53,
       "passed": 53
     },
     "e2e": {
-      "total": 103,
-      "passed": 103
+      "total": 107,
+      "passed": 107
     }
   },
   "assets": {
@@ -625,7 +625,7 @@
     },
     "A96": {
       "status": "verified",
-      "passed": 126,
+      "passed": 129,
       "failed": 0,
       "missing": []
     },
@@ -637,13 +637,13 @@
     },
     "A98": {
       "status": "verified",
-      "passed": 103,
+      "passed": 107,
       "failed": 0,
       "missing": []
     },
     "A99": {
       "status": "verified",
-      "passed": 5,
+      "passed": 6,
       "failed": 0,
       "missing": []
     },
@@ -788,6 +788,12 @@
     "A124": {
       "status": "verified",
       "passed": 4,
+      "failed": 0,
+      "missing": []
+    },
+    "A125": {
+      "status": "verified",
+      "passed": 7,
       "failed": 0,
       "missing": []
     },

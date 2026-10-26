@@ -94,6 +94,7 @@ export default function App() {
           {s.quietMode && <span className="badge">quiet</span>}
           {s.research && <span className={`badge ${snap.caps?.research.configured ? 'cap-operational' : 'cap-needs_config'}`}>research {snap.caps?.research.configured ? 'on' : 'unavailable'}</span>}
         </div>
+        <button type="button" className="theme-toggle style-toggle" data-testid="style-toggle" onClick={() => void memory.updateSettings({ robotStyle: s.robotStyle === '3d' ? '2d' : '3d' }).then(() => companion.applySettings())} aria-label={s.robotStyle === '3d' ? 'Show the classic 2D robot' : 'Show the 3D robot'} title={s.robotStyle === '3d' ? 'Classic 2D robot' : '3D robot'}>{s.robotStyle === '3d' ? '2D' : '3D'}</button>
         <ThemeToggle />
         {robotMode
           ? <button className="menu-toggle" onClick={() => setSide(!side)} aria-expanded={side} aria-controls="side" title="Conversation, skills, memory, settings (Alt+P)"><Icon name="menu" /> Menu</button>

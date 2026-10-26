@@ -188,7 +188,7 @@ try {
 
   // status / model panel
   await page.getByRole('tab', { name: 'Status' }).click();
-  check('[A10] [A49] status panel lists capabilities and all 124 assets', (await page.locator('.assets tbody tr').count()) === 124 && (await page.locator('.caps li').count()) >= 8);
+  check('[A10] [A49] status panel lists capabilities and all 125 assets', (await page.locator('.assets tbody tr').count()) === 125 && (await page.locator('.caps li').count()) >= 8);
 
   // light mode: one click on the home page turns the site and the robot light; it is remembered; dark is the classic look
   {
@@ -203,6 +203,32 @@ try {
     check('[A123] light mode: the toggle switches the site and the robot to the white/light-blue version, is remembered after reload, and switches back', before.theme === 'dark' && before.skin === 'dark' && lightNow.theme === 'light' && lightNow.skin === 'light' && lightNow.bg !== before.bg && afterReload.theme === 'light' && afterReload.skin === 'light' && backDark.theme === 'dark' && backDark.skin === 'dark' && before.label === 'Switch to light mode', JSON.stringify({ before, lightNow, afterReload, backDark }));
     check('[A123] the light home page passes the axe audit (no serious/critical issues)', serious.length === 0, serious.join(' | '));
     await tp.close();
+  }
+
+  // 3D NEXUS: the 2D/3D switch loads the 3D model (WebGL via SwiftShader here), the same animations move it, and errors never blank the stage
+  {
+    const gb = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+    const gp = await (await gb.newContext({ viewport: { width: 1280, height: 800 } })).newPage(); const gErr = [];
+    gp.on('pageerror', (e) => gErr.push(e.message));
+    await gp.goto(URL, { waitUntil: 'networkidle' }); await gp.waitForTimeout(800);
+    await gp.evaluate(async () => { await nexus.memory.updateSettings({ setupDone: true, layout: 'robot' }); nexus.companion.applySettings(); }); await gp.keyboard.press('Escape');
+    const label2d = await gp.getByTestId('style-toggle').getAttribute('aria-label');
+    await gp.getByTestId('style-toggle').click();
+    await gp.waitForSelector('.robot3d[data-ready="1"]', { timeout: 30000 }).catch(() => null);
+    const st = await gp.evaluate(() => ({ ready: document.querySelector('.robot3d')?.getAttribute('data-ready'), canvas: !!document.querySelector('.robot3d canvas'), svg: !!document.querySelector('.stage-box svg[role=img]'), style: nexus.memory.settings.robotStyle }));
+    const box = await gp.locator('.robot3d').boundingBox();
+    const shot = async () => (await gp.screenshot({ clip: box })).toString('base64');
+    const still = await shot(); await gp.waitForTimeout(300);
+    await gp.evaluate(() => { void nexus.companion.send('wave please'); }); await gp.waitForTimeout(1500);
+    const moved = (await shot()) !== still;
+    await gp.reload({ waitUntil: 'networkidle' }); await gp.waitForSelector('.robot3d[data-ready="1"]', { timeout: 30000 }).catch(() => null);
+    const kept = await gp.evaluate(() => !!document.querySelector('.robot3d[data-ready="1"]'));
+    await gp.getByTestId('style-toggle').click(); await gp.waitForTimeout(400);
+    const back = await gp.evaluate(() => ({ svg: !!document.querySelector('.stage-box svg[role=img]'), gl: !!document.querySelector('.robot3d') }));
+    check('[A125] the 2D/3D switch shows the 3D NEXUS (model loaded, WebGL canvas, no 2D robot), and the setting is remembered', label2d === 'Show the 3D robot' && st.ready === '1' && st.canvas && !st.svg && st.style === '3d' && kept, JSON.stringify({ label2d, st, kept }));
+    check('[A125] the same animation engine moves the 3D robot (a wave changes the picture)', moved);
+    check('[A125] switching back restores the classic 2D robot; no page errors in 3D', back.svg && !back.gl && gErr.length === 0, JSON.stringify({ back, gErr }));
+    await gb.close();
   }
 
   // reduced motion preference from the OS
@@ -265,8 +291,12 @@ try {
   check('[A99] animation frame work stays small (avg < 4 ms, one loop)', perf.avgFrameMs < 4 && perf.frames > 30, `avg ${perf.avgFrameMs.toFixed(2)}ms max ${perf.maxFrameMs.toFixed(2)}ms`);
   const hiddenStops = await N(async () => { const f0 = nexus.runtime.frames; Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); await new Promise((r) => setTimeout(r, 400)); const f1 = nexus.runtime.frames; Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); return f1 - f0 <= 1; });
   check('[A99] rendering pauses while the tab is hidden', hiddenStops);
-  const js = readdirSync('dist/assets').filter((f) => f.endsWith('.js')).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
-  check('[A99] bundle size is modest (< 900 KB of JS before gzip)', js < 900_000, `${Math.round(js / 1024)} KB`);
+  // the 3D robot (three.js, ~730 KB) is a separate chunk that only loads when the 3D style is chosen
+  const onDemand3d = /^(three\.module|Robot3D|GLTFLoader|RoomEnvironment)/;
+  const js = readdirSync('dist/assets').filter((f) => f.endsWith('.js') && !onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
+  check('[A99] bundle size is modest (< 900 KB of JS before gzip, excluding the on-demand 3D chunk)', js < 900_000, `${Math.round(js / 1024)} KB`);
+  const loaded3d = await N(() => performance.getEntriesByType('resource').filter((e) => /three\.module|Robot3D/.test(e.name)).map((e) => e.name));
+  check('[A99] [A125] the 2D robot never downloads three.js', loaded3d.length === 0, loaded3d.join(', '));
   const bundle = readdirSync('dist/assets').filter((f) => f.endsWith('.js')).map((f) => readFileSync(`dist/assets/${f}`, 'utf8')).join('\n');
   // env-var NAMES may appear in help text; secret VALUES, auth-header code or .env contents must not
   const leaks = ['x-api-key', 'Bearer ', 'authorization', 'replace-me', 'process.env'].filter((k) => bundle.toLowerCase().includes(k.toLowerCase()));
