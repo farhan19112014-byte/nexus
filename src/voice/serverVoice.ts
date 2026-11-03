@@ -8,6 +8,7 @@
  * emphasis in the real audio but does not reproduce individual phonemes.
  */
 import { API_BASE } from '../webDemo';
+import { levels, micLevel } from './levels';
 import type { ListenCallbacks } from './recognition';
 import type { TTSHooks } from './tts';
 
@@ -25,15 +26,51 @@ export function levelToMouth(rms: number): number {
   const v = Math.max(0, rms - 0.015) * 7;
   return Math.min(1, v / (1 + v * 0.35));
 }
+/** Approximate mouth SHAPE from the playing audio's spectrum (not phonemes — no speech recognition is done):
+ *  energy around 150–900 Hz (back vowels: "oo", "oh") → rounded lips; energy above 2.5 kHz ("ee", s, f) → wider lips.
+ *  `bins` is AnalyserNode byte frequency data (0…255 per bin), `sampleRate` the audio context's rate. */
+export function spectralShape(bins: Uint8Array, sampleRate: number): { round: number; wide: number } {
+  const hz = sampleRate / 2 / bins.length; let low = 0, mid = 0, high = 0;
+  for (let i = 0; i < bins.length; i++) { const f = i * hz; const e = bins[i] * bins[i]; if (f >= 150 && f < 900) low += e; else if (f >= 900 && f < 2500) mid += e; else if (f >= 2500 && f < 8000) high += e; }
+  const total = low + mid + high; if (total < 1e3) return { round: 0, wide: 0 };   // silence: no shape
+  const clamp = (v: number) => Math.max(0, Math.min(1, v));
+  return { round: clamp((low / total - 0.55) * 2.5), wide: clamp((high / total - 0.12) * 3) };
+}
+/** ElevenLabs character timing for one audio clip (seconds). */
+export interface Alignment { chars: string[]; starts: number[]; ends: number[] }
+/** Index of the character being spoken at time t (binary search), or -1 outside the speech. */
+export function charAt(al: Alignment, t: number): number {
+  let lo = 0, hi = al.starts.length - 1; if (hi < 0 || t < al.starts[0] || t > al.ends[hi]) return -1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (al.starts[mid] <= t) lo = mid; else hi = mid - 1; }
+  return lo;
+}
+/**
+ * Mouth shape for a written character (letters, not phonemes — English spelling is only a rough guide to sounds):
+ * open vowels open wide, rounded vowels round the lips, m/b/p close them, f/v nearly close, spaces and punctuation rest.
+ */
+export function visemeForChar(c: string): { open: number; round: number; wide: number } {
+  const ch = c.toLowerCase();
+  if (/[aá]/.test(ch)) return { open: 0.95, round: 0.1, wide: 0.35 };
+  if (/[eé]/.test(ch)) return { open: 0.6, round: 0, wide: 0.75 };
+  if (/[ií y]/.test(ch) && ch !== ' ') return { open: 0.45, round: 0, wide: 0.9 };
+  if (/[oó]/.test(ch)) return { open: 0.75, round: 0.85, wide: 0 };
+  if (/[uúw]/.test(ch)) return { open: 0.45, round: 1, wide: 0 };
+  if (/[mbp]/.test(ch)) return { open: 0, round: 0.1, wide: 0.1 };
+  if (/[fv]/.test(ch)) return { open: 0.15, round: 0, wide: 0.4 };
+  if (/[a-z0-9\u00C0-\u024F]/.test(ch)) return { open: 0.35, round: 0.1, wide: 0.3 };
+  return { open: 0.04, round: 0, wide: 0 };   // space, punctuation
+}
 export function rmsOf(buf: Uint8Array): number { let s = 0; for (let i = 0; i < buf.length; i++) { const x = (buf[i] - 128) / 128; s += x * x; } return Math.sqrt(s / buf.length); }
 
-type Item = { text: string; audio: Promise<Blob> };
+type Clip = { blob: Blob; alignment: Alignment | null };
+type Item = { text: string; audio: Promise<Clip> };
 
 export class ServerSpeechOutput implements SpeechOut {
   readonly supported = typeof window !== 'undefined' && typeof Audio !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function';
-  hooks: TTSHooks = {}; rate = 1; volume = 1; voiceURI: string | null = null; boundaryEvents = false; lipSync = 'audio level (approximation)';
+  hooks: TTSHooks = {}; rate = 1; volume = 1; voiceURI: string | null = null; boundaryEvents = false; lipSync = 'audio loudness + spectrum (approximation, not phonemes)';
   private queue: Item[] = []; private busy = false; private gen = 0; private started = false;
   private ctl = new AbortController(); private current: HTMLAudioElement | null = null; private url: string | null = null;
+  private alignment: Alignment | null = null;
   private ctx: AudioContext | null = null; private analyser: AnalyserNode | null = null; private raf = 0; private pulse: ReturnType<typeof setInterval> | null = null;
   /** called when one sentence could not be generated or played; the router speaks it with the fallback voice */
   onFailure: (message: string, text: string) => void = () => {};
@@ -49,21 +86,29 @@ export class ServerSpeechOutput implements SpeechOut {
     }
     if (!this.busy) void this.next(this.gen);
   }
-  private async fetchAudio(text: string): Promise<Blob> {
-    const r = await this.fetchImpl(`${this.base}/api/tts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text }), signal: this.ctl.signal });
+  private async fetchAudio(text: string): Promise<Clip> {
+    // timing: true asks for ElevenLabs character timing (same voice and cost); other services ignore it and send audio bytes
+    const r = await this.fetchImpl(`${this.base}/api/tts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, timing: true }), signal: this.ctl.signal });
     if (!r.ok) { const j = await r.json().catch(() => ({})) as { error?: string }; throw new Error(j.error ?? `Speech service error (HTTP ${r.status})`); }
-    return r.blob();
+    if ((r.headers.get('content-type') ?? '').includes('json')) {
+      const j = await r.json() as { audio?: unknown; mime?: unknown; alignment?: Alignment | null };
+      if (typeof j.audio !== 'string') throw new Error('The speech service returned no audio.');
+      const bin = atob(j.audio); const bytes = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const al = j.alignment && Array.isArray(j.alignment.chars) && j.alignment.chars.length === j.alignment.starts?.length && j.alignment.starts.length === j.alignment.ends?.length ? j.alignment : null;
+      return { blob: new Blob([bytes], { type: typeof j.mime === 'string' ? j.mime : 'audio/mpeg' }), alignment: al };
+    }
+    return { blob: await r.blob(), alignment: null };
   }
   private async next(g: number): Promise<void> {
     if (g !== this.gen) return;
     const item = this.queue.shift();
     if (!item) { this.finish(); return; }
     this.busy = true;
-    let blob: Blob;
-    try { blob = await item.audio; } catch (e) { if (g !== this.gen) return; this.onFailure((e as Error).message, item.text); return this.next(g); }
+    let clip: Clip;
+    try { clip = await item.audio; } catch (e) { if (g !== this.gen) return; this.onFailure((e as Error).message, item.text); return this.next(g); }
     if (g !== this.gen) return;
     this.cleanupAudio();
-    this.url = URL.createObjectURL(blob);
+    this.url = URL.createObjectURL(clip.blob); this.alignment = clip.alignment;
     const a = new Audio(this.url); this.current = a; a.playbackRate = this.rate; a.volume = Math.min(1, Math.max(0, this.volume));
     const done = (failed?: string) => { if (g !== this.gen || this.current !== a) return; this.stopLevels(); this.cleanupAudio(); if (failed) this.onFailure(failed, item.text); void this.next(g); };
     a.onended = () => done(); a.onerror = () => done('The speech audio could not be played.');
@@ -79,16 +124,26 @@ export class ServerSpeechOutput implements SpeechOut {
       void this.ctx.resume();
       const src = this.ctx.createMediaElementSource(a); const an = this.ctx.createAnalyser(); an.fftSize = 512;
       src.connect(an); an.connect(this.ctx.destination); this.analyser = an;
-      const buf = new Uint8Array(an.fftSize);
-      const tick = () => { if (!this.analyser) return; this.analyser.getByteTimeDomainData(buf); this.hooks.onLevel?.(levelToMouth(rmsOf(buf))); this.raf = requestAnimationFrame(tick); };
-      this.lipSync = 'audio level (approximation)'; this.raf = requestAnimationFrame(tick);
+      const buf = new Uint8Array(an.fftSize); const freq = new Uint8Array(an.frequencyBinCount); const rate = this.ctx.sampleRate;
+      // every frame: loudness from the waveform → how open; spectrum → rounded or wide (both from the audio actually playing)
+      // with ElevenLabs timing: the character being spoken sets the mouth SHAPE and how far it opens; the measured loudness
+      // still gates it (silence closes the mouth even if the timing says otherwise)
+      const al = this.alignment;
+      const tick = () => {
+        if (!this.analyser) return; this.analyser.getByteTimeDomainData(buf); this.analyser.getByteFrequencyData(freq);
+        const level = levelToMouth(rmsOf(buf)); levels.emit('voice', level);
+        if (al) { const i = charAt(al, a.currentTime); const v = i >= 0 ? visemeForChar(al.chars[i]) : { open: 0, round: 0, wide: 0 }; this.hooks.onLevel?.(level < 0.03 ? 0 : Math.min(1, v.open * 0.7 + level * 0.35), { round: v.round, wide: v.wide }); }
+        else this.hooks.onLevel?.(level, spectralShape(freq, rate));
+        this.raf = requestAnimationFrame(tick);
+      };
+      this.lipSync = al ? 'ElevenLabs character timing + audio loudness (letters, not phonemes)' : 'audio loudness + spectrum (approximation, not phonemes)'; this.raf = requestAnimationFrame(tick);
     } catch {
       // Web Audio unavailable: keep speaking, move the mouth on a timer while the audio plays (honestly labelled)
       this.lipSync = 'timed while audio plays (no audio analysis available)';
       this.pulse = setInterval(() => { if (this.current && !this.current.paused) this.hooks.onLevel?.(0.55); }, 160);
     }
   }
-  private stopLevels() { if (this.raf) cancelAnimationFrame(this.raf); this.raf = 0; if (this.pulse) clearInterval(this.pulse); this.pulse = null; this.analyser?.disconnect(); this.analyser = null; this.hooks.onLevel?.(0); }
+  private stopLevels() { levels.reset('voice'); if (this.raf) cancelAnimationFrame(this.raf); this.raf = 0; if (this.pulse) clearInterval(this.pulse); this.pulse = null; this.analyser?.disconnect(); this.analyser = null; this.hooks.onLevel?.(0); }
   private cleanupAudio() { const a = this.current; this.current = null; if (a) { a.onended = a.onerror = a.onplaying = a.onpause = null; try { a.pause(); } catch { /* gone */ } a.removeAttribute('src'); } if (this.url) { URL.revokeObjectURL(this.url); this.url = null; } }
   pause() { this.current?.pause(); }
   resume() { void this.current?.play().catch(() => {}); }
@@ -153,7 +208,7 @@ export class ServerSpeechInput implements SpeechIn {
         this.ctx = new AC(); const an = this.ctx.createAnalyser(); an.fftSize = 1024; this.ctx.createMediaStreamSource(stream).connect(an);
         const buf = new Uint8Array(an.fftSize); const t0 = Date.now(); let lastLoud = 0;
         this.timer = setInterval(() => {
-          an.getByteTimeDomainData(buf); const lvl = rmsOf(buf); const now = Date.now();
+          an.getByteTimeDomainData(buf); const lvl = rmsOf(buf); const now = Date.now(); levels.emit('mic', micLevel(lvl));
           if (lvl > 0.035) { heard = true; lastLoud = now; }
           if ((heard && now - lastLoud > 1200) || now - t0 > 30000 || (!heard && now - t0 > 8000)) this.stop();
         }, 100);
@@ -167,5 +222,5 @@ export class ServerSpeechInput implements SpeechIn {
   }
   stop() { if (this.rec && this.rec.state !== 'inactive') this.rec.stop(); }
   abort() { this.session++; this.ctl?.abort(); this.ctl = null; if (this.rec && this.rec.state !== 'inactive') this.rec.stop(); this.release(); this.listening = false; }
-  private release() { if (this.timer) clearInterval(this.timer); this.timer = null; this.stream?.getTracks().forEach((t) => t.stop()); this.stream = null; void this.ctx?.close().catch(() => {}); this.ctx = null; this.rec = null; }
+  private release() { levels.reset('mic'); if (this.timer) clearInterval(this.timer); this.timer = null; this.stream?.getTracks().forEach((t) => t.stop()); this.stream = null; void this.ctx?.close().catch(() => {}); this.ctx = null; this.rec = null; }
 }

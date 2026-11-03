@@ -108,7 +108,7 @@ describe('[A104] personalization changes real behaviour', () => {
 describe('[A102] routes', () => {
   it('[A102] maps paths to destinations; unknown paths are not-found; ?sheet opens the character sheet', () => {
     expect(routeFor('/')).toBe('home'); expect(routeFor('/app')).toBe('app'); expect(routeFor('/app/')).toBe('app'); expect(routeFor('/settings')).toBe('app');
-    expect(routeFor('/about')).toBe('about'); expect(routeFor('/privacy')).toBe('privacy'); expect(routeFor('/nope')).toBe('notfound'); expect(routeFor('/', '?sheet=1')).toBe('sheet');
+    expect(routeFor('/about')).toBe('about'); expect(routeFor('/creator')).toBe('creator'); expect(routeFor('/privacy')).toBe('privacy'); expect(routeFor('/nope')).toBe('notfound'); expect(routeFor('/', '?sheet=1')).toBe('sheet');
   });
 });
 

@@ -1,0 +1,51 @@
+/* =====================================================================================================
+   MISSION NEXUS — the robot page (/app) in the same design language as the website.
+   Only colour, surface and motion polish over the existing layout; high-contrast mode (.hc) is left untouched.
+   ===================================================================================================== */
+.app:not(.hc) .top { background: rgb(var(--k-05080d) / .7); backdrop-filter: saturate(140%) blur(14px); border-bottom: 1px solid rgb(var(--k-778394) / .2); }
+:root[data-theme="light"] .app:not(.hc) .top { background: rgb(var(--k-f4f8ff) / .85); border-bottom-color: rgb(var(--k-07111f) / .1); }
+
+/* the robot's stage: deep navy with a soft cyan key light and a faint technical grid */
+.app:not(.hc) .robot-layout { background:
+  radial-gradient(ellipse 50% 46% at 50% 42%, rgb(var(--k-1268f5) / .22), transparent 70%),
+  radial-gradient(ellipse 30% 30% at 50% 40%, rgb(var(--k-38d9ff) / .08), transparent 70%),
+  linear-gradient(rgb(var(--k-778394) / .05) 1px, transparent 1px) 0 0 / 56px 56px,
+  linear-gradient(90deg, rgb(var(--k-778394) / .05) 1px, transparent 1px) 0 0 / 56px 56px,
+  linear-gradient(180deg, rgb(var(--k-07111f)), rgb(var(--k-05080d))); }
+:root[data-theme="light"] .app:not(.hc) .robot-layout { background:
+  radial-gradient(ellipse 50% 46% at 50% 42%, #FFFFFF, transparent 72%),
+  linear-gradient(rgb(var(--k-07111f) / .04) 1px, transparent 1px) 0 0 / 56px 56px,
+  linear-gradient(90deg, rgb(var(--k-07111f) / .04) 1px, transparent 1px) 0 0 / 56px 56px,
+  linear-gradient(180deg, rgb(var(--k-e4edf9)), rgb(var(--k-f4f8ff))); }
+.app:not(.hc) .stage-box.env-lab { background:
+  radial-gradient(ellipse 50% 42% at 50% 46%, rgb(var(--k-1268f5) / .16), transparent 70%),
+  linear-gradient(rgb(var(--k-778394) / .05) 1px, transparent 1px) 0 0 / 40px 40px,
+  linear-gradient(90deg, rgb(var(--k-778394) / .05) 1px, transparent 1px) 0 0 / 40px 40px,
+  var(--stage-lab); }
+.app:not(.hc) .stage-status { font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: .04em; }
+
+/* conversation */
+.app:not(.hc) .msg { animation: msg-in .32s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes msg-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.app.rm .msg { animation: none; }
+@media (prefers-reduced-motion: reduce) { .app .msg { animation: none; } }
+.app:not(.hc) .msg.user .bubble { background: rgb(var(--k-1268f5)); background-image: none; color: #fff; border: 1px solid rgba(255, 255, 255, .12); border-radius: 16px 16px 4px 16px; box-shadow: 0 8px 24px -14px rgb(var(--k-1268f5) / .9); }
+.app:not(.hc) .msg.assistant .bubble { background: rgb(var(--k-171d27) / .82); background-image: none; border: 1px solid rgb(var(--k-778394) / .22); border-radius: 16px 16px 16px 4px; }
+:root[data-theme="light"] .app:not(.hc) .msg.assistant .bubble { background: #FFFFFF; border-color: rgb(var(--k-07111f) / .1); }
+.app:not(.hc) .msg.assistant { padding-left: 34px; position: relative; }
+.app:not(.hc) .msg.assistant::before { content: ""; position: absolute; left: 0; top: 4px; width: 24px; height: 24px; border-radius: 8px; background: radial-gradient(circle at 50% 55%, rgb(var(--k-38d9ff)) 0 18%, transparent 20%), rgb(var(--k-0d1828)); box-shadow: inset 0 0 0 1px rgb(var(--k-38d9ff) / .4); }
+.app:not(.hc) #composer { border-radius: 14px; }
+.app:not(.hc) #composer:focus { border-color: rgb(var(--k-38d9ff)); box-shadow: 0 0 0 3px rgb(var(--k-38d9ff) / .18); outline: none; }
+:root[data-theme="light"] .app:not(.hc) #composer:focus { border-color: rgb(var(--k-1268f5)); box-shadow: 0 0 0 3px rgb(var(--k-1268f5) / .15); }
+
+/* voice: the microphone is the hero control; it pulses only while it is really listening */
+.app:not(.hc) .mic-btn { background: radial-gradient(circle at 50% 35%, rgb(var(--k-1a2a44)), rgb(var(--k-0d1828)) 70%); background-image: radial-gradient(circle at 50% 35%, rgb(var(--k-1a2a44)), rgb(var(--k-0d1828)) 70%); border: 1.5px solid rgb(var(--k-38d9ff) / .65); color: rgb(var(--k-38d9ff)); box-shadow: 0 0 0 6px rgb(var(--k-38d9ff) / .06), 0 14px 34px -14px rgb(var(--k-38d9ff) / .7); }
+.app:not(.hc) .mic-btn:hover:not(:disabled) { border-color: rgb(var(--k-38d9ff)); box-shadow: 0 0 0 8px rgb(var(--k-38d9ff) / .1), 0 14px 38px -12px rgb(var(--k-38d9ff) / .9); }
+:root[data-theme="light"] .app:not(.hc) .mic-btn { background: rgb(var(--k-1268f5)); background-image: none; border-color: rgb(var(--k-1268f5)); color: #fff; }
+.app:not(.hc) .mic-btn.listening { background: radial-gradient(circle at 50% 35%, rgb(var(--k-1a2a44)), rgb(var(--k-0d1828)) 70%) !important; border-color: #3DDC97; color: #3DDC97; animation: listen-pulse 1.4s ease-in-out infinite; }
+@keyframes listen-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(61, 220, 151, .45); } 50% { box-shadow: 0 0 0 14px rgba(61, 220, 151, 0); } }
+.wave { display: flex; align-items: center; justify-content: center; gap: 3px; height: 30px; margin: 0 auto 6px; }
+.wave i { display: block; width: 3px; border-radius: 3px; background: linear-gradient(180deg, rgb(var(--k-7de8ff)), rgb(var(--k-38d9ff))); animation: wavebar .9s ease-in-out infinite; transform-origin: center; }
+@keyframes wavebar { 0%, 100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
+@media (prefers-reduced-motion: reduce) { .wave i, .app:not(.hc) .mic-btn.listening { animation: none; } }
+.app.rm .wave i, .app.rm .mic-btn.listening { animation: none !important; }

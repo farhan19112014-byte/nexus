@@ -1,0 +1,154 @@
+/* =====================================================================================================
+   MISSION NEXUS — space interface layer: the animated environment, the robot's stage light, the mission HUD,
+   micro-interactions. Colours stay in the NEXUS palette (navy, black, electric blue, white, grey). High-contrast mode
+   (.hc) gets none of it; reduced motion keeps a still frame and no looping animation.
+   ===================================================================================================== */
+.space-field { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+
+/* ---- robot page: robot + conversation on the left/centre, the environment on the right ---- */
+.robot-layout { isolation: isolate; overflow: hidden; }
+.robot-layout > .robot-space { z-index: 0; }
+.robot-layout > div > .robot-view { position: relative; z-index: 1; }
+.app:not(.hc) .robot-view .stage-box { isolation: isolate; }
+/* the stage is transparent here: the space layer is the backdrop */
+.app:not(.hc) .robot-layout .robot-view .stage-box.env-lab, .app:not(.hc) .robot-layout .robot-view .stage-box.env-grid { background: transparent; box-shadow: none; }
+/* a soft electric-blue key light behind the robot, breathing very slowly (presentation only — the model is untouched) */
+.app:not(.hc) .robot-view .stage-box::before { content: ""; position: absolute; inset: 6% 18% 10%; z-index: -1; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(ellipse 50% 46% at 50% 48%, rgb(var(--k-1268f5) / .26), rgb(var(--k-38d9ff) / .06) 55%, transparent 72%);
+  animation: stage-breathe 9s ease-in-out infinite; }
+:root[data-theme="light"] .app:not(.hc) .robot-view .stage-box::before { background: radial-gradient(ellipse 50% 46% at 50% 48%, rgba(255, 255, 255, .95), rgb(var(--k-1268f5) / .08) 60%, transparent 74%); }
+@keyframes stage-breathe { 0%, 100% { opacity: .85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.04); } }
+
+@media (min-width: 1100px) {
+  .robot-layout > div > .robot-view { width: 60%; margin-right: auto; }
+  /* the stage light follows the robot to the left column; the right half belongs to space */
+  .app:not(.hc) main.robot-layout { background:
+    radial-gradient(ellipse 34% 50% at 30% 44%, rgb(var(--k-1268f5) / .16), transparent 70%),
+    linear-gradient(90deg, rgb(var(--k-05080d) / 0) 55%, rgb(var(--k-07111f) / .55)),
+    linear-gradient(180deg, rgb(var(--k-07111f)), rgb(var(--k-05080d))); }
+  :root[data-theme="light"] .app:not(.hc) main.robot-layout { background:
+    radial-gradient(ellipse 34% 50% at 30% 44%, #FFFFFF, transparent 72%),
+    linear-gradient(180deg, rgb(var(--k-e4edf9)), rgb(var(--k-f4f8ff))); }
+}
+@media (max-width: 1099px) { .robot-layout > .robot-space { opacity: .7; } }
+@media (max-width: 760px) { .robot-layout > .robot-space { opacity: .55; } }
+
+/* ---- system status panel (truthful status, the NEXUS chain, interface sounds) ---- */
+.system-panel { position: absolute; right: 24px; bottom: 24px; z-index: 2; width: 300px; border-radius: 14px; font-size: .8rem; color: var(--c-text);
+  background: linear-gradient(180deg, rgb(var(--k-0d1828) / .74), rgb(var(--k-07111f) / .74)); border: 1px solid rgb(var(--k-7dd3fc) / .22); border-top-color: rgb(var(--k-7dd3fc) / .45);
+  box-shadow: 0 18px 50px -24px rgba(0, 0, 0, .9), inset 0 1px 0 rgba(255, 255, 255, .04); backdrop-filter: blur(10px) saturate(140%); -webkit-backdrop-filter: blur(10px) saturate(140%);
+  animation: hud-in .5s cubic-bezier(.2, .7, .2, 1) both .2s; }
+:root[data-theme="light"] .system-panel { background: rgba(255, 255, 255, .8); border-color: rgb(var(--k-38bdf8) / .3); box-shadow: 0 18px 40px -26px rgb(var(--k-0f172a) / .5); }
+.sp-head { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 12px; }
+.sp-toggle { flex: 1; display: flex; align-items: center; gap: 8px; background: none; border: 0; padding: 2px 0; min-height: 28px; color: inherit; text-align: left; }
+.sp-title { font: 600 .7rem/1 var(--font-mono); letter-spacing: .28em; color: var(--sky-text); }
+.sp-sum { margin-left: auto; font: 600 .68rem/1 var(--font-mono); letter-spacing: .08em; color: var(--c-muted); }
+.sp-sound { width: 30px; height: 30px; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 8px; background: transparent; border: 1px solid rgb(var(--k-778394) / .25); color: var(--c-muted); }
+.sp-sound.on { color: var(--sky-text); border-color: var(--sky); }
+#sp-body { padding: 0 12px 12px; animation: panel-in .25s ease both; }
+.sp-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.sp-rows li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 8px; align-items: center; }
+.sp-label { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-status { font: 600 .66rem/1 var(--font-mono); letter-spacing: .08em; padding: 3px 6px; border-radius: 6px; border: 1px solid currentColor; }
+.sp-detail { grid-column: 2 / -1; color: var(--c-muted); font-size: .74rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; position: relative; }
+.s-online { color: var(--c-ok); } .s-standby { color: var(--sky-text); } .s-connecting { color: var(--c-warn); } .s-processing { color: var(--c-warn); }
+.s-speaking, .s-listening { color: var(--c-cyan); } .s-offline { color: var(--c-muted); } .s-error { color: var(--c-bad); }
+.sp-dot:is(.s-processing, .s-speaking, .s-listening, .s-connecting)::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid currentColor; animation: dot-ring 1.6s ease-out infinite; }
+.sp-chain { list-style: none; margin: 10px 0 0; padding: 8px 0 0; border-top: 1px solid rgb(var(--k-778394) / .18); display: flex; flex-wrap: wrap; gap: 4px; }
+.sp-chain li { font: 600 .62rem/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; padding: 4px 6px; border-radius: 6px; color: var(--c-muted); border: 1px solid rgb(var(--k-778394) / .2); transition: color .25s ease, border-color .25s ease, background-color .25s ease, box-shadow .25s ease; }
+.sp-chain li + li::before { content: "›"; margin: 0 4px 0 -2px; opacity: .5; }
+.sp-chain li.on { color: var(--sky-text); border-color: var(--sky); background: var(--sky-soft); box-shadow: 0 0 14px -4px var(--sky); }
+.sp-activity { margin: 8px 0 0; color: var(--sky-text); font-size: .76rem; display: flex; gap: 6px; align-items: center; }
+.sp-activity .spinner { width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; display: inline-block; animation: holo-spin .9s linear infinite; }
+@keyframes hud-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes holo-spin { to { transform: rotate(360deg); } }
+@media (max-width: 1099px) { .system-panel { top: 12px; right: 12px; bottom: auto; width: min(300px, calc(100vw - 24px)); } .system-panel:not(.open) { width: auto; } }
+
+/* ---- audio-reactive voice scope (measured levels only) ---- */
+.voice-scope { display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0 auto 6px; }
+.vs-bars { display: flex; align-items: center; gap: 3px; height: 34px; }
+.vs-bars i { display: block; width: 3px; height: 100%; border-radius: 3px; transform-origin: center; transition: transform 60ms linear; background: linear-gradient(180deg, #A7F3D0, #3DDC97); }
+.vs-voice .vs-bars i { background: linear-gradient(180deg, var(--nexus-sky), rgb(var(--k-38d9ff))); }
+:root[data-theme="light"] .vs-voice .vs-bars i { background: linear-gradient(180deg, rgb(var(--k-38bdf8)), rgb(var(--k-1268f5))); }
+.vs-label { font: 600 .66rem/1 var(--font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--c-muted); }
+.voice-scope.live .vs-label { color: var(--sky-text); }
+
+/* ---- the status chip under the robot: an animated ring while NEXUS is really doing something ---- */
+.app:not(.hc) .stage-status .dot { position: relative; }
+.app:not(.hc) .stage-status .dot:is(.st-listening, .st-processing, .st-speaking, .st-responding)::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid currentColor; color: var(--sky); animation: dot-ring 1.6s ease-out infinite; }
+
+/* ---- micro-interactions: glow on hover/focus, smooth panels ---- */
+.app:not(.hc) .dock-btn, .app:not(.hc) .top .btn, .app:not(.hc) .top .icon-btn, .app:not(.hc) .top .menu-toggle {
+  transition: border-color .18s ease, box-shadow .25s ease, transform .18s ease, color .18s ease; }
+.app:not(.hc) .dock-btn:hover:not(:disabled), .app:not(.hc) .top .btn:hover, .app:not(.hc) .top .menu-toggle:hover {
+  border-color: var(--sky); box-shadow: 0 0 0 4px var(--sky-soft), 0 10px 26px -14px rgb(var(--k-7dd3fc) / .9); transform: translateY(-1px); }
+.app:not(.hc) .dock-btn:active, .app:not(.hc) .top .btn:active { transform: translateY(0); }
+.app:not(.hc) .dock { padding: 6px 12px; border-radius: 999px; background: rgb(var(--k-07111f) / .45); border: 1px solid rgb(var(--k-778394) / .14); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+:root[data-theme="light"] .app:not(.hc) .dock { background: rgba(255, 255, 255, .6); border-color: rgb(var(--k-07111f) / .08); }
+.app:not(.hc) .type-bar { animation: panel-in .28s cubic-bezier(.2, .7, .2, 1) both; }
+.app:not(.hc) .side { animation: panel-in .3s cubic-bezier(.2, .7, .2, 1) both; }
+.app:not(.hc) .side.drawer { animation-name: drawer-in; }
+@keyframes panel-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes drawer-in { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+.app:not(.hc) .cap-reply .bubble, .app:not(.hc) .cap-user { transition: box-shadow .3s ease; }
+.app:not(.hc) .captions { animation: panel-in .35s ease both; }
+
+/* ---- landing hero: the same environment behind the robot ---- */
+.hero-bg .space-field { opacity: .95; }
+@media (max-width: 760px) { .hero-bg .space-field { opacity: .6; } }
+
+/* ---- About / Privacy / 404: the same environment, fixed behind the page, dimmed where text runs ---- */
+.doc-space { position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: .85;
+  /* the reading column stays clear: the environment lives in the margins */
+  -webkit-mask-image: linear-gradient(90deg, #000 0, rgba(0, 0, 0, .55) 18%, transparent 30%, transparent 70%, rgba(0, 0, 0, .6) 80%, #000 100%);
+  mask-image: linear-gradient(90deg, #000 0, rgba(0, 0, 0, .55) 18%, transparent 30%, transparent 70%, rgba(0, 0, 0, .6) 80%, #000 100%); }
+.doc-page > main, .doc-page > .site-footer { position: relative; z-index: 1; }
+@media (max-width: 760px) { .doc-space { opacity: .4; -webkit-mask-image: linear-gradient(180deg, #000, transparent 40%); mask-image: linear-gradient(180deg, #000, transparent 40%); } }
+
+/* ---- glass drawer and panels on the robot page ---- */
+.app:not(.hc) .side.drawer { background: rgb(var(--k-07111f) / .88); backdrop-filter: blur(16px) saturate(140%); -webkit-backdrop-filter: blur(16px) saturate(140%); border-left: 1px solid rgb(var(--k-38d9ff) / .14); box-shadow: -24px 0 60px -30px rgba(0, 0, 0, .9); }
+:root[data-theme="light"] .app:not(.hc) .side.drawer { background: rgb(var(--k-f4f8ff) / .9); border-left-color: rgb(var(--k-1268f5) / .16); }
+.app:not(.hc) .side .tabs button[aria-selected="true"] { box-shadow: inset 0 -2px 0 var(--c-cyan); }
+
+/* ---- reduced motion: no looping or entrance animation (the canvas shows a still frame) ---- */
+.app.rm .robot-view .stage-box::before, .app.rm .sp-dot::after, .app.rm .sp-activity .spinner, .app.rm .stage-status .dot::after, .app.rm .system-panel, .app.rm #sp-body, .app.rm .type-bar, .app.rm .side, .app.rm .captions { animation: none !important; }
+@media (prefers-reduced-motion: reduce) {
+  .robot-view .stage-box::before, .sp-dot::after, .sp-activity .spinner, .stage-status .dot::after, .system-panel, #sp-body, .type-bar, .side, .captions { animation: none !important; }
+  .dock-btn:hover, .top .btn:hover { transform: none !important; }
+}
+
+/* ---- sky blue: a light secondary accent (sky = decoration, sky-text = readable text in both themes) ---- */
+.app:not(.hc) .dock { border-color: rgb(var(--k-7dd3fc) / .18); }
+.app:not(.hc) .dock-btn.on { color: var(--sky-text); border-color: var(--sky); }
+.app:not(.hc) .robot-view .stage-box::before { background: radial-gradient(ellipse 50% 46% at 50% 48%, rgb(var(--k-1268f5) / .24), rgb(var(--k-7dd3fc) / .08) 55%, transparent 72%); }
+:root[data-theme="light"] .app:not(.hc) .robot-view .stage-box::before { background: radial-gradient(ellipse 50% 46% at 50% 48%, rgba(255, 255, 255, .95), rgb(var(--k-38bdf8) / .12) 60%, transparent 74%); }
+.app:not(.hc) .side .tabs button[aria-selected="true"] { box-shadow: inset 0 -2px 0 var(--sky); }
+.app:not(.hc) .msg.assistant .bubble { border-top-color: rgb(var(--k-7dd3fc) / .28); }
+:root[data-theme="light"] .app:not(.hc) .msg.assistant .bubble { border-top-color: rgb(var(--k-38bdf8) / .4); }
+.site .eyebrow, .site .label-sky { color: var(--sky-text); }
+.site-nav a[aria-current="page"]:not(.btn)::after { background: var(--sky); box-shadow: 0 0 10px var(--sky); }
+.holo .holo-title, .learn .holo-title { color: var(--sky-text); }
+
+@media (prefers-reduced-motion: reduce) { .vs-bars i, .sp-chain li { transition: none; } }
+
+/* ---- HOLOBUILD: a holographic workspace identity (grid floor glow, scan line, corner brackets) ---- */
+.holo .holo-viewport::before { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: linear-gradient(rgb(var(--k-38d9ff) / .05) 1px, transparent 1px) 0 0 / 100% 48px, radial-gradient(ellipse 60% 40% at 50% 100%, rgb(var(--k-7dd3fc) / .12), transparent 70%);
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 60%); mask-image: linear-gradient(180deg, transparent, #000 60%); }
+.holo .holo-viewport::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 120px; pointer-events: none; z-index: 1;
+  background: linear-gradient(180deg, transparent, rgb(var(--k-7dd3fc) / .07) 85%, rgb(var(--k-7dd3fc) / .22)); animation: holo-scan 7s linear infinite; }
+@keyframes holo-scan { from { transform: translateY(-120px); } to { transform: translateY(calc(100vh)); } }
+.holo .holo-center { box-shadow: inset 0 0 0 1px rgb(var(--k-7dd3fc) / .1); }
+.holo .holo-center::before, .holo .holo-center::after { content: ""; position: absolute; width: 22px; height: 22px; z-index: 2; pointer-events: none; border: 2px solid var(--sky); opacity: .7; }
+.holo .holo-center::before { left: 10px; top: 10px; border-right: 0; border-bottom: 0; border-radius: 6px 0 0 0; }
+.holo .holo-center::after { right: 10px; top: 10px; border-left: 0; border-bottom: 0; border-radius: 0 6px 0 0; }
+.app.rm.holo .holo-viewport::after { animation: none; display: none; }
+@media (prefers-reduced-motion: reduce) { .holo .holo-viewport::after { animation: none; display: none; } }
+
+/* ---- landing storytelling: the NEXUS chain, 7-step pipeline, HOLOBUILD + learning tiles ---- */
+@media (min-width: 1101px) { .pipeline { grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 14px; } .t-holo, .t-learn { grid-column: span 3; } }
+.chain-line { display: flex; flex-wrap: wrap; gap: 6px 10px; margin: 0 0 34px; padding: 0; font: 600 .74rem/1 var(--mx-mono); letter-spacing: .2em; text-transform: uppercase; }
+.chain-line span { color: var(--sky-text); padding: 8px 12px; border: 1px solid rgb(var(--k-7dd3fc) / .28); border-radius: 999px; background: var(--sky-soft); }
+.chain-line span + span::before { content: "→"; margin-right: 10px; color: var(--mx-text-3); letter-spacing: 0; }
+.t-holo { background: radial-gradient(ellipse 70% 80% at 85% 100%, rgb(var(--k-7dd3fc) / .14), transparent 70%), var(--mx-surface) !important; }

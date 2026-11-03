@@ -10,9 +10,10 @@
  *   GET  /api/speech/voices   ElevenLabs voices on the account (loopback only)
  * Logs contain method, path, status and duration only — never message content or secrets.
  */
-import { listElevenVoices, SpeechError, sttStatus, synthesize, transcribe, ttsStatus } from './speech';
+import { listElevenVoices, SpeechError, sttStatus, synthesize, synthesizeElevenTimed, transcribe, ttsStatus, type Alignment } from './speech';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { baseSecurityHeaders, buildCsp, inlineScriptHashes } from './security';
 import { resolve } from 'node:path';
 import { ChatRequestSchema, SummarizeRequestSchema, type ServerCapabilities, type StreamEvent } from '../shared/schema';
 import { applyRuntime, loadRuntime, publicConfig, readConfig, RuntimeConfigSchema, saveRuntime, type ServerConfig } from './config';
@@ -24,7 +25,11 @@ import { GeminiProvider } from './providers/gemini';
 import { DemoProvider } from './providers/demo';
 import { makeResearch, type ResearchProvider } from './research';
 import { PROMPT_VERSION } from './prompts/system';
-import { DailyBudget } from './budget';
+import { DailyBudget, makeCounterStore, visitorOf, type CounterStore, type Denied, type MeterName } from './budget';
+import { createHash } from 'node:crypto';
+import { z } from 'zod';
+import { designModel, editModel, HoloDesignRequestSchema, HoloEditRequestSchema } from './aiTasks';
+import { draftSkill, reflect, ReflectRequestSchema, research as researchTask, ResearchRequestSchema, runSkill, SkillDraftRequestSchema, SkillRunRequestSchema } from './learn';
 
 export function makeProvider(c: ServerConfig): LLMProvider {
   if (c.provider === 'openai') return new OpenAICompatibleProvider(c.openai);
@@ -33,15 +38,41 @@ export function makeProvider(c: ServerConfig): LLMProvider {
   return new DemoProvider();
 }
 
-function rateLimiter(perMin: number) {
+/**
+ * Per-visitor requests per minute (in memory: a one-minute window needs no durable store). Expired windows are
+ * pruned; when too many visitors are active at once, new ones share one "overflow" window instead of everyone's
+ * counts being wiped (which would let a flood of addresses reset the limit for a blocked visitor).
+ */
+export function rateLimiter(perMin: number, maxVisitors = 5000, now = () => Date.now()) {
   const hits = new Map<string, { n: number; reset: number }>();
   return (req: Request, res: Response, next: NextFunction) => {
-    const k = req.ip ?? '?'; const now = Date.now(); const h = hits.get(k);
-    if (!h || h.reset < now) { hits.set(k, { n: 1, reset: now + 60_000 }); if (hits.size > 5000) hits.clear(); return next(); }
-    if (++h.n > perMin) { res.setHeader('retry-after', String(Math.ceil((h.reset - now) / 1000))); res.status(429).json({ error: 'Too many requests — please wait a moment.', code: 'rate_limited', retryable: true }); return; }
+    if (!perMin) return next();
+    const t = now(); let k = visitorOf(req.ip);
+    if (!hits.has(k) && hits.size >= maxVisitors) { for (const [key, h] of hits) if (h.reset <= t) hits.delete(key); if (hits.size >= maxVisitors) k = 'overflow'; }
+    const h = hits.get(k);
+    if (!h || h.reset <= t) { hits.set(k, { n: 1, reset: t + 60_000 }); return next(); }
+    if (++h.n > perMin) { res.setHeader('retry-after', String(Math.ceil((h.reset - t) / 1000))); res.status(429).json({ error: 'Too many requests — please wait a moment.', code: 'rate_limited', retryable: true }); return; }
     next();
   };
 }
+/** How many proxies in front of the server add themselves to X-Forwarded-For (TRUST_PROXY; public servers default to 1). */
+export function trustProxySetting(raw: string | undefined, publicMode: boolean): number | false {
+  const v = (raw ?? '').trim().toLowerCase();
+  if (!v) return publicMode ? 1 : false;
+  if (['false', '0', 'no', 'off'].includes(v)) return false;
+  const n = Number(v); if (Number.isInteger(n) && n > 0 && n <= 10) return n;
+  throw new Error(`TRUST_PROXY must be a number of proxies (1–10) or false (got "${raw}")`);   // "true" would trust a client-written header
+}
+/** The last-resort error handler: client mistakes → 400/413; anything unexpected → 500 with a generic message (never the error's own text or stack). */
+export function errorHandler(log?: (line: string) => void) {
+  return (err: Error & { status?: number; type?: string }, _q: Request, res: Response, _n: NextFunction) => {
+    void _n;
+    const status = typeof err?.status === 'number' && err.status >= 400 && err.status < 600 ? err.status : 500;
+    if (status >= 500) { log?.(`internal error: ${err?.name ?? 'Error'}`); if (!res.headersSent) res.status(500).json({ error: 'Something went wrong on the NEXUS server.', code: 'internal' }); return; }
+    res.status(status).json({ error: status === 413 ? 'Request too large' : 'Bad request', code: 'invalid_request' });
+  };
+}
+const deny = (res: Response, d: Denied) => { res.setHeader('retry-after', String(d.retryAfterS)); res.status(d.status).json({ error: d.reason, code: d.code, retryable: d.status === 503 }); };
 const isLoopback = (req: Request) => ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '');
 
 /**
@@ -56,7 +87,15 @@ export function simpleChat(body: unknown): unknown {
   return { ...rest, messages: [...(Array.isArray(history) ? history : []), { role: 'user', content: message.trim() }] };
 }
 
-export interface AppOptions { serveDist?: boolean; distDir?: string; log?: (line: string) => void; persistRuntime?: boolean; ollamaUrl?: string }
+export interface AppOptions {
+  serveDist?: boolean; distDir?: string; log?: (line: string) => void; persistRuntime?: boolean; ollamaUrl?: string;
+  /** tests: the budget counter store (default: chosen from the environment, see makeCounterStore) */
+  counterStore?: CounterStore;
+  /** tests: overrides TRUST_PROXY */
+  trustProxy?: string;
+  /** tests: speech / transcription time limits in ms (default 30 s / 45 s) */
+  speechTimeoutMs?: number; transcribeTimeoutMs?: number;
+}
 
 /** Hosts the API answers to. Blocks DNS-rebinding: a web page on another domain cannot reach this local server through the browser. */
 const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
@@ -80,8 +119,15 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
 
   const app = express();
   app.disable('x-powered-by');
+  // security headers on every response (pages, API, errors) — see server/security.ts
+  const distDir = resolve(opts.distDir ?? process.env.NEXUS_DIST_DIR ?? 'dist');
+  const indexHtml = opts.serveDist && existsSync(resolve(distDir, 'index.html')) ? readFileSync(resolve(distDir, 'index.html'), 'utf8') : '';
+  const headers = { ...baseSecurityHeaders(base.publicMode), 'content-security-policy': buildCsp({ publicMode: base.publicMode, inlineScripts: inlineScriptHashes(indexHtml) }) };
+  app.use((_req, res, next) => { for (const [k, v] of Object.entries(headers)) res.setHeader(k, v); next(); });
   app.use((req, res, next) => { const t0 = Date.now(); res.on('finish', () => opts.log?.(`${req.method} ${req.originalUrl.split("?")[0]} ${res.statusCode} ${Date.now() - t0}ms`)); next(); });
-  if (base.publicMode) app.set('trust proxy', 1);          // behind the host's HTTPS proxy: req.ip is the visitor, not the proxy
+  // behind the host's HTTPS proxy: req.ip is the visitor, not the proxy (the right-most hops are the trusted proxies)
+  const trust = trustProxySetting(opts.trustProxy ?? process.env.TRUST_PROXY, base.publicMode);
+  if (trust) app.set('trust proxy', trust);
   const extraHosts = [...(process.env.ALLOWED_HOSTS ?? '').split(','), process.env.RENDER_EXTERNAL_HOSTNAME ?? ''].map((h) => h.trim().toLowerCase()).filter(Boolean);
   const corsOrigins = new Set(base.allowedOrigins.map((o) => o.toLowerCase()));
   const originOk = (o: string | undefined) => originAllowed(o, extraHosts) || (!!o && corsOrigins.has(o.toLowerCase()));
@@ -99,13 +145,22 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     next();
   });
   if (base.publicMode) {
-    app.use((_req, res, next) => { res.setHeader('strict-transport-security', 'max-age=31536000'); next(); });
-    // computer-only features make no sense (and must not run) on a public server
-    app.use(['/api/local-models', '/api/speech/voices'], (_req, res) => { res.status(404).json({ error: 'Not available on the public NEXUS server.', code: 'not_available' }); });
+    // computer-only features make no sense (and must not run) on a public server; the connection test would let any
+    // visitor make extra AI calls (the owner checks the live service with `npm run verify:live` instead)
+    app.use(['/api/local-models', '/api/speech/voices', '/api/config/test'], (_req, res) => { res.status(404).json({ error: 'Not available on the public NEXUS server.', code: 'not_available' }); });
   }
-  const budget = new DailyBudget(base.budget);
+  const { store: counterStore, note: storeNote } = opts.counterStore ? { store: opts.counterStore, note: undefined } : makeCounterStore(base.budgetStore, base.publicMode);
+  if (storeNote) opts.log?.(`budget: ${storeNote}`);
+  const budget = new DailyBudget(base.budget, counterStore);
+  /** reserve or answer with the refusal; null = refused (already answered) */
+  const take = async (res: Response, m: MeterName, ip: string | undefined, n: number) => { const r = await budget.reserve(m, ip, n); if (!r.ok) { deny(res, r); return null; } return r; };
   app.use(express.json({ limit: '128kb' }));
-  app.use((_req, res, next) => { res.setHeader('x-content-type-options', 'nosniff'); res.setHeader('referrer-policy', 'no-referrer'); next(); });
+  /** What the server sees as this visitor (their own address and the number of forwarding hops) — for checking the proxy setup. */
+  app.get('/api/visitor', rateLimiter(30), (req, res) => {
+    const xff = String(req.headers['x-forwarded-for'] ?? ''); const hops = xff ? xff.split(',').length : 0;
+    res.setHeader('cache-control', 'no-store');
+    res.json({ ip: req.ip ?? null, visitor: visitorOf(req.ip), forwardedEntries: hops, trustProxy: trust || 0 });
+  });
 
   const caps = (): ServerCapabilities => {
     const st = provider.configured();
@@ -124,7 +179,12 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   app.post('/api/chat', limit, async (req, res) => {
     const parsed = ChatRequestSchema.safeParse(simpleChat(req.body));
     if (!parsed.success) { res.status(400).json({ error: 'Invalid request', code: 'invalid_request', issues: parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`) }); return; }
-    if (provider.id !== 'demo') { const b = budget.takeChat(req.ip ?? '?'); if (!b.ok) { res.status(429).json({ error: b.reason, code: 'rate_limited', retryable: false }); return; } }
+    const metered = provider.id !== 'demo';
+    const ticket = metered ? await take(res, 'chat', req.ip, 1) : null; if (metered && !ticket) return;
+    // a request the AI service rejected before writing any reply is given back; one the visitor cancelled or that
+    // timed out is not (the provider may already have done — and counted — the work)
+    let produced = false;
+    const refund = (pe: ProviderError) => { if (ticket && !produced && pe.code !== 'cancelled' && pe.code !== 'timeout') void ticket.refund(); };
     const ctl = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ctl.abort('client'); });
     const body = parsed.data;
@@ -132,12 +192,13 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
       res.status(200).setHeader('content-type', 'text/event-stream; charset=utf-8');
       res.setHeader('cache-control', 'no-cache, no-transform'); res.setHeader('connection', 'keep-alive');
       res.flushHeaders();
-      const send = (e: StreamEvent) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(e)}\n\n`); };
+      const send = (e: StreamEvent) => { if (e.type === 'delta' || e.type === 'head') produced = true; if (!res.writableEnded) res.write(`data: ${JSON.stringify(e)}\n\n`); };
       try {
         const out = await brain.handle(body, ctl.signal, send);
         send({ type: 'final', response: out.response, meta: out.meta });
       } catch (e) {
         const pe = e instanceof ProviderError ? e : new ProviderError('Internal server error', 'internal', 500);
+        refund(pe);
         if (pe.code !== 'cancelled') send({ type: 'error', error: pe.message, code: pe.code, retryable: pe.retryable });
       }
       res.end();
@@ -146,6 +207,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     try { const out = await brain.handle(body, ctl.signal); res.json(out); }
     catch (e) {
       const pe = e instanceof ProviderError ? e : new ProviderError('Internal server error', 'internal', 500);
+      refund(pe);
       if (!res.headersSent && pe.code !== 'cancelled') { if (pe.retryAfterS) res.setHeader('retry-after', String(pe.retryAfterS)); res.status(pe.status).json({ error: pe.message, code: pe.code, retryable: pe.retryable }); }
     }
   });
@@ -153,12 +215,43 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   app.post('/api/summarize', limit, async (req, res) => {
     const p = SummarizeRequestSchema.safeParse(req.body);
     if (!p.success) { res.status(400).json({ error: 'Invalid request', code: 'invalid_request' }); return; }
-    if (provider.id !== 'demo') { const b = budget.takeChat(req.ip ?? '?'); if (!b.ok) { res.status(429).json({ error: b.reason, code: 'rate_limited', retryable: false }); return; } }
-    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), cfg.timeoutMs);
+    const ticket = provider.id !== 'demo' ? await take(res, 'chat', req.ip, 1) : null; if (provider.id !== 'demo' && !ticket) return;
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort('timeout'), cfg.timeoutMs);
+    res.on('close', () => { if (!res.writableEnded) ctl.abort('client'); });
     try { res.json({ summary: await brain.summarize(p.data.messages, ctl.signal) }); }
-    catch (e) { res.status(e instanceof ProviderError ? e.status : 500).json({ error: (e as Error).message, code: e instanceof ProviderError ? e.code : 'internal' }); }
-    finally { clearTimeout(t); }
+    catch (e) {
+      const pe = e instanceof ProviderError ? e : new ProviderError('Internal server error', 'internal', 500);
+      if (ticket && !ctl.signal.aborted && pe.code !== 'cancelled' && pe.code !== 'timeout') void ticket.refund();
+      if (!res.headersSent && ctl.signal.reason !== 'client') res.status(ctl.signal.reason === 'timeout' ? 504 : pe.status).json({ error: ctl.signal.reason === 'timeout' ? 'The AI provider did not respond in time.' : pe.message, code: ctl.signal.reason === 'timeout' ? 'timeout' : pe.code });
+    } finally { clearTimeout(t); }
   });
+
+  /**
+   * Structured AI tasks (HOLOBUILD, learning engine): one AI call (+ one repair) each, charged to the same daily chat
+   * allowance as a message; given back when the AI service fails before answering. Demo mode answers 503 honestly.
+   */
+  const aiTask = <T>(schema: z.ZodType<T>, run: (body: T, signal: AbortSignal) => Promise<unknown>) => async (req: Request, res: Response) => {
+    const p = schema.safeParse(req.body);
+    if (!p.success) { res.status(400).json({ error: 'Invalid request', code: 'invalid_request', issues: p.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`) }); return; }
+    if (provider.id === 'demo') { res.status(503).json({ error: 'No AI model is connected to this NEXUS server (demo mode), so this needs an AI model.', code: 'unconfigured' }); return; }
+    const ticket = await take(res, 'chat', req.ip, 1); if (!ticket) return;
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort('timeout'), Math.max(cfg.timeoutMs, 45000));
+    res.on('close', () => { if (!res.writableEnded) ctl.abort('client'); });
+    try { res.json(await run(p.data, ctl.signal)); }
+    catch (e) {
+      const pe = e instanceof ProviderError ? e : new ProviderError('Internal server error', 'internal', 500);
+      if (!ctl.signal.aborted && pe.code !== 'cancelled' && pe.code !== 'timeout') void ticket.refund();
+      const timeout = ctl.signal.reason === 'timeout';
+      if (!res.headersSent && ctl.signal.reason !== 'client') res.status(timeout ? 504 : pe.status).json({ error: timeout ? 'The AI provider did not respond in time.' : pe.message, code: timeout ? 'timeout' : pe.code, retryable: pe.retryable });
+    } finally { clearTimeout(t); }
+  };
+  app.post('/api/holo/design', limit, aiTask(HoloDesignRequestSchema, (b, signal) => designModel(provider, b.prompt, signal)));
+  app.post('/api/holo/edit', limit, aiTask(HoloEditRequestSchema, (b, signal) => editModel(provider, b, signal)));
+  // learning engine (research, reflection, workflow skills) — same allowance, same refund rules
+  app.post('/api/learn/research', limit, aiTask(ResearchRequestSchema, (b, signal) => researchTask(provider, research, b.question, signal)));
+  app.post('/api/learn/reflect', limit, aiTask(ReflectRequestSchema, (b, signal) => reflect(provider, b, signal)));
+  app.post('/api/learn/skill/draft', limit, aiTask(SkillDraftRequestSchema, (b, signal) => draftSkill(provider, b, signal)));
+  app.post('/api/learn/skill/run', limit, aiTask(SkillRunRequestSchema, (b, signal) => runSkill(provider, b, signal)));
 
   app.get('/api/config', (_q, r) => { r.json(publicConfig(cfg)); });
   app.put('/api/config', (req, res) => {
@@ -175,7 +268,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     const t0 = Date.now();
     if (provider.id === 'demo') { res.json({ ok: true, provider: 'demo', message: 'Demo brain is active (no network test needed — it is not an LLM).', latencyMs: 0 }); return; }
     const st = provider.configured(); if (!st.ok) { res.json({ ok: false, message: st.note }); return; }
-    { const b = budget.takeChat(_req.ip ?? '?'); if (!b.ok) { res.json({ ok: false, message: b.reason }); return; } }
+    { const b = await budget.reserve('chat', _req.ip, 1); if (!b.ok) { res.json({ ok: false, message: b.reason }); return; } }
     const ctl = new AbortController(); const t = setTimeout(() => ctl.abort('timeout'), Math.min(20000, cfg.timeoutMs));
     try {
       const text = await provider.complete({ system: 'Connection test. Reply with the single word OK.', messages: [{ role: 'user', content: 'Reply with OK.' }], maxTokens: 8, temperature: 0, json: false }, ctl.signal);
@@ -186,19 +279,55 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
 
   /** Text-to-speech through the configured speech service (spec §12). Returns audio bytes; errors are JSON with a stable code. */
   const speechLimit = rateLimiter(Math.max(60, cfg.rateLimitPerMin * 4));
+  /**
+   * Recently generated audio, per visitor: replaying the same sentence (e.g. "repeat that", or a retry after a playback
+   * error) is served again without a second provider call or a second charge. Small, short-lived, in memory, and keyed
+   * by a hash that includes the visitor, so one visitor can never receive (or detect) another visitor's audio.
+   */
+  const audioCache = new Map<string, { audio: Buffer; mime: string; exp: number; alignment?: Alignment | null }>();
+  const AUDIO_CACHE_MAX = 24, AUDIO_CACHE_TTL = 10 * 60_000, AUDIO_CACHE_BYTES = 12 * 1024 * 1024;
+  const cacheKey = (ip: string | undefined, text: string, timed = false) => { const t = cfg.speech.tts; return createHash('sha256').update(JSON.stringify([visitorOf(ip), t.provider, t.baseUrl, t.model, t.voice, t.style, t.format, text, timed])).digest('base64url'); };
+  const cachePut = (k: string, audio: Buffer, mime: string, alignment?: Alignment | null) => {
+    if (audio.length > AUDIO_CACHE_BYTES / 4) return;
+    audioCache.set(k, { audio, mime, exp: Date.now() + AUDIO_CACHE_TTL, alignment });
+    let bytes = 0; for (const e of audioCache.values()) bytes += e.audio.length;
+    for (const key of audioCache.keys()) { if (audioCache.size <= AUDIO_CACHE_MAX && bytes <= AUDIO_CACHE_BYTES) break; bytes -= audioCache.get(key)!.audio.length; audioCache.delete(key); }
+  };
   /** POST /api/speech (and the older /api/tts): { text } → audio from the configured voice service. No other voice is substituted on failure. */
   app.post(['/api/speech', '/api/tts'], speechLimit, async (req, res) => {
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
     if (!text || text.length > 1200) { res.status(400).json({ error: 'Text must be 1–1200 characters', code: 'invalid_request' }); return; }
-    if (ttsStatus(cfg.speech.tts).configured) { const b = budget.takeSpeech(text.length); if (!b.ok) { res.status(429).json({ error: b.reason, code: 'quota' }); return; } }
-    const ctl = new AbortController(); res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
-    const t = setTimeout(() => ctl.abort('timeout'), 30000);
+    if (!ttsStatus(cfg.speech.tts).configured) { res.status(503).json({ error: ttsStatus(cfg.speech.tts).note, code: 'not_configured' }); return; }
+    // {timing:true} with ElevenLabs: JSON { audio (base64), mime, alignment } — same voice and cost, character timing for lip-sync
+    const timed = req.body?.timing === true && cfg.speech.tts.provider === 'elevenlabs';
+    const send = (audio: Buffer, mime: string, alignment: Alignment | null | undefined, replay: boolean) => {
+      res.setHeader('cache-control', 'no-store'); if (replay) res.setHeader('x-nexus-audio', 'replay');
+      if (timed) { res.json({ audio: audio.toString('base64'), mime, alignment: alignment ?? null }); return; }
+      res.setHeader('content-type', mime); res.end(audio);
+    };
+    const key = cacheKey(req.ip, text, timed); const hit = audioCache.get(key);
+    if (hit && hit.exp > Date.now()) { send(hit.audio, hit.mime, hit.alignment, true); return; }
+    // spoken characters are reserved BEFORE the provider is called (parallel requests cannot share the same allowance)
+    const ticket = await take(res, 'speech', req.ip, [...text].length); if (!ticket) return;
+    const ctl = new AbortController(); res.on('close', () => { if (!res.writableFinished) ctl.abort('client'); });
+    const t = setTimeout(() => ctl.abort('timeout'), opts.speechTimeoutMs ?? 30000);
     try {
-      const { audio, mime } = await synthesize(cfg.speech.tts, text, ctl.signal);
-      res.setHeader('content-type', mime); res.setHeader('cache-control', 'no-store'); res.end(audio);
+      const out = timed ? await synthesizeElevenTimed(cfg.speech.tts, text, ctl.signal) : { ...(await synthesize(cfg.speech.tts, text, ctl.signal)), alignment: null };
+      cachePut(key, out.audio, out.mime, out.alignment);
+      send(out.audio, out.mime, out.alignment, false);
     } catch (e) {
+      const why = ctl.signal.aborted ? ctl.signal.reason : null;
+      if (why === 'timeout') {
+        // our time limit: the service may still produce (and bill) the audio, so the characters stay counted
+        if (!res.headersSent) res.status(504).json({ error: 'The voice service did not answer in time. The reply is shown as text.', code: 'timeout' });
+        else res.end();
+        return;
+      }
+      if (why === 'client') { if (!res.writableEnded) res.end(); return; }   // the visitor stopped it: counted, nothing to send
+      // the service returned an error, so no audio was produced: give the characters back (once)
       const se = e instanceof SpeechError ? e : new SpeechError('Speech generation failed.', 500, 'internal');
-      if (!res.headersSent && se.code !== 'cancelled') res.status(se.status).json({ error: se.message, code: se.code });
+      void ticket.refund();
+      if (!res.headersSent) res.status(se.status === 499 ? 502 : se.status).json({ error: se.message, code: se.code });
       else if (!res.writableEnded) res.end();
     } finally { clearTimeout(t); }
   });
@@ -215,13 +344,20 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   app.post('/api/transcribe', speechLimit, express.raw({ type: ['audio/*', 'application/octet-stream'], limit: '8mb' }), async (req, res) => {
     const body = req.body as Buffer;
     if (!Buffer.isBuffer(body) || body.length < 100) { res.status(400).json({ error: 'No audio received', code: 'invalid_request' }); return; }
-    const mime = String(req.headers['content-type'] ?? 'audio/webm').split(';')[0];
-    const ctl = new AbortController(); res.on('close', () => { if (!res.writableFinished) ctl.abort(); });
-    const t = setTimeout(() => ctl.abort('timeout'), 45000);
+    const mime = String(req.headers['content-type'] ?? 'audio/webm').split(';')[0].trim().toLowerCase();
+    if (!/^(audio\/[\w.+-]{1,40}|application\/octet-stream)$/.test(mime)) { res.status(415).json({ error: 'Unsupported audio type', code: 'invalid_request' }); return; }
+    if (!sttStatus(cfg.speech.stt).configured) { res.status(503).json({ error: sttStatus(cfg.speech.stt).note, code: 'not_configured' }); return; }
+    const ticket = await take(res, 'stt', req.ip, 1); if (!ticket) return;
+    const ctl = new AbortController(); res.on('close', () => { if (!res.writableFinished) ctl.abort('client'); });
+    const t = setTimeout(() => ctl.abort('timeout'), opts.transcribeTimeoutMs ?? 45000);
     try { res.json({ text: await transcribe(cfg.speech.stt, body, mime, ctl.signal) }); }
     catch (e) {
+      const why = ctl.signal.aborted ? ctl.signal.reason : null;
+      if (why === 'timeout') { if (!res.headersSent) res.status(504).json({ error: 'The transcription service did not answer in time — please try again or type.', code: 'timeout' }); return; }
+      if (why === 'client') { if (!res.writableEnded) res.end(); return; }
       const se = e instanceof SpeechError ? e : new SpeechError('Transcription failed.', 500, 'internal');
-      if (!res.headersSent && se.code !== 'cancelled') res.status(se.status).json({ error: se.message, code: se.code });
+      void ticket.refund();
+      if (!res.headersSent) res.status(se.status === 499 ? 502 : se.status).json({ error: se.message, code: se.code });
     } finally { clearTimeout(t); }
   });
 
@@ -283,11 +419,9 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
 
   app.use('/api', (_q, r) => { r.status(404).json({ error: 'Not found' }); });
   if (opts.serveDist) {
-    const dist = resolve(opts.distDir ?? process.env.NEXUS_DIST_DIR ?? 'dist');
+    const dist = distDir;
     if (existsSync(dist)) { app.use(express.static(dist)); app.use((_q, r) => r.sendFile(resolve(dist, 'index.html'))); }
   }
-  app.use((err: Error & { status?: number; type?: string }, _q: Request, res: Response, _n: NextFunction) => {
-    void _n; res.status(err.status ?? 500).json({ error: err.status === 413 ? 'Request too large' : 'Bad request', code: 'invalid_request' });
-  });
+  app.use(errorHandler(opts.log));
   return app;
 }

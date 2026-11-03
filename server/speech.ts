@@ -114,6 +114,17 @@ export function pcmToWav(pcm: Buffer, rate = 24000, channels = 1): Buffer {
   return Buffer.concat([h, pcm]);
 }
 /** Find the first base64 audio payload in a Gemini answer (Interactions: steps[].content[].data; generateContent: inlineData.data). */
+/** The documented Interactions reply: steps[] → the "model_output" step → its last content item of type "audio". */
+export function interactionAudio(j: unknown): { data: string; mime: string } | null {
+  const steps = (j as { steps?: unknown })?.steps; if (!Array.isArray(steps)) return null;
+  for (const st of [...steps].reverse()) {
+    const s = st as { type?: unknown; content?: unknown };
+    if (s?.type !== 'model_output' || !Array.isArray(s.content)) continue;
+    const items = s.content.filter((c) => (c as { type?: unknown })?.type === 'audio' && typeof (c as { data?: unknown }).data === 'string') as { data: string; mime_type?: string; mimeType?: string }[];
+    const last = items.at(-1); if (last) return { data: last.data, mime: String(last.mime_type ?? last.mimeType ?? '') };
+  }
+  return null;
+}
 export function findAudioPart(j: unknown, depth = 0): { data: string; mime: string } | null {
   if (!j || typeof j !== 'object' || depth > 8) return null;
   const o = j as Record<string, unknown>;
@@ -133,7 +144,7 @@ async function synthesizeGemini(c: TtsConfig, text: string, signal: AbortSignal)
   if (r.status === 400) { const t = await r.text().catch(() => ''); throw new SpeechError(/api key/i.test(t) ? 'Gemini rejected the API key.' : `Gemini refused the speech request (HTTP 400${/voice/i.test(t) ? ' — check the voice name' : /model/i.test(t) ? ' — check the speech model id' : ''}).`, 502, /api key/i.test(t) ? 'auth' : 'provider_error'); }
   if (!r.ok) throw providerError(r, 'Gemini speech');
   const j = await r.json().catch(() => null);
-  const part = findAudioPart(j);
+  const part = interactionAudio(j) ?? findAudioPart(j);   // documented shape first; a tolerant search as fallback
   if (!part) throw new SpeechError('Gemini answered without audio.', 502, 'malformed');
   let audio: Buffer = Buffer.from(part.data, 'base64');
   if (audio.length < 64) throw new SpeechError('Gemini returned empty audio.', 502, 'malformed');
@@ -154,6 +165,30 @@ async function elevenError(r: Response): Promise<SpeechError> {
   if (r.status === 429) return new SpeechError('ElevenLabs is rate-limiting requests (too many at once) — try again shortly.', 429, 'rate_limited');
   if (r.status === 422 || r.status === 400) return new SpeechError(`ElevenLabs refused the request${/model/i.test(msg) ? ' — check ELEVENLABS_MODEL' : ''}.`, 502, 'invalid_config');
   return new SpeechError(`ElevenLabs answered HTTP ${r.status}.`, 502, 'provider_error');
+}
+
+export interface Alignment { chars: string[]; starts: number[]; ends: number[] }
+/**
+ * ElevenLabs with character timing (documented endpoint POST /v1/text-to-speech/{voice_id}/with-timestamps): the same
+ * voice, model, settings and character cost as the plain endpoint, plus per-character start/end times used for lip-sync.
+ */
+export async function synthesizeElevenTimed(c: TtsConfig, text: string, signal: AbortSignal): Promise<{ audio: Buffer; mime: string; alignment: Alignment | null }> {
+  let r: Response;
+  try {
+    r = await fetch(`${c.baseUrl}/v1/text-to-speech/${encodeURIComponent(c.voice)}/with-timestamps?output_format=${ELEVEN_OUTPUT_FORMAT}`, { method: 'POST', signal, headers: { 'content-type': 'application/json', accept: 'application/json', 'xi-api-key': c.apiKey }, body: JSON.stringify({ text, model_id: c.model, voice_settings: ELEVEN_VOICE_SETTINGS }) });
+  } catch (e) { if (signal.aborted) throw new SpeechError('cancelled', 499, 'cancelled'); throw new SpeechError(`Could not reach ElevenLabs: ${(e as Error).message}`, 502, 'network'); }
+  if (!r.ok) throw await elevenError(r);
+  const j = await r.json().catch(() => null) as { audio_base64?: unknown; alignment?: { characters?: unknown; character_start_times_seconds?: unknown; character_end_times_seconds?: unknown } | null; normalized_alignment?: unknown } | null;
+  if (!j || typeof j.audio_base64 !== 'string') throw new SpeechError('ElevenLabs did not return audio.', 502, 'malformed');
+  const audio = Buffer.from(j.audio_base64, 'base64');
+  if (audio.length < 64) throw new SpeechError('ElevenLabs returned empty audio.', 502, 'malformed');
+  // timing is validated; if it is missing or inconsistent the audio is still used (the mouth then follows loudness)
+  const al = j.alignment; const ch = al?.characters, st = al?.character_start_times_seconds, en = al?.character_end_times_seconds;
+  const okArr = (x: unknown, f: (v: unknown) => boolean): x is unknown[] => Array.isArray(x) && x.length <= 4000 && x.every(f);
+  const num = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v < 3600;
+  const alignment = okArr(ch, (v) => typeof v === 'string' && v.length <= 4) && okArr(st, num) && okArr(en, num) && ch.length === st.length && st.length === en.length && ch.length > 0
+    ? { chars: ch as string[], starts: st as number[], ends: en as number[] } : null;
+  return { audio, mime: 'audio/mpeg', alignment };
 }
 
 async function synthesizeEleven(c: TtsConfig, text: string, signal: AbortSignal): Promise<{ audio: Buffer; mime: string }> {

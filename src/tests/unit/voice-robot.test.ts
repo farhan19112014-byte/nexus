@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnimationEngine, seeded } from '../../animation/engine';
-import { ServerSpeechInput, ServerSpeechOutput, levelToMouth, rmsOf, splitForTts } from '../../voice/serverVoice';
+import { ServerSpeechInput, ServerSpeechOutput, levelToMouth, rmsOf, spectralShape, splitForTts } from '../../voice/serverVoice';
 import { VoiceInputRouter, VoiceOutputRouter } from '../../voice/router';
 import { StateMachine, TRANSITIONS } from '../../core/stateMachine';
 import { BUILTIN_EXPRESSIONS } from '../../expressions/presets';
@@ -53,6 +53,25 @@ describe('[A119] lip-sync follows the actual audio', () => {
     e.setSpeaking(false); for (let i = 0; i < 40; i++) e.update(1 / 60);
     expect(e.values['mouth.open']).toBeLessThan(0.1);
   });
+  it('[A119] the spectrum gives an approximate lip shape: low-heavy audio rounds the lips, bright audio widens them', () => {
+    const bins = (fill: (hz: number) => number) => Uint8Array.from({ length: 256 }, (_, i) => fill(i * (48000 / 2 / 256)));
+    const oo = spectralShape(bins((hz) => (hz < 900 ? 220 : 20)), 48000); const ee = spectralShape(bins((hz) => (hz > 2500 && hz < 8000 ? 200 : hz < 900 ? 120 : 40)), 48000);
+    expect(oo.round).toBeGreaterThan(0.6); expect(oo.wide).toBeLessThan(0.1);
+    expect(ee.wide).toBeGreaterThan(0.6); expect(ee.round).toBeLessThan(0.1);
+    expect(spectralShape(new Uint8Array(256), 48000)).toEqual({ round: 0, wide: 0 });          // silence: no shape
+  });
+  it('[A119] the shape reaches the robot mouth only while it is open and speaking, and resets with the speech', () => {
+    const e = new AnimationEngine(seeded(3)); e.rateLimit = false; e.idleEnabled = false;
+    e.setSpeaking(true); e.speechLevel(0.8, { round: 1, wide: 0 }); for (let i = 0; i < 30; i++) e.update(1 / 60);
+    const rounded = e.values['mouth.round']; expect(rounded).toBeGreaterThan(0.3);
+    e.speechLevel(0.8, { round: 0, wide: 1 }); for (let i = 0; i < 30; i++) e.update(1 / 60);
+    expect(e.values['mouth.round']).toBeLessThan(rounded); expect(e.values['mouth.width']).toBeGreaterThan(0);
+    e.speechLevel(0, { round: 1, wide: 0 }); for (let i = 0; i < 40; i++) e.update(1 / 60);
+    expect(e.values['mouth.round']).toBeLessThan(0.15);                                   // closed mouth: no pucker on silence
+    e.speechLevel(Number.NaN, { round: Number.POSITIVE_INFINITY, wide: -3 }); e.update(1 / 60);
+    expect(Number.isFinite(e.values['mouth.open'])).toBe(true);                           // bad input is clamped
+    e.setSpeaking(false); for (let i = 0; i < 40; i++) e.update(1 / 60); expect(e.values['mouth.round']).toBeLessThan(0.1);
+  });
 });
 
 describe('[A119] server voice output', () => {
@@ -100,6 +119,8 @@ describe('[A119] server voice output', () => {
     expect(browserSaid).toEqual([]); expect(FakeAudio.all.length).toBe(0);
     expect(notes).toHaveLength(1); expect(notes[0]).toMatch(/does not know this voice id/); expect(notes[0]).toMatch(/did not switch/);
     expect(r.speaking).toBe(false);
+    await new Promise((res) => setTimeout(res, 5));
+    expect(ev.filter((e) => e === 'idle').length).toBe(1);                // the robot is told speech is over even though none played (no stuck SPEAKING)
     r.enqueue('Next reply.', 'warm'); await flush(); expect(notes).toHaveLength(2);   // a new reply that fails is reported again
   });
   it('[A119] long replies are split for the speech service without losing text', () => {
@@ -155,5 +176,21 @@ describe('[A120] cute voice preset (this computer\'s voices)', () => {
     expect(pickCuteVoice(list, 'en-US')?.name).toMatch(/Jenny/);             // a young-adult voice, not the child voice "Ana"
     expect(pickCuteVoice(list, 'de-DE')?.name).toMatch(/Jenny/);             // no youthful German voice → falls back to English
     expect(pickCuteVoice([v('Microsoft Guy Online', 'en-US')], 'en-US')).toBeUndefined();
+  });
+});
+
+describe('Timestamp lip-sync (client)', () => {
+  it('[A138] character timing → the character being spoken; letters map to mouth shapes; JSON audio + timing is decoded', async () => {
+    const { charAt, visemeForChar, ServerSpeechOutput } = await import('../../voice/serverVoice');
+    const al = { chars: [...'Hi Mo'], starts: [0, 0.1, 0.2, 0.3, 0.4], ends: [0.1, 0.2, 0.3, 0.4, 0.5] };
+    expect([0, 0.15, 0.35, 0.49, 0.6, -1].map((t) => charAt(al, t))).toEqual([0, 1, 3, 4, -1, -1]);
+    expect(visemeForChar('m').open).toBe(0); expect(visemeForChar('o').round).toBeGreaterThan(0.8); expect(visemeForChar('a').open).toBeGreaterThan(0.9);
+    expect(visemeForChar('e').wide).toBeGreaterThan(0.6); expect(visemeForChar(' ').open).toBeLessThan(0.1); expect(visemeForChar('.').open).toBeLessThan(0.1);
+    let body = '';
+    const out = new ServerSpeechOutput('http://x', (async (_u: string, init: RequestInit) => { body = String(init.body); return new Response(JSON.stringify({ audio: Buffer.from('abc').toString('base64'), mime: 'audio/mpeg', alignment: al }), { headers: { 'content-type': 'application/json' } }); }) as unknown as typeof fetch);
+    const clip = await (out as unknown as { fetchAudio(t: string): Promise<{ blob: Blob; alignment: unknown }> }).fetchAudio('Hi Mo');
+    expect(JSON.parse(body)).toEqual({ text: 'Hi Mo', timing: true }); expect(clip.alignment).toEqual(al); expect(await clip.blob.text()).toBe('abc');
+    const plain = new ServerSpeechOutput('http://x', (async () => new Response(new Uint8Array([1, 2, 3]), { headers: { 'content-type': 'audio/mpeg' } })) as unknown as typeof fetch);
+    const c2 = await (plain as unknown as { fetchAudio(t: string): Promise<{ blob: Blob; alignment: unknown }> }).fetchAudio('x'); expect(c2.alignment).toBeNull(); expect(c2.blob.size).toBe(3);
   });
 });

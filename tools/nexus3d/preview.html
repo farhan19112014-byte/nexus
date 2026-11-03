@@ -12,13 +12,15 @@ r.toneMapping = THREE.ACESFilmicToneMapping; r.outputColorSpace = THREE.SRGBColo
 const scene = new THREE.Scene(); scene.background = new THREE.Color(q.get('bg') ?? '#0b1733');
 const pm = new THREE.PMREMGenerator(r); scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.55;
 const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(-3, 6, 5); scene.add(key);
-const rim = new THREE.DirectionalLight(0x6fb6ff, 2.4); rim.position.set(4, 2, -4); scene.add(rim);
+const rim = new THREE.DirectionalLight(0x2a9dff, 3.2); rim.position.set(4, 2.5, -4); scene.add(rim);
+const rim2 = new THREE.DirectionalLight(0x00c8ff, 2.2); rim2.position.set(-4.5, 1.5, -3); scene.add(rim2);
 scene.add(new THREE.HemisphereLight(0xbfd8ff, 0x0b1733, 0.5));
 const cam = new THREE.PerspectiveCamera(28, W / Hh, 0.1, 100);
 const az = +(q.get('az') ?? 0) * Math.PI / 180, el = +(q.get('el') ?? 6) * Math.PI / 180, dist = +(q.get('d') ?? 11);
-cam.position.set(Math.sin(az) * Math.cos(el) * dist, 2.2 + Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist); cam.lookAt(0, 2.15, 0);
-const g = await new GLTFLoader().loadAsync('/public/models/nexus.glb');
+cam.position.set(Math.sin(az) * Math.cos(el) * dist, 2.2 + Math.sin(el) * dist, Math.cos(az) * Math.cos(el) * dist); cam.lookAt(0, 2.0, 0);
+const g = await new GLTFLoader().loadAsync('/public/models/nexus.glb?v=' + Date.now());
 scene.add(g.scene);
+g.scene.traverse((o) => { const m = o.material; if (m && /NX_(Eye|Pupil|Mouth|Brow|Trim|Core|LED_Blue|Spark)/.test(m.name)) m.toneMapped = false; });
 const n = (x) => g.scene.getObjectByName(x);
 if (q.get('pose') === 'wave') { n('Arm_L').rotation.z = 2.6; n('Forearm_L').rotation.z = 0.5; n('Head').rotation.z = -0.12; const ml = n('Mouth_Line'); ml.morphTargetInfluences[0] = 1; n('Mouth_Open').scale.y = 0.6; }
 r.render(scene, cam); window.done = true;

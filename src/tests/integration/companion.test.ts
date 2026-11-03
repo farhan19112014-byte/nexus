@@ -18,6 +18,16 @@ import { ApiError, type ApiClient, type ChatHandlers, type ChatResult } from '..
 import { demoBrain } from '../../../shared/demoBrain';
 import { BrainResponseSchema, ChatRequestSchema, type BrainResponse, type ChatRequestInput, type ResponseMeta } from '../../../shared/schema';
 import type { CompanionState } from '../../core/stateMachine';
+import type { SpeechIn } from '../../voice/serverVoice';
+import type { ListenCallbacks } from '../../voice/recognition';
+
+/** a server-transcription microphone: records, reports "transcribing", then delivers the transcript it is given */
+class FakeServerMic implements SpeechIn {
+  readonly supported = true; readonly kind = 'server'; listening = false; private cb: ListenCallbacks | null = null;
+  start(cb: ListenCallbacks) { this.cb = cb; this.listening = true; cb.onState(true); }
+  say(text: string) { const cb = this.cb!; this.listening = false; cb.onTranscribing?.(); cb.onFinal(text); }
+  stop() { this.listening = false; } abort() { this.listening = false; }
+}
 
 const META: ResponseMeta = { provider: 'fake', model: null, isLLM: true, latencyMs: 1, streamed: true, repaired: false, droppedFields: [], degraded: false, historySent: 1, promptVersion: 't', research: { used: false, provider: null, count: 0 } };
 type Script = (req: ReturnType<typeof ChatRequestSchema.parse>, signal: AbortSignal, h: ChatHandlers) => Promise<ChatResult>;
@@ -28,7 +38,7 @@ const streamed = (r: Partial<BrainResponse> & { reply: string }, delayMs = 20): 
   return { response: resp, meta: META, offline: false };
 };
 
-function rig(script: Script = demo, o: { greeted?: boolean; restAfterMs?: number; kv?: MemoryKV; stores?: boolean; clock?: () => number } = {}) {
+function rig(script: Script = demo, o: { greeted?: boolean; restAfterMs?: number; kv?: MemoryKV; stores?: boolean; clock?: () => number; stt?: SpeechIn } = {}) {
   const kv = o.kv ?? new MemoryKV();
   const chats = o.stores ? new ChatStore(kv) : undefined; const reminders = o.stores ? new ReminderStore(kv, o.clock) : undefined;
   const engine = new AnimationEngine(seeded(2)); const expressions = new ExpressionController(BUILTIN_EXPRESSIONS);
@@ -37,7 +47,7 @@ function rig(script: Script = demo, o: { greeted?: boolean; restAfterMs?: number
   let calls = 0; const requests: ReturnType<typeof ChatRequestSchema.parse>[] = [];
   const api = { offline: false, status: async () => ({ provider: 'fake', label: 'fake', model: 'm', isLLM: true, configured: true, streaming: true, promptVersion: 't', runtimeConfig: false, research: { provider: 'none', configured: false } }),
     chat: async (input: ChatRequestInput, s: AbortSignal, h: ChatHandlers) => { calls++; const req = ChatRequestSchema.parse(input); requests.push(req); return script(req, s, h); }, summarize: async () => 'summary' } as unknown as ApiClient;
-  const c = new Companion({ runtime, registry, memory, learning, api, persistent: false, silentMsPerChar: 0, restAfterMs: o.restAfterMs ?? 60_000, chats, reminders });
+  const c = new Companion({ runtime, registry, memory, learning, api, persistent: false, silentMsPerChar: 0, restAfterMs: o.restAfterMs ?? 60_000, chats, reminders, ...(o.stt ? { stt: o.stt } : {}) });
   const states: CompanionState[] = []; c.sm.on((s) => states.push(s));
   const started: string[] = []; engine.on('start', (e) => started.push(e.skillId));
   const timer = setInterval(() => runtime.step(0.1), 2);
@@ -48,6 +58,20 @@ const until = async (f: () => boolean, ms = 5000) => { const t0 = Date.now(); wh
 const idle = (c: Companion) => until(() => c.sm.state === 'idle' && !c.getSnapshot().busy);
 
 describe('[A97] companion integration', () => {
+  it('[A119] server voice input never leaves the robot stuck "thinking": a spoken stop command, a reminder or a repeated phrase returns it to idle', async () => {
+    const mic = new FakeServerMic(); const t = rig(demo, { stt: mic, stores: true }); await t.ready();
+    for (const phrase of ['stop', 'remind me in 10 minutes to stretch']) {
+      t.c.startListening(); expect(t.c.sm.state).toBe('listening');
+      mic.say(phrase);
+      await until(() => t.c.sm.state === 'idle', 1500);
+      expect(t.expressions.current()).not.toBe('thinking');
+    }
+    // the same sentence twice within a second (duplicate guard): the second one does nothing, and nothing is stuck
+    await t.c.send('hello there'); await idle(t.c);
+    t.c.startListening(); mic.say('hello there');
+    await until(() => t.c.sm.state === 'idle' && !t.c.getSnapshot().busy, 1500);
+    t.stop();
+  });
   it('[A31] greeting plays on the first session only', async () => {
     const t = rig(demo, { greeted: false }); await t.ready();
     expect(t.started).toContain('greeting'); expect(t.memory.settings.greeted).toBe(true);
@@ -206,7 +230,7 @@ describe('[A97] companion integration', () => {
     const t = rig(); await t.ready();
     await t.memory.updateSettings({ responseStyle: 'concise', language: 'Hindi', animationIntensity: 0.5, reducedMotion: true }); t.c.applySettings();
     await t.c.send('hello'); await idle(t.c);
-    expect(t.requests.at(-1)!.profile).toEqual({ responseStyle: 'concise', language: 'Hindi', robotName: 'NEXUS' });
+    expect(t.requests.at(-1)!.profile).toEqual({ responseStyle: 'concise', language: 'Hindi', robotName: 'NEXUS', personality: { humour: 'light', energy: 'balanced', curiosity: 'normal', formality: 'neutral' } });
     expect(t.engine.intensity).toBe(0.5); expect(t.engine.reducedMotion).toBe(true); expect(t.engine.idleEnabled).toBe(false);
     const full = new AnimationEngine(seeded(1)); full.rateLimit = false; const small = new AnimationEngine(seeded(1)); small.rateLimit = false; small.intensity = 0.5; small.reducedMotion = true;
     const wave = t.registry.get('wave')!; full.play(wave); small.play(wave);
@@ -407,6 +431,35 @@ describe('[A126] website redesign: motion-engine states', () => {
       expect(t.c.getSnapshot().messages.at(-1)?.text).toMatch(/Muhammad Farhan Khan|Farhan/);
       t.stop();
     } finally { if (had) Object.defineProperty(globalThis, 'navigator', had); }
+  });
+  it('[A137] unified states: real activities drive the robot (thinking → happy only on success, confused on failure); long replies explain; a reply ending in a question waits; any input clears it', async () => {
+    const motions: string[] = [];
+    const t = rig(streamed({ reply: `${'This is a long explanation of how a four-stroke engine works, step by step. '.repeat(5)}Does that make sense?`, expression: 'thinking' }, 2)); await t.ready();
+    const rt = (t.c as unknown as { d: { runtime: { setMotion(m: string): void; motion: string } } }).d.runtime; const orig = rt.setMotion.bind(rt);
+    rt.setMotion = (m: string) => { motions.push(m); orig(m); };
+    const end = t.c.beginActivity('building', 'Combustion engine');
+    expect(t.c.getSnapshot().activity).toMatchObject({ kind: 'building', label: 'Combustion engine' }); expect(rt.motion).toBe('thinking'); expect(t.expressions.current()).toBe('thinking');
+    end('done'); expect(t.c.getSnapshot().activity).toBeNull(); expect(rt.motion).toBe('excited');
+    const end2 = t.c.beginActivity('researching', 'quasars'); end2('failed'); expect(rt.motion).toBe('confused'); end2('done'); expect(rt.motion).toBe('confused');   // end() counts once
+    motions.length = 0;
+    await t.c.send('how does an engine work'); await idle(t.c);
+    expect(motions).toContain('explaining');                                        // the long reply switched to the explaining body language
+    expect(rt.motion).toBe('waiting');                                              // it asked a question → waits for the answer
+    t.c.noteTyping(true, 'yes'); expect(rt.motion).not.toBe('waiting');
+    t.stop();
+  });
+  it('[A139] personality settings and learned knowledge reach the request; exchanges are reported to the learning engine', async () => {
+    const t = rig(streamed({ reply: "I'm not sure about that.", uncertainty: 'high' }, 1)); await t.ready();
+    const seen: unknown[] = [];
+    Object.assign((t.c as unknown as { d: Record<string, unknown> }).d, { knowledgeFor: () => [{ claim: 'Mars has two moons.', status: 'verified', sources: ['NASA (nasa.gov)'] }], onExchange: (x: unknown) => seen.push(x) });
+    await t.memory.updateSettings({ personality: { humour: 'none', energy: 'calm', curiosity: 'inquisitive', formality: 'formal' } });
+    await t.c.send('How many moons does Mars have?'); await idle(t.c);
+    const req = t.requests.at(-1)!;
+    expect(req.profile.personality).toEqual({ humour: 'none', energy: 'calm', curiosity: 'inquisitive', formality: 'formal' });
+    expect(req.context?.knowledge).toEqual([{ claim: 'Mars has two moons.', status: 'verified', sources: ['NASA (nasa.gov)'] }]);
+    expect(seen[0]).toMatchObject({ user: 'How many moons does Mars have?', uncertainty: 'high' });
+    expect(t.c.getSnapshot().messages.at(-1)!.notes?.some((n) => /1 note\(s\) from NEXUS's knowledge base with this message \(1 verified\)/.test(n))).toBe(true);
+    t.stop();
   });
 });
 

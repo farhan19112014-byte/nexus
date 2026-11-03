@@ -28,7 +28,7 @@ export interface PlayOptions {
 export interface ActionHandle { id: number; skillId: string; readonly status: 'queued' | 'running' | 'fading' | 'done'; done: Promise<ActionResult>; cancel(): void }
 
 export interface EngineEvents {
-  start: { id: number; skillId: string; preview: boolean };
+  start: { id: number; skillId: string; preview: boolean; speed?: number };
   end: { id: number; skillId: string; result: ActionResult; preview: boolean };
   queued: { id: number; skillId: string; blockedBy: string[] };
   recovered: { id: number; skillId: string; reason: string };
@@ -77,7 +77,7 @@ export class AnimationEngine {
   private blink = { t: 0, next: 2.5, phase: 0, double: false };
   blinkRate = 1;
   private gaze = { x: 0, y: 0, tx: 0, ty: 0, mode: 'user' as 'user' | 'chat' | 'center' | 'idle', idleNext: 1.5 };
-  private speech = { active: false, open: 0, round: 0, pulse: 0, levelMode: false, level: 0 };
+  private speech = { active: false, open: 0, round: 0, pulse: 0, levelMode: false, level: 0, shapeRound: 0, shapeWide: 0, shaped: false, wide: 0 };
 
   /** user preferences / accessibility */
   intensity = 1;           // Asset 57 animation intensity (0.3..1.3)
@@ -126,9 +126,13 @@ export class AnimationEngine {
   }
   getGaze() { return { x: this.gaze.x, y: this.gaze.y, mode: this.gaze.mode }; }
   /** Asset 33: speech activity; viseme is an approximate mouth shape from the current word. */
-  setSpeaking(on: boolean) { this.speech.active = on; if (!on) { this.speech.pulse = 0; this.speech.levelMode = false; this.speech.level = 0; } }
+  setSpeaking(on: boolean) { this.speech.active = on; if (!on) { this.speech.pulse = 0; this.speech.levelMode = false; this.speech.level = 0; this.speech.shaped = false; this.speech.shapeRound = this.speech.shapeWide = this.speech.wide = 0; this.speech.round = 0; } }
   /** Mouth from the measured loudness of the audio that is playing right now (0…1). Replaces the timed oscillation. */
-  speechLevel(level: number) { this.speech.levelMode = true; this.speech.level = Math.max(0, Math.min(1, level)); }
+  speechLevel(level: number, shape?: { round: number; wide: number }) {
+    const c = (v: number) => (Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0);
+    this.speech.levelMode = true; this.speech.level = c(level);
+    if (shape) { this.speech.shaped = true; this.speech.shapeRound = c(shape.round); this.speech.shapeWide = c(shape.wide); }
+  }
   speechPulse(open = 0.8, round = 0) { this.speech.pulse = Math.min(1, Math.max(this.speech.pulse, open)); this.speech.round = round; }
   isSpeaking() { return this.speech.active; }
   /** Force a blink now (e.g. on state change). Never overlaps an ongoing blink (Asset 22). */
@@ -184,7 +188,7 @@ export class AnimationEngine {
     a.budget = a.total / Math.max(0.05, a.speed * Math.max(0.5, this.speedScale)) + a.skill.blendIn + a.skill.blendOut + ENGINE_LIMITS.watchdogGraceS;
     this.actions.push(a);
     this.actions.sort((x, y) => x.priority - y.priority || x.id - y.id);
-    this.emit('start', { id: a.id, skillId: a.skill.id, preview: a.preview });
+    this.emit('start', { id: a.id, skillId: a.skill.id, preview: a.preview, speed: a.speed });
   }
   private fadeOut(a: Action, result: ActionResult, rate?: number) {
     if (a.phase === 'done' || a.phase === 'out') return;
@@ -313,11 +317,20 @@ export class AnimationEngine {
     // 8: speech mouth (Asset 33)
     const S = this.speech;
     if (S.active && this.speechMouth && S.levelMode) {
-      // audio-driven: follow the playing audio's loudness, smoothed so shapes interpolate instead of snapping
-      S.open += (S.level - S.open) * Math.min(1, dt * 22);
+      // audio-driven: follow the playing audio's loudness — opens quickly on a syllable, closes a little slower so it
+      // does not flutter — and, when the spectrum is available, its approximate lip shape (rounded vs wide)
+      S.open += (S.level - S.open) * Math.min(1, dt * (S.level > S.open ? 28 : 14));
       T['mouth.open'] = Math.max(T['mouth.open'], S.open);
-      T['mouth.width'] += S.open * 0.18;                      // louder → slightly wider
-      T['mouth.round'] += ((S.open > 0.65 ? 0.25 : 0) - T['mouth.round']) * 0.3;
+      if (S.shaped) {
+        // the lip shape is smoothed on its own (a vowel lasts ~100 ms) and only shows while the mouth is open
+        const k = Math.min(1, dt * 12), gate = Math.min(1, S.open * 2.5);
+        S.round += (S.shapeRound * gate * 0.85 - S.round) * k; S.wide += (S.shapeWide * gate - S.wide) * k;
+        T['mouth.round'] = Math.max(T['mouth.round'], S.round);
+        T['mouth.width'] += S.open * 0.18 + S.wide * 0.22 - S.round * 0.15;
+      } else {
+        T['mouth.width'] += S.open * 0.18;                    // louder → slightly wider
+        T['mouth.round'] += ((S.open > 0.65 ? 0.25 : 0) - T['mouth.round']) * 0.3;
+      }
       T['head.nod'] += Math.sin(t * 6.3) * 0.05 * motionScale * Math.min(1, S.open * 2);
     } else if (S.active && this.speechMouth) {
       S.pulse = Math.max(0, S.pulse - dt * 3.5);

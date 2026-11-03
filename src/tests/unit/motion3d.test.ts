@@ -12,7 +12,7 @@ const fakeRig = () => Object.fromEntries(['Body', 'Head', 'Antenna', 'Arm_L', 'A
 
 describe('[A127] 3D motion engine', () => {
   it('[A127] every state stays inside the joint limits for minutes of simulated time (fuzzed seeds, uneven frames)', () => {
-    const states: MotionState[] = ['idle', 'listening', 'thinking', 'speaking', 'curious', 'confused', 'resting', 'error', 'interrupted', 'acting'];
+    const states: MotionState[] = ['idle', 'greeting', 'listening', 'thinking', 'speaking', 'curious', 'excited', 'confused', 'concerned', 'resting', 'error', 'interrupted', 'acting'];
     for (let seed = 1; seed <= 6; seed++) {
       const rng = seededRng(seed * 97); const m = new Motion3D(seededRng(seed));
       for (let i = 0; i < 2400; i++) {
@@ -22,7 +22,7 @@ describe('[A127] 3D motion engine', () => {
         expect(Math.abs(o.antenna)).toBeLessThan(0.25);
       }
     }
-  });
+  }, 30000);
   it('[A127] each state settles into its own base pose (thinking looks up and tilts, listening leans in, resting droops)', () => {
     for (const s of ['thinking', 'listening', 'resting', 'curious', 'confused'] as const) {
       const m = new Motion3D(seededRng(3)); m.setState(s); const o = run(m, 1.2);

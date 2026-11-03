@@ -8,7 +8,9 @@ export const WEB_DEMO = import.meta.env.VITE_WEB_DEMO === '1';
 /** Base path the site is served from ('' at the domain root, '/nexus' on GitHub Pages). */
 export const BASE = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
 /** Prefix an absolute in-app path with the base path. */
-export const withBase = (p: string) => (p.startsWith('/') && !p.startsWith('//') ? `${BASE}${p}` : p);
+/** Files embedded in the page itself (the single-file offline preview sets this; every other build leaves it undefined). */
+const EMBEDDED = (globalThis as { __NEXUS_FILES__?: Record<string, string> }).__NEXUS_FILES__;
+export const withBase = (p: string) => EMBEDDED?.[p] ?? (p.startsWith('/') && !p.startsWith('//') ? `${BASE}${p}` : p);
 /** Remove the base path from a pathname. */
 export const stripBase = (p: string) => (BASE && (p === BASE || p.startsWith(`${BASE}/`)) ? p.slice(BASE.length) || '/' : p);
 /**

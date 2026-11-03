@@ -23,7 +23,7 @@ export function voiceParams(style: SpeakingStyle, character: VoiceCharacter, use
   const s = STYLE[style] ?? STYLE.warm;
   return character === 'cute' ? { rate: s.rate * userRate, pitch: Math.min(1.5, s.pitch * 1.12) } : { rate: s.rate * userRate, pitch: s.pitch };
 }
-export interface TTSHooks { onStart?(): void; onWord?(word: string): void; onIdle?(): void; /** mouth openness 0…1 measured from the playing audio (server voice only) */ onLevel?(level: number): void }
+export interface TTSHooks { onStart?(): void; onWord?(word: string): void; onIdle?(): void; /** mouth openness 0…1 measured from the playing audio, plus an approximate lip shape from its spectrum (server voice only) */ onLevel?(level: number, shape?: { round: number; wide: number }): void }
 
 /** Approximate mouth shape from a word (used only when the engine reports word boundaries). */
 export function visemeFor(word: string): { open: number; round: number } {
@@ -35,7 +35,7 @@ export class SpeechOutput {
   readonly supported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
   rate = 1; volume = 1; voiceURI: string | null = null; character: VoiceCharacter = 'cute';
   private queue: string[] = []; private busy = false; private gen = 0; private style: SpeakingStyle = 'warm';
-  private paused = false; private wd: { g: number; ms: number; h: ReturnType<typeof setTimeout> } | null = null;
+  private paused = false; private wd: { advance: () => void; ms: number; h: ReturnType<typeof setTimeout> } | null = null;
   hooks: TTSHooks = {};
   boundaryEvents = false;
   /** browser voices expose no audio, so the mouth follows word-boundary events (an approximation) */
@@ -55,15 +55,19 @@ export class SpeechOutput {
     const v = all.find((x) => x.voiceURI === this.voiceURI) ?? (this.character === 'cute' && !this.voiceURI ? pickCuteVoice(all) : undefined); if (v) u.voice = v;
     let started = false;
     const wdMs = 2500 + t.length * 120 / p.rate;
-    const watchdog = setTimeout(() => { if (!this.paused) this.next(g); }, wdMs); this.wd = { g, ms: wdMs, h: watchdog };
+    // each sentence moves the queue on exactly once — by its end/error event OR by the watchdog for an engine that
+    // stalls, whichever comes first (a late "end" after the watchdog must not skip the next sentence)
+    let advanced = false;
+    const advance = () => { if (advanced) return; advanced = true; if (this.wd?.advance === advance) clearTimeout(this.wd.h); this.next(g); };
+    this.wd = { advance, ms: wdMs, h: setTimeout(() => { if (!this.paused) advance(); }, wdMs) };
     u.onstart = () => { if (!started) { started = true; this.hooks.onStart?.(); } };
     u.onboundary = (e) => { if (e.name && e.name !== 'word') return; this.boundaryEvents = true; this.hooks.onWord?.(t.slice(e.charIndex, e.charIndex + (e.charLength || 6))); };
-    u.onend = () => { clearTimeout(watchdog); this.next(g); };
-    u.onerror = () => { clearTimeout(watchdog); this.next(g); };
+    u.onend = advance;
+    u.onerror = advance;
     window.speechSynthesis.speak(u);
   }
   pause() { if (!this.supported || !this.busy) return; this.paused = true; if (this.wd) clearTimeout(this.wd.h); try { window.speechSynthesis.pause(); } catch { /* engine gone */ } }
-  resume() { if (!this.paused) return; this.paused = false; try { window.speechSynthesis.resume(); } catch { /* engine gone */ } const w = this.wd; if (w) w.h = setTimeout(() => this.next(w.g), w.ms); }
+  resume() { if (!this.paused) return; this.paused = false; try { window.speechSynthesis.resume(); } catch { /* engine gone */ } const w = this.wd; if (w) w.h = setTimeout(w.advance, w.ms); }
   stop() { this.paused = false; this.gen++; this.queue = []; const was = this.busy; this.busy = false; if (this.supported && typeof window !== 'undefined') try { window.speechSynthesis.cancel(); } catch { /* engine gone */ } if (was) this.hooks.onIdle?.(); }
 }
 

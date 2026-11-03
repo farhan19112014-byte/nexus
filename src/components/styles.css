@@ -1,14 +1,15 @@
 /* Colors come from src/character/tokens.ts (applied as CSS variables at startup); fallbacks mirror them. */
-:root {
+:root, .palette-scope {
+  --nexus-sky: rgb(var(--k-7dd3fc)); --sky: var(--nexus-sky); --sky-text: rgb(var(--k-7dd3fc)); --sky-soft: rgb(var(--k-7dd3fc) / .16);
   /* Design tokens (Section 2) — mirrored from PALETTE in src/character/tokens.ts, which re-applies them at startup */
-  --nexus-blue: #2563EB; --nexus-electric: #3B82F6; --nexus-cyan: #38BDF8; --nexus-dark-blue: #0B1733; --nexus-navy: #101B35;
-  --nexus-black: #080B12; --nexus-white: #F8FAFC; --nexus-grey-100: #E2E8F0; --nexus-grey-300: #CBD5E1; --nexus-grey-500: #64748B;
-  --nexus-grey-700: #334155; --nexus-grey-900: #111827;
+  --nexus-blue: rgb(var(--k-1268f5)); --nexus-electric: rgb(var(--k-3b8bff)); --nexus-cyan: rgb(var(--k-38d9ff)); --nexus-dark-blue: rgb(var(--k-07111f)); --nexus-navy: rgb(var(--k-0d1828));
+  --nexus-black: rgb(var(--k-05080d)); --nexus-white: rgb(var(--k-f4f8ff)); --nexus-grey-100: rgb(var(--k-e3e9f2)); --nexus-grey-300: rgb(var(--k-c3ccd8)); --nexus-grey-500: rgb(var(--k-778394));
+  --nexus-grey-700: rgb(var(--k-2e3846)); --nexus-grey-900: rgb(var(--k-171d27));
   --c-bg: var(--nexus-black); --c-bg2: var(--nexus-dark-blue); --c-panel: var(--nexus-navy); --c-panel2: var(--nexus-grey-700);
-  --c-primary: var(--nexus-blue); --c-electric: var(--nexus-electric); --c-cyan: var(--nexus-cyan); --c-pale: #BFDBFE;
+  --c-primary: var(--nexus-blue); --c-electric: var(--nexus-electric); --c-cyan: var(--nexus-cyan); --c-pale: rgb(var(--k-bfdbfe));
   --c-text: var(--nexus-white); --c-muted: var(--nexus-grey-300); --c-warn: #FBBF24; --c-bad: #F87171; --c-ok: #34D399;
-  --c-danger-line: #7F1D1D; --c-warn-line: #78350F; --c-ok-line: #065F46; --c-info-line: #1E3A8A;
-  --c-user-bubble: #13285A; --c-user-line: #1E40AF;
+  --c-danger-line: #7F1D1D; --c-warn-line: #78350F; --c-ok-line: #065F46; --c-info-line: rgb(var(--k-1e3a8a));
+  --c-user-bubble: rgb(var(--k-13285a)); --c-user-line: rgb(var(--k-1e40af));
   /* spacing scale */
   --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px; --s-7: 48px; --s-8: 72px;
   --radius: 12px; --radius-lg: 18px; --fs: 14px; --nav-h: 60px; --btn-h: 38px; color-scheme: dark;
@@ -17,22 +18,23 @@
   --font-mono: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
   /* semantic theme tokens — dark (default) */
   --bg: var(--nexus-black); --surface: var(--nexus-navy); --surface-deep: var(--nexus-dark-blue); --fg: var(--nexus-white); --fg-soft: var(--nexus-grey-100);
-  --fg-muted: var(--nexus-grey-300); --line: var(--nexus-grey-700); --line-soft: rgba(51, 65, 85, .55); --accent-2: var(--nexus-cyan);
-  --header-bg: rgba(8, 11, 18, .86); --surface-glass: rgba(16, 27, 53, .65); --band-1: rgba(11, 23, 51, .55); --band-2: rgba(11, 23, 51, .2);
-  --backdrop: rgba(4, 7, 14, .7); --hero-top: var(--nexus-dark-blue); --stage-bg: var(--nexus-black); --cta-bg: var(--nexus-dark-blue);
-  --stage-lab: radial-gradient(ellipse at 50% 40%, var(--nexus-dark-blue) 0%, var(--c-bg) 70%); --status-glass: rgba(8, 11, 18, .72); --shadow: rgba(0, 0, 0, .45);
-  --code-bg: #0A1022;
+  --fg-muted: var(--nexus-grey-300); --line: var(--nexus-grey-700); --line-soft: rgb(var(--k-334155) / .55); --accent-2: var(--nexus-cyan);
+  --header-bg: rgb(var(--k-05080d) / .55); --surface-glass: rgb(var(--k-101b35) / .65); --band-1: rgb(var(--k-0b1733) / .55); --band-2: rgb(var(--k-0b1733) / .2);
+  --backdrop: rgb(var(--k-04070e) / .7); --hero-top: var(--nexus-dark-blue); --stage-bg: var(--nexus-black); --cta-bg: var(--nexus-dark-blue);
+  --stage-lab: radial-gradient(ellipse at 50% 40%, var(--nexus-dark-blue) 0%, var(--c-bg) 70%); --status-glass: rgb(var(--k-080b12) / .72); --shadow: rgba(0, 0, 0, .45);
+  --code-bg: rgb(var(--k-0a1022));
 }
 /* Light theme (Settings → Appearance → Light, or System when the OS is light). Same palette: white/grey surfaces, dark-blue text, blue accents. */
-:root[data-theme="light"] {
+:root[data-theme="light"], :root[data-theme="light"] .palette-scope {
+  --sky: rgb(var(--k-38bdf8)); --sky-text: rgb(var(--k-0369a1)); --sky-soft: rgb(var(--k-38bdf8) / .16);
   color-scheme: light;
-  --c-bg: #EEF5FF; --c-bg2: #FFFFFF; --c-panel: #FFFFFF; --c-panel2: var(--nexus-grey-300); --c-text: var(--nexus-dark-blue); --c-muted: var(--nexus-grey-700);
-  --c-primary: var(--nexus-blue); --c-electric: #1D4ED8; --c-cyan: #1D4ED8; --c-pale: #1E40AF; --c-warn: #92400E; --c-bad: #B91C1C; --c-ok: #047857;
-  --c-danger-line: #FCA5A5; --c-warn-line: #FCD34D; --c-ok-line: #6EE7B7; --c-info-line: #93C5FD; --c-user-bubble: #DBEAFE; --c-user-line: #93C5FD;
-  --bg: #F6FAFF; --surface: #FFFFFF; --surface-deep: #E3EEFB; --fg: var(--nexus-dark-blue); --fg-soft: #1E293B; --fg-muted: var(--nexus-grey-700); --line: var(--nexus-grey-300);
-  --line-soft: rgba(100, 116, 139, .25); --accent-2: #1D4ED8; --header-bg: rgba(248, 250, 252, .9); --surface-glass: rgba(255, 255, 255, .8);
-  --band-1: rgba(219, 234, 254, .6); --band-2: rgba(219, 234, 254, .2); --backdrop: rgba(15, 23, 42, .45); --hero-top: #D6E8FF; --stage-bg: #E8F2FF; --cta-bg: #EAF3FF;
-  --stage-lab: radial-gradient(ellipse at 50% 40%, #FFFFFF 0%, #E3EFFF 72%); --status-glass: rgba(255, 255, 255, .85); --shadow: rgba(15, 23, 42, .15); --code-bg: #F1F5F9;
+  --c-bg: rgb(var(--k-eef5ff)); --c-bg2: #FFFFFF; --c-panel: #FFFFFF; --c-panel2: var(--nexus-grey-300); --c-text: var(--nexus-dark-blue); --c-muted: var(--nexus-grey-700);
+  --c-primary: var(--nexus-blue); --c-electric: rgb(var(--k-1d4ed8)); --c-cyan: rgb(var(--k-1d4ed8)); --c-pale: rgb(var(--k-1e40af)); --c-warn: #92400E; --c-bad: #B91C1C; --c-ok: #047857;
+  --c-danger-line: #FCA5A5; --c-warn-line: #FCD34D; --c-ok-line: #6EE7B7; --c-info-line: rgb(var(--k-93c5fd)); --c-user-bubble: rgb(var(--k-dbeafe)); --c-user-line: rgb(var(--k-93c5fd));
+  --bg: rgb(var(--k-f6faff)); --surface: #FFFFFF; --surface-deep: rgb(var(--k-e3eefb)); --fg: var(--nexus-dark-blue); --fg-soft: rgb(var(--k-1e293b)); --fg-muted: var(--nexus-grey-700); --line: var(--nexus-grey-300);
+  --line-soft: rgb(var(--k-64748b) / .25); --accent-2: rgb(var(--k-1d4ed8)); --header-bg: rgba(248, 250, 252, .9); --surface-glass: rgba(255, 255, 255, .8);
+  --band-1: rgb(var(--k-dbeafe) / .6); --band-2: rgb(var(--k-dbeafe) / .2); --backdrop: rgb(var(--k-0f172a) / .45); --hero-top: rgb(var(--k-d6e8ff)); --stage-bg: rgb(var(--k-e8f2ff)); --cta-bg: rgb(var(--k-eaf3ff));
+  --stage-lab: radial-gradient(ellipse at 50% 40%, #FFFFFF 0%, rgb(var(--k-e3efff)) 72%); --status-glass: rgba(255, 255, 255, .85); --shadow: rgb(var(--k-0f172a) / .15); --code-bg: rgb(var(--k-f1f5f9));
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
@@ -220,7 +222,7 @@ kbd { font: 12px ui-monospace, Menlo, Consolas, monospace; background: var(--c-p
 .ollama-get p { margin: 4px 0; }
 .pull-progress { display: flex; flex-direction: column; gap: 3px; }
 .pull-progress .bar { height: 8px; border-radius: 999px; background: var(--c-bg); border: 1px solid var(--c-panel2); overflow: hidden; box-shadow: inset 0 1px 3px rgba(0, 0, 0, .45); }
-.pull-progress .bar i { display: block; height: 100%; background: linear-gradient(180deg, #6aa2ff, var(--c-primary)); border-radius: inherit; transition: width .3s ease; }
+.pull-progress .bar i { display: block; height: 100%; background: linear-gradient(180deg, rgb(var(--k-6aa2ff)), var(--c-primary)); border-radius: inherit; transition: width .3s ease; }
 .pull-progress .bar i.indeterminate { width: 30% !important; animation: indet 1.2s ease-in-out infinite; }
 @keyframes indet { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
@@ -251,7 +253,7 @@ button .icon { margin-right: 2px; } button.icon-btn .icon, .skill .row button .i
 .dock-btn { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; padding: 0; }
 .dock-btn.on { color: var(--c-cyan); border-color: var(--c-electric); }
 .mic-btn { width: 68px; height: 68px; border-radius: 50%; display: grid; place-items: center; padding: 0; color: #fff; border: 1px solid var(--c-electric);
-  background: radial-gradient(circle at 35% 30%, #6aa2ff 0%, var(--nexus-blue) 50%, #163f9e 100%) !important; box-shadow: 0 6px 20px rgba(37, 99, 235, .45), inset 0 1px 0 rgba(255, 255, 255, .35) !important; }
+  background: radial-gradient(circle at 35% 30%, rgb(var(--k-6aa2ff)) 0%, var(--nexus-blue) 50%, rgb(var(--k-163f9e)) 100%) !important; box-shadow: 0 6px 20px rgb(var(--k-2563eb) / .45), inset 0 1px 0 rgba(255, 255, 255, .35) !important; }
 .mic-btn.listening { background: radial-gradient(circle at 35% 30%, #6ff0c0 0%, #10a36d 55%, #06603f 100%) !important; border-color: var(--c-ok); animation: micpulse 1.4s ease-in-out infinite; }
 .mic-btn:disabled { filter: grayscale(.8); opacity: .55; }
 @keyframes micpulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(52, 211, 153, .45), 0 6px 20px rgba(0, 0, 0, .35); } 50% { box-shadow: 0 0 0 12px rgba(52, 211, 153, 0), 0 6px 20px rgba(0, 0, 0, .35); } }
@@ -259,7 +261,7 @@ button .icon { margin-right: 2px; } button.icon-btn .icon, .skill .row button .i
 @media (max-width: 760px) { .captions { max-height: 30vh; } .robot-view { padding: 0 10px 10px; } .mic-btn { width: 60px; height: 60px; } }
 .convo-panel { height: 100%; display: flex; flex-direction: column; min-height: 60vh; } .convo-panel .chat { padding: 0; flex: 1; }
 .robot-layout { background: radial-gradient(ellipse 60% 55% at 50% 42%, var(--nexus-dark-blue) 0%, var(--c-bg) 72%); }
-:root[data-theme="light"] .robot-layout { background: radial-gradient(ellipse 60% 55% at 50% 42%, #FFFFFF 0%, #E3EFFF 70%, #D6E8FF 100%); }
+:root[data-theme="light"] .robot-layout { background: radial-gradient(ellipse 60% 55% at 50% 42%, #FFFFFF 0%, rgb(var(--k-e3efff)) 70%, rgb(var(--k-d6e8ff)) 100%); }
 .robot-view .stage-box.env-lab, .robot-view .stage-box.env-grid { background: transparent; box-shadow: none; }
 .cap-reply .msg.system { margin: 0 auto; }
 
@@ -270,3 +272,18 @@ button .icon { margin-right: 2px; } button.icon-btn .icon, .skill .row button .i
 .style-toggle { font-weight: 800; font-size: 12px; letter-spacing: .02em; }
 .robot3d { width: 100%; height: 100%; position: relative; }
 .robot3d canvas { display: block; touch-action: none; }
+
+/* user-testing comparison (?study=voice): an ordinary voice-chat indicator in place of the robot */
+.voice-only { width: min(40vw, 180px); aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center; border: 2px solid rgb(var(--k-38d9ff) / .35); }
+.voice-only span { width: 38%; aspect-ratio: 1; border-radius: 50%; background: rgb(var(--k-38d9ff)); opacity: .55; }
+.voice-only.st-listening span, .voice-only.st-speaking span, .voice-only.st-responding span { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .voice-only.st-listening span, .voice-only.st-speaking span { animation: voice-pulse 1.1s ease-in-out infinite; }
+}
+@keyframes voice-pulse { 50% { transform: scale(1.25); } }
+
+/* creator nameplate under the robot's pedestal (not part of the robot model) */
+.maker-plate { flex: none; margin: 6px 0 0; font: 600 .66rem/1 var(--mx-mono, ui-monospace, monospace); letter-spacing: .16em; text-transform: uppercase;
+  color: var(--sky-text); padding: 5px 10px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--sky) 35%, transparent);
+  background: color-mix(in srgb, var(--sky) 8%, transparent); opacity: .9; }
+.maker-plate span { font-size: .8em; margin-right: 4px; }

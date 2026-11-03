@@ -1,0 +1,3 @@
+date,tester,environment,device_browser,case_id,result,rating,notes
+2026-11-01,T1,local npm start · verify:live passed,Windows 11 · Chrome 141,UAT-01,,,
+2026-11-01,T1,local npm start · verify:live passed,Windows 11 · Chrome 141,UAT-02,,,

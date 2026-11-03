@@ -54,11 +54,25 @@ mock.post('/v1/audio/speech', (req, res) => {
   speechSeen.push({ auth: req.headers.authorization, body: req.body });
   if (req.body.voice === 'bad-key') { res.status(401).json({ error: { message: 'nope' } }); return; }
   if (req.body.voice === 'not-audio') { res.json({ hello: 'json' }); return; }
+  if (req.body.voice === 'never') return;                                       // never answers (timeouts)
+  if (req.body.voice === 'slow') { setTimeout(() => { if (!res.writableEnded) { res.setHeader('content-type', 'audio/mpeg'); res.end(Buffer.alloc(2048, 7)); } }, 150); return; }
   res.setHeader('content-type', 'audio/mpeg'); res.end(Buffer.alloc(2048, 7));
 });
 mock.post('/v1/audio/transcriptions', express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
   const raw = (req.body as Buffer).toString('latin1'); speechSeen.push({ auth: req.headers.authorization, bytes: (req.body as Buffer).length, model: /name="model"\r\n\r\n([^\r]+)/.exec(raw)?.[1] });
+  if (raw.includes('name="model"\r\n\r\nnever')) return;                      // never answers (timeouts)
   res.json({ text: raw.includes('SILENT') ? '   ' : '  hello robot  ' });
+});
+// Gemini speech: POST {base}/interactions (documented Interactions API shape)
+const gemTtsSeen: { key?: string; body?: Record<string, unknown> }[] = [];
+mock.post('/gemtts/interactions', (req, res) => {
+  gemTtsSeen.push({ key: req.headers['x-goog-api-key'] as string, body: req.body });
+  if (req.body.model === 'bad-model') { res.status(404).json({ error: { code: 404, message: 'model not found' } }); return; }
+  const pcm = Buffer.alloc(4800, 1).toString('base64');               // 0.1 s of 24 kHz 16-bit PCM
+  res.json({ id: 'i-1', steps: [
+    { type: 'user_input', content: [{ type: 'text', text: 'echo' }] },
+    { type: 'model_output', content: [{ type: 'audio', data: Buffer.alloc(64, 9).toString('base64'), mime_type: 'audio/l16;rate=24000' }, { type: 'audio', data: pcm, mime_type: 'audio/l16;rate=24000' }] },
+  ] });
 });
 const gemSeen: { key?: string; body?: Record<string, unknown>; path?: string }[] = [];
 const gemErr = (res: express.Response, code: number, status: string, message: string) => res.status(code).json({ error: { code, status, message } });
@@ -107,11 +121,12 @@ mock.get('/w/api.php', (req, res) => {
 
 let ms: Server; let base = ''; const servers: Server[] = [];
 const RC = '/tmp/nexus-test-runtime.json';
-async function start(env: Record<string, string>, opts: { persistRuntime?: boolean; log?: (l: string) => void } = { persistRuntime: false }) {
-  const app = createApp(readConfig({ LLM_TIMEOUT_MS: '3000', RUNTIME_CONFIG_PATH: RC, ...env } as NodeJS.ProcessEnv), opts);
+async function start(env: Record<string, string>, opts: { persistRuntime?: boolean; log?: (l: string) => void; speechTimeoutMs?: number; transcribeTimeoutMs?: number; trustProxy?: string } = { persistRuntime: false }) {
+  const app = createApp(readConfig({ LLM_TIMEOUT_MS: '3000', RUNTIME_CONFIG_PATH: RC, BUDGET_STORE: 'memory', ...env } as NodeJS.ProcessEnv), opts);
   const s = app.listen(0, '127.0.0.1'); servers.push(s); await new Promise((r) => s.once('listening', r));
   return `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
 }
+const post2 = (url: string, body: unknown, signal: AbortSignal) => fetch(url, { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 const post = (url: string, body: unknown) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
 const chat = (o: object = {}) => ({ messages: [{ role: 'user', content: 'What is photosynthesis?' }], skills: [{ id: 'nod', name: 'Nod', description: 'nod', kind: 'motion' }], expressions: ['happy', 'curious'], stream: false, ...o });
 async function events(url: string, body: unknown): Promise<StreamEvent[]> {
@@ -328,6 +343,118 @@ describe('[A97] server integration', () => {
     expect(put.status).toBe(200); const pj = await put.json(); expect(pj.status.speech.tts.configured).toBe(true); expect(JSON.stringify(pj)).not.toContain('sk-rt-key');
     expect((await fetch(`${rt}/api/config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ speech: { ttsProvider: 'evil' } }) })).status).toBe(400);
   });
+
+  it('[A124] security headers on pages, API and errors; CSP fits the app (no unsafe-eval, inline script by hash only)', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs'); const { join } = await import('node:path'); const { tmpdir } = await import('node:os');
+    const dist = mkdtempSync(join(tmpdir(), 'nexus-dist-')); const inline = "document.documentElement.dataset.theme='dark'";
+    writeFileSync(join(dist, 'index.html'), `<!doctype html><html><head><script>${inline}</script><script type="module" src="/assets/x.js"></script></head><body></body></html>`);
+    const app = createApp(readConfig({ LLM_PROVIDER: 'demo', BUDGET_STORE: 'memory', PUBLIC_MODE: 'true' } as NodeJS.ProcessEnv), { persistRuntime: false, serveDist: true, distDir: dist });
+    const sv = app.listen(0, '127.0.0.1'); servers.push(sv); await new Promise((r) => sv.once('listening', r)); const u = `http://127.0.0.1:${(sv.address() as AddressInfo).port}`;
+    const { createHash } = await import('node:crypto'); const h = `'sha256-${createHash('sha256').update(inline).digest('base64')}'`;
+    for (const path of ['/', '/app', '/api/status', '/api/nope']) {
+      const r = await fetch(`${u}${path}`); const csp = r.headers.get('content-security-policy') ?? '';
+      expect(csp, path).toContain("default-src 'self'"); expect(csp).toContain(`script-src 'self' ${h}`); expect(csp).toContain("frame-ancestors 'none'"); expect(csp).toContain("object-src 'none'");
+      expect(csp).not.toMatch(/unsafe-eval|script-src[^;]*unsafe-inline/); expect(csp).not.toMatch(/media-src[^;]*https:/);   // public: no broad audio hosts
+      expect(r.headers.get('x-frame-options')).toBe('DENY'); expect(r.headers.get('x-content-type-options')).toBe('nosniff'); expect(r.headers.get('referrer-policy')).toBe('no-referrer');
+      expect(r.headers.get('permissions-policy')).toContain('microphone=(self)'); expect(r.headers.get('strict-transport-security')).toContain('max-age');
+    }
+    // errors and refusals carry them too
+    const forbidden = await post(`${u}/api/config`, {}); expect(forbidden.headers.get('content-security-policy')).toContain("default-src 'self'");
+    // public server: no connection test for visitors (would be an extra AI call), /api/visitor shows what the server sees
+    expect((await post(`${u}/api/config/test`, {})).status).toBe(404);
+    const v = await (await fetch(`${u}/api/visitor`, { headers: { 'x-forwarded-for': '9.9.9.9, 203.0.113.7' } })).json();
+    expect(v).toMatchObject({ ip: '203.0.113.7', forwardedEntries: 2, trustProxy: 1 });   // only the hop the trusted proxy added counts
+  });
+
+  it('[A124] unexpected server errors answer 500 with a generic message (no internals, no stack)', async () => {
+    const { errorHandler } = await import('../../../server/app');
+    const reply = (err: unknown) => { const out: { status?: number; body?: unknown } = {}; const res = { headersSent: false, status(c: number) { out.status = c; return { json(b: unknown) { out.body = b; } }; } };
+      errorHandler(() => {})(err as never, {} as never, res as never, () => {}); return out; };
+    const boom = reply(new Error('EACCES /home/farhan/nexus/data/secret.json')); expect(boom.status).toBe(500);
+    expect(JSON.stringify(boom.body)).not.toMatch(/EACCES|home|secret/); expect(boom.body).toMatchObject({ code: 'internal' });
+    expect(reply(Object.assign(new Error('x'), { status: 413 }))).toMatchObject({ status: 413, body: { error: 'Request too large' } });
+    expect(reply(Object.assign(new Error('Unexpected token'), { status: 400 }))).toMatchObject({ status: 400, body: { error: 'Bad request' } });
+    expect((await post(`${await start({ LLM_PROVIDER: 'demo' })}/api/chat`, '{bad json')).status).toBe(400);
+  });
+
+  it('[A124] TRUST_PROXY: number of proxies, validated; per-minute limit survives an address flood', async () => {
+    const { trustProxySetting, rateLimiter } = await import('../../../server/app');
+    expect(trustProxySetting(undefined, true)).toBe(1); expect(trustProxySetting(undefined, false)).toBe(false); expect(trustProxySetting('2', true)).toBe(2);
+    expect(trustProxySetting('false', true)).toBe(false); expect(() => trustProxySetting('true', true)).toThrow(/number of proxies/);
+    const two = await start({ PUBLIC_MODE: 'true', LLM_PROVIDER: 'demo' }, { persistRuntime: false, trustProxy: '2' });
+    expect((await (await fetch(`${two}/api/visitor`, { headers: { 'x-forwarded-for': '6.6.6.6, 198.51.100.4, 10.0.0.1' } })).json()).ip).toBe('198.51.100.4');
+    // limiter unit: a blocked visitor stays blocked while 6000 other addresses arrive (no global wipe)
+    let t = 0; const lim = rateLimiter(1, 100, () => t); const codes: number[] = [];
+    const call = (ip: string) => { let code = 200; lim({ ip } as never, { setHeader() {}, status(c: number) { code = c; return { json() {} }; } } as never, () => {}); return code; };
+    call('1.1.1.1'); expect(call('1.1.1.1')).toBe(429);
+    for (let i = 0; i < 6000; i++) codes.push(call(`10.1.${i >> 8}.${i & 255}`));
+    expect(call('1.1.1.1')).toBe(429);
+    t += 61_000; expect(call('1.1.1.1')).toBe(200);                                // the window still expires normally
+  });
+
+  it('[A121] Gemini speech: documented Interactions request (model, input, style, voice, key header) and reply parsing', async () => {
+    const env = { LLM_PROVIDER: 'demo', TTS_PROVIDER: 'gemini', TTS_BASE_URL: `${base}/gemtts`, GEMINI_API_KEY: 'AIza-gemtts-secret-4242', TTS_STYLE: 'cheerful' };
+    const u = await start(env);
+    const r = await post(`${u}/api/speech`, { text: 'Hello from NEXUS.' });
+    expect(r.status).toBe(200); expect(r.headers.get('content-type')).toBe('audio/wav');
+    const wav = Buffer.from(await r.arrayBuffer()); expect(wav.subarray(0, 4).toString('latin1')).toBe('RIFF'); expect(wav.length).toBe(44 + 4800);   // the LAST audio item of model_output, wrapped as WAV
+    const seen = gemTtsSeen.at(-1)!; expect(seen.key).toBe('AIza-gemtts-secret-4242');
+    expect(seen.body).toEqual({ model: 'gemini-3.8-flash-tts', input: [{ type: 'user_input', content: [{ type: 'text', text: 'Hello from NEXUS.', annotations: [{ type: 'speech_metadata', style: 'cheerful' }] }] }], response_format: { type: 'audio' }, generation_config: { speech_config: [{ voice: 'Leda' }] } });
+    expect(JSON.stringify(await (await fetch(`${u}/api/status`)).json())).not.toContain('gemtts-secret');
+    // an unknown model is an honest error, never fake audio
+    const bad = await start({ ...env, TTS_MODEL: 'bad-model' }); const b = await post(`${bad}/api/speech`, { text: 'hi' });
+    expect(b.status).toBeGreaterThanOrEqual(400); expect(b.headers.get('content-type')).toMatch(/json/);
+  });
+
+  it('[A124] speech accounting under abuse: parallel requests, replays, cancellations, timeouts, malformed input', async () => {
+    const env = { LLM_PROVIDER: 'demo', OPENAI_BASE_URL: `${base}/v1`, OPENAI_API_KEY: 'sk-speech-secret-123456', TTS_PROVIDER: 'openai', TTS_MODEL: 'tts-x', STT_PROVIDER: 'openai', STT_MODEL: 'stt-x' };
+    // 12 different sentences of 10 characters in parallel against a 50-character visitor allowance: exactly 5 are served
+    const par = await start({ ...env, TTS_VOICE: 'slow', DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR: '50' });
+    const n0 = speechSeen.length;
+    const codes = await Promise.all(Array.from({ length: 12 }, (_, i) => post(`${par}/api/speech`, { text: `sentence${String(i).padStart(2, '0')}` }).then((r) => r.status)));
+    expect(codes.filter((c) => c === 200).length).toBe(5); expect(codes.filter((c) => c === 429).length).toBe(7);
+    expect(speechSeen.length - n0).toBe(5);                                       // refused requests never reach the provider
+    // replaying a sentence already generated for this visitor: served again, no provider call, no charge
+    const again = await post(`${par}/api/speech`, { text: 'sentence00' });
+    expect(again.status).toBe(200); expect(again.headers.get('x-nexus-audio')).toBe('replay'); expect(speechSeen.length - n0).toBe(5);
+    // malformed requests are refused before any accounting
+    for (const bad of [{}, { text: 42 }, { text: '' }, { text: 'x'.repeat(1201) }, '{"text":']) expect((await post(`${par}/api/speech`, bad)).status).toBe(400);
+    // the server's own timeout: 504 with a reason (not an empty 200); the characters stay counted (the service may bill)
+    const slow = await start({ ...env, TTS_VOICE: 'never', DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR: '20' }, { persistRuntime: false, speechTimeoutMs: 120 });
+    const to = await post(`${slow}/api/speech`, { text: 'hello there' }); expect(to.status).toBe(504); expect(await to.json()).toMatchObject({ code: 'timeout' });
+    expect((await post(`${slow}/api/speech`, { text: 'hello again' })).status).toBe(429);   // 11 + 11 > 20: the timed-out 11 were not refunded
+    // a visitor who cancels does not get the characters back either (repeated cancels cannot bypass the limit)
+    const can = await start({ ...env, TTS_VOICE: 'slow', DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR: '25' });
+    for (const w of ['first ten.', 'second ten']) { const ac = new AbortController(); const p = post2(`${can}/api/speech`, { text: w }, ac.signal); setTimeout(() => ac.abort(), 30); await p.catch(() => {}); }
+    await new Promise((r) => setTimeout(r, 200));
+    expect((await post(`${can}/api/speech`, { text: 'third ten.' })).status).toBe(429);
+    // transcription timeout: 504 instead of a request that never ends
+    const sttSlow = await start({ ...env, TTS_VOICE: 'v1', STT_MODEL: 'never' }, { persistRuntime: false, transcribeTimeoutMs: 120 });
+    const tr = await fetch(`${sttSlow}/api/transcribe`, { method: 'POST', headers: { 'content-type': 'audio/webm' }, body: Buffer.alloc(4000, 1), signal: AbortSignal.timeout(5000) });
+    expect(tr.status).toBe(504); expect(await tr.json()).toMatchObject({ code: 'timeout' });
+    expect((await fetch(`${sttSlow}/api/transcribe`, { method: 'POST', headers: { 'content-type': 'audio/x evil' }, body: Buffer.alloc(4000, 1) })).status).toBe(400);
+  });
+
+  it('[A124] budgets: failed speech, voice-input and chat requests are refunded; one visitor cannot use the whole voice allowance', async () => {
+    const env = { LLM_PROVIDER: 'demo', OPENAI_BASE_URL: `${base}/v1`, OPENAI_API_KEY: 'sk-speech-secret-123456', TTS_PROVIDER: 'openai', TTS_MODEL: 'tts-x', STT_PROVIDER: 'openai', STT_MODEL: 'stt-x' };
+    // the speech service keeps failing: 20 failed requests of 5 characters do not touch a 10-character budget
+    const failing = await start({ ...env, TTS_VOICE: 'bad-key', DAILY_SPEECH_CHAR_LIMIT: '10' });
+    for (let i = 0; i < 20; i++) expect((await post(`${failing}/api/tts`, { text: 'hello' })).status).toBe(502);
+    // a working service: the per-visitor cap stops one visitor before the whole server allowance is gone
+    const ok = await start({ ...env, TTS_VOICE: 'v1', DAILY_SPEECH_CHAR_LIMIT: '100', DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR: '6' });
+    expect((await post(`${ok}/api/tts`, { text: 'hello' })).status).toBe(200);
+    const over = await post(`${ok}/api/tts`, { text: 'hi' }); expect(over.status).toBe(429);
+    expect(await over.json()).toMatchObject({ code: 'quota', error: expect.stringMatching(/your|You have used/i) });
+    // voice input: a per-visitor count, enforced only when a transcription service is configured
+    const stt = await start({ ...env, TTS_VOICE: 'v1', DAILY_TRANSCRIPTION_LIMIT_PER_VISITOR: '1' });
+    const audio = () => fetch(`${stt}/api/transcribe`, { method: 'POST', headers: { 'content-type': 'audio/webm' }, body: Buffer.alloc(4000, 1) });
+    expect((await audio()).status).toBe(200); expect((await audio()).status).toBe(429);
+    // chat: requests the AI service rejected are given back, so a broken key cannot lock a visitor out for the day
+    mode = 'auth'; const chatUrl = await start({ ...OPENAI(), DAILY_CHAT_LIMIT_PER_VISITOR: '2' });
+    for (let i = 0; i < 4; i++) expect((await post(`${chatUrl}/api/chat`, chat())).status).not.toBe(429);
+    mode = 'json'; expect((await post(`${chatUrl}/api/chat`, chat())).status).toBe(200); expect((await post(`${chatUrl}/api/chat`, chat())).status).toBe(200);
+    expect((await post(`${chatUrl}/api/chat`, chat())).status).toBe(429);   // successful replies still count
+  });
   it('[A120] Gemini brain (official @google/genai SDK): key stays server-side, streams, JSON mode, history, typed errors', async () => {
     mode = 'json';
     const env = { GEMINI_API_KEY: 'AIza-gem-secret-7777', GEMINI_MODEL: 'gemini-test', GEMINI_BASE_URL: `${base}/gemini`, GEMINI_RETRY_DELAY_MS: '0', GEMINI_FALLBACK_MODELS: 'none' };   // no LLM_PROVIDER: the key selects Gemini
@@ -441,7 +568,7 @@ describe('[A97] server integration', () => {
     // invalid ALLOWED_ORIGINS entries are ignored
     expect(readConfig({ ALLOWED_ORIGINS: 'https://ok.example, javascript:alert(1), https://x.example/path' } as NodeJS.ProcessEnv).allowedOrigins).toEqual(['https://ok.example']);
     // on your own computer nothing changes: no budgets, settings allowed
-    const local = readConfig({} as NodeJS.ProcessEnv); expect(local.publicMode).toBe(false); expect(local.budget).toEqual({ chatsPerDay: 0, chatsPerIpPerDay: 0, speechCharsPerDay: 0 }); expect(local.allowRuntimeConfig).toBe(true);
+    const local = readConfig({} as NodeJS.ProcessEnv); expect(local.publicMode).toBe(false); expect(local.budget).toEqual({ chatsPerDay: 0, chatsPerIpPerDay: 0, speechCharsPerDay: 0, speechCharsPerIpPerDay: 0, transcriptionsPerDay: 0, transcriptionsPerIpPerDay: 0 }); expect(local.allowRuntimeConfig).toBe(true); expect(readConfig({ PUBLIC_MODE: 'true' } as NodeJS.ProcessEnv).budget).toMatchObject({ speechCharsPerDay: 20000, speechCharsPerIpPerDay: 3000, transcriptionsPerIpPerDay: 60 });
   });
   it('[A94] local models get a longer timeout unless LLM_TIMEOUT_MS is explicit', () => {
     const local = readConfig({ LLM_PROVIDER: 'openai', OPENAI_BASE_URL: 'http://localhost:11434/v1' } as NodeJS.ProcessEnv);

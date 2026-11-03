@@ -125,6 +125,36 @@ describe('Voice modules (with fake browser engines)', () => {
     vi.stubGlobal('window', {}); expect(new SpeechOutput().supported).toBe(false);
     vi.unstubAllGlobals();
   });
+  it('[A43] a reply that merely starts with the word HEAD is shown in full (only "HEAD {json}" is the head line)', () => {
+    for (const reply of ['HEADS UP: the oven is hot.', 'HEADLINE news today.', 'HEAD office is in Pune.\nSecond line.']) {
+      const p = new StreamParser(); let shown = '';
+      for (const ch of reply.match(/.{1,3}/gs)!) shown += p.feed(ch).delta;
+      const out = p.end(); expect(out.text, reply).toBe(reply.trim()); expect(out.head).toBeNull();
+      expect(reply.startsWith(shown)).toBe(true); expect(shown.length).toBeGreaterThan(reply.length - 10);   // streamed to the screen as it arrived
+    }
+    const h = new StreamParser(); let vis = ''; for (const ch of ['HE', 'AD {"expression":"happy"}', '\nHi!']) vis += h.feed(ch).delta;
+    expect(h.end()).toMatchObject({ head: { expression: 'happy' }, text: 'Hi!' }); expect(vis).toBe('Hi!');
+  });
+  it('[A83] TTS watchdog: a slow engine whose "end" event arrives after the watchdog never skips or doubles a sentence', () => {
+    vi.useFakeTimers();
+    const spoken: string[] = []; const live: { onend?: () => void }[] = [];
+    class U { onstart?: () => void; onend?: () => void; onboundary?: unknown; onerror?: () => void; rate = 1; pitch = 1; volume = 1; voice: unknown = null; constructor(public text: string) {} }
+    vi.stubGlobal('window', { speechSynthesis: { speak: (u: U) => { spoken.push(u.text); live.push(u); u.onstart?.(); }, cancel: () => {}, getVoices: () => [], pause() {}, resume() {} }, SpeechSynthesisUtterance: U });
+    vi.stubGlobal('SpeechSynthesisUtterance', U);
+    const t = new SpeechOutput(); let idle = 0; t.hooks = { onIdle: () => idle++ };
+    t.enqueue('One.', 'calm'); t.enqueue('Two.', 'calm'); t.enqueue('Three.', 'calm');
+    vi.advanceTimersByTime(4000);              // the engine stalled on "One." → watchdog moves on to "Two."
+    expect(spoken).toEqual(['One.', 'Two.']);
+    live[0].onend?.();                          // the late "end" of "One." must not advance the queue again
+    expect(spoken).toEqual(['One.', 'Two.']);
+    live[1].onend?.(); expect(spoken).toEqual(['One.', 'Two.', 'Three.']);
+    vi.advanceTimersByTime(60_000); live[2].onend?.();   // watchdog AND end for the last one: idle exactly once
+    expect(idle).toBe(1); expect(t.speaking).toBe(false);
+    // pause/resume re-arms the same once-only advance
+    t.enqueue('Four.', 'calm'); t.enqueue('Five.', 'calm'); t.pause(); vi.advanceTimersByTime(60_000); expect(spoken.at(-1)).toBe('Four.');
+    t.resume(); vi.advanceTimersByTime(4000); live[3].onend?.(); expect(spoken.filter((x) => x === 'Five.').length).toBe(1);
+    t.stop(); vi.useRealTimers(); vi.unstubAllGlobals();
+  });
   it('[A84] spoken interruption commands are recognised', () => {
     for (const s of ['stop', 'Stop.', 'cancel', 'be quiet', 'never mind']) expect(VOICE_STOP.test(s)).toBe(true);
     for (const s of ['stop waving at me please', 'can you stop by later']) expect(VOICE_STOP.test(s)).toBe(false);

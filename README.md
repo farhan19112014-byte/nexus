@@ -44,6 +44,9 @@ npm run dev        # → http://localhost:5173  (API on :8787)
 npm run lint       # ESLint
 npm test           # unit + integration tests
 npm run report     # everything (types, lint, build, tests, browser e2e, desktop smoke) → docs/RELEASE_REPORT.md
+npm run verify:live                                  # REAL Gemini / voice requests with your .env keys (uses a little quota)
+npm run verify:live -- --server https://YOUR.onrender.com   # …and the deployed server
+npm run build:single   # one self-contained index.html (web demo) that opens by double-click
 ```
 
 No credentials are needed for the demo. The demo brain is scripted and the UI labels it **"not an LLM"**.
@@ -59,14 +62,16 @@ approval → versioning/rollback loop; research adapters (Wikipedia/SearXNG/Tavi
 logic (tested with fake browser engines); settings, quiet mode, accessibility modes, responsive layout; diagnostics; the
 capability and asset registries.
 
-**Partial / approximate:** lip movement is approximate (vowel shape at speech word boundaries, not phoneme lip-sync);
+**Partial / approximate:** lip movement is approximate, not phoneme lip-sync. With a speech service the mouth follows the playing audio's loudness, and its spectrum gives a rough rounded-vs-wide lip shape; with the browser's own voice it uses word timing;
 "turning" is a three-quarter 2D feature shift, not a true side view; preview isolation is a separate engine instance over
 data-only skills, not a separate process; the demo brain understands only a fixed set of phrasings.
 
-**Not verified here:** a live paid LLM, live search services, a real Ollama install and real microphone/voice output were
+**Not verified here:** live Gemini and ElevenLabs calls. The configured model ids (`gemini-3.8-flash`, fallbacks `gemini-3.5-flash-lite` and `gemini-3.1-flash-lite`, speech `gemini-3.8-flash-tts`, ElevenLabs `eleven_multilingual_v2`) appear in the providers' current model lists, but only `npm run verify:live` with your keys proves they answer. Also not verified: a live paid LLM, live search services, a real Ollama install and real microphone/voice output were
 not reachable from the build environment — those paths are verified with mocks and fakes only. `NEXUS.exe` was
 built (cross-compiled) but not run on Windows; the `.bat` scripts were not run on Windows. The desktop app itself
 was started and checked on Linux. Inside the desktop app, voice input needs a configured transcription service (Electron has no built-in speech-to-text); the speech-service paths were tested only against mock OpenAI-compatible audio servers.
+
+**No user-testing evidence yet:** nobody outside the project has compared NEXUS with ordinary voice chat, so there is no evidence that people prefer it or engage more. [docs/USER-TESTING.md](docs/USER-TESTING.md) is a ready-to-run comparison (robot vs `?study=voice`).
 
 **Not implemented (by design):** model training or fine-tuning. NEXUS "learns" by saving approved skills, memories and
 preferences in your browser. The language model never changes.
@@ -79,7 +84,9 @@ preferences in your browser. The language model never changes.
 - [docs/LAPTOP.md](docs/LAPTOP.md) — the NEXUS desktop app, free offline AI (Ollama), keyboard shortcuts
 - [docs/SETUP.md](docs/SETUP.md) — install, providers, research, voice, commands
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — modules and data flow
-- [docs/PRIVACY.md](docs/PRIVACY.md) — what is stored where, who receives what
+- [docs/PRIVACY.md](docs/PRIVACY.md) — what is stored where, who receives what (local and public deployment)
+- [docs/UAT.md](docs/UAT.md) — user-acceptance checklist (automated vs human cases) and [results template](docs/uat-results.csv)
+- [docs/USER-TESTING.md](docs/USER-TESTING.md) — how to test whether the robot helps, compared with voice only
 - [docs/CAPABILITIES.md](docs/CAPABILITIES.md) — capability matrix
 - [docs/FEATURE_AUDIT.md](docs/FEATURE_AUDIT.md) — every requirement of the master prompt → status → evidence
 - [docs/RELEASE_REPORT.md](docs/RELEASE_REPORT.md) — **generated** by `npm run report` from real results: build, tests, and the status of all 100 assets

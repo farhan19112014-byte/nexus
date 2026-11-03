@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { api, companion, memory } from '../core/runtime';
 import { useSnapshot, useStore } from './hooks';
 import type { Settings } from '../memory/store';
+import { Link, PATHS } from '../router';
 
 /** Gemini's prebuilt voices that suit a small robot (mirrors server/speech.ts; Google's docs list them all). */
 const GEMINI_VOICES: Record<string, string> = { Leda: 'Youthful', Puck: 'Upbeat', Zephyr: 'Bright', Autonoe: 'Bright', Laomedeia: 'Upbeat', Achird: 'Friendly', Sadachbia: 'Lively', Aoede: 'Breezy', Achernar: 'Soft', Vindemiatrix: 'Gentle', Sulafat: 'Warm', Fenrir: 'Excitable', Kore: 'Firm', Charon: 'Informative', Despina: 'Smooth', Callirrhoe: 'Easy-going' };
@@ -215,6 +216,10 @@ export default function SettingsPanel() {
       <h4>Model</h4><ModelPanel />
       <h4>Conversation</h4>
       <label className="field">Response style<select value={s.responseStyle} onChange={(e) => up({ responseStyle: e.target.value as Settings['responseStyle'] })}><option value="concise">Concise</option><option value="balanced">Balanced</option><option value="detailed">Detailed</option></select></label>
+      <fieldset className="field personality" data-testid="personality"><legend>Personality <span className="muted">(tone only — never safety, honesty or the voice)</span></legend>
+        {([['humour', 'Humour', [['none', 'None'], ['light', 'Light'], ['playful', 'Playful']]], ['energy', 'Energy', [['calm', 'Calm'], ['balanced', 'Balanced'], ['lively', 'Lively']]], ['curiosity', 'Curiosity', [['quiet', 'Few questions'], ['normal', 'Normal'], ['inquisitive', 'Asks follow-ups']]], ['formality', 'Formality', [['casual', 'Casual'], ['neutral', 'Neutral'], ['formal', 'Formal']]]] as const).map(([k, label, opts]) => (
+          <label key={k}>{label} <select value={s.personality[k]} onChange={(e) => up({ personality: { ...s.personality, [k]: e.target.value } })}>{opts.map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>))}
+      </fieldset>
       <label className="field">Language<input value={s.language} maxLength={40} onChange={(e) => up({ language: e.target.value || 'English' })} /></label>
       <T k="streaming" label="Stream replies when the provider supports it" />
       <label className="field">History sent to the model: last {s.historyLimit} messages<input type="range" min={2} max={40} step={2} value={s.historyLimit} onChange={(e) => up({ historyLimit: Number(e.target.value) })} /></label>
@@ -222,6 +227,11 @@ export default function SettingsPanel() {
       <label className="field">Layout<select value={s.layout} onChange={(e) => up({ layout: e.target.value as Settings['layout'] })}><option value="robot">Robot view — the robot fills the window, voice first</option><option value="workspace">Workspace — robot, chat and panels side by side</option></select></label>
       <label className="field">Robot size on the stage<select value={s.robotSize} onChange={(e) => up({ robotSize: e.target.value as Settings['robotSize'] })}><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select></label>
       <label className="field">Theme<select value={s.theme} onChange={(e) => up({ theme: e.target.value as Settings['theme'] })}><option value="dark">Dark — the classic NEXUS</option><option value="light">Light — white and light-blue NEXUS</option><option value="system">Match my computer</option></select></label>
+      <div className="field colour-row" data-testid="settings-colours">
+        <span>Colours</span>
+        <span className="colour-now">{s.palette ? <><i style={{ background: s.palette.a }} aria-hidden /><i style={{ background: s.palette.b }} aria-hidden /> Custom · {s.palette.a.toUpperCase()} + {s.palette.b.toUpperCase()}</> : 'NEXUS default'}</span>
+        <span className="row"><Link to={PATHS.studio} className="btn">Open Colour Studio</Link>{s.palette && <button type="button" onClick={() => up({ palette: null })}>Reset to NEXUS default</button>}</span>
+      </div>
       <label className="field">Animation intensity ×{s.animationIntensity.toFixed(2)}<input type="range" min={0.3} max={1.3} step={0.05} value={s.animationIntensity} onChange={(e) => up({ animationIntensity: Number(e.target.value) })} /></label>
       <T k="playfulReactions" label="Playful reactions (winks, celebrations)" />
       <T k="completionReaction" label="Small nod when a reply completes" />

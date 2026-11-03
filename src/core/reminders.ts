@@ -130,11 +130,17 @@ export class ReminderStore {
   async clearFinished() { for (const r of this.items.filter((x) => x.status !== 'pending')) await this.kv.del('reminders', r.id).catch(() => {}); this.items = this.items.filter((x) => x.status === 'pending'); this.changed(); }
 
   /** Fires everything that is due (late ones flagged) and arms a timer for the next one. */
+  private firing = new Set<string>();
   async tick() {
     const now = this.clock();
     for (const r of this.pending().filter((x) => x.dueAt <= now)) {
-      const fired = await this.update(r.id, { status: 'fired', firedAt: now, late: r.dueAt < this.startedAt }).catch(() => null);
-      if (fired) this.onFire?.(fired);
+      // checks can overlap (startup, a new reminder, the timer): each due reminder is claimed by exactly one of them
+      if (this.firing.has(r.id) || this.items.find((x) => x.id === r.id)?.status !== 'pending') continue;
+      this.firing.add(r.id);
+      try {
+        const fired = await this.update(r.id, { status: 'fired', firedAt: now, late: r.dueAt < this.startedAt }).catch(() => null);
+        if (fired) this.onFire?.(fired);
+      } finally { this.firing.delete(r.id); }
     }
     this.schedule();
   }

@@ -1,10 +1,10 @@
 /** Assets 49, 78, 80, 95, 99, 10/100 — capabilities, tool permissions, learning disclosure, diagnostics, performance, asset registry. */
 import { withBase } from '../webDemo';
 import { useCallback, useEffect, useState } from 'react';
-import { companion, engine, memory, registry, runtime } from '../core/runtime';
+import { companion, engine, learner, memory, registry, runtime } from '../core/runtime';
 import { download, fmtTime, usePoll, useSnapshot, useStore } from './hooks';
 import { TOOLS } from '../security/toolPermissions';
-import { ASSETS } from '../assets/registry';
+import type { AssetRecord } from '../assets/registry';
 
 interface AssetStatus { generatedAt: string; assets: Record<string, { status: string; passed: number; failed: number; missing: string[] }> }
 
@@ -13,6 +13,8 @@ export default function StatusPanel() {
   const perf = usePoll(useCallback(() => runtime.stats(), []), 1000);
   const [status, setStatus] = useState<AssetStatus | null>(null);
   const [filter, setFilter] = useState('');
+  const [ASSETS, setAssets] = useState<AssetRecord[]>([]);
+  useEffect(() => { fetch(withBase('/asset-registry.json')).then((r) => (r.ok ? r.json() : [])).then((a) => setAssets(Array.isArray(a) ? a : [])).catch(() => setAssets([])); }, []);
   useEffect(() => { fetch(withBase('/asset-status.json')).then((r) => (r.ok ? r.json() : null)).then(setStatus).catch(() => setStatus(null)); }, []);
   const counts = companion.diagnostics.counts();
   useStore(registry); useStore(memory);
@@ -31,6 +33,7 @@ export default function StatusPanel() {
         <tr><th>Skill registry</th><td>{reg.approved} approved · {reg.proposed} awaiting approval · {reg.builtin} built-in{registry.quarantined.length ? ` · ${registry.quarantined.length} quarantined` : ''}</td></tr>
         <tr><th>Memory</th><td>{memory.settings.memoryEnabled ? `${memory.active().length} saved` : 'off'} · {companion.getSnapshot().capabilities.find((c) => c.id === 'memory')?.detail ?? ''}</td></tr>
       </tbody></table>
+      {!snap.caps?.hosted && <CreatorDiagnostics />}
       <h4>Capabilities</h4>
       <ul className="caps">{snap.capabilities.map((c) => <li key={c.id}><span className={`badge cap-${c.state}`}>{c.state.replace('_', ' ')}</span> <b>{c.name}</b><div className="muted small">{c.detail}</div></li>)}</ul>
       <h4>Learning & training disclosure</h4>
@@ -53,5 +56,27 @@ export default function StatusPanel() {
           return <tr key={a.id}><td>{a.id}</td><td><b>{a.name}</b><div className="muted small">{a.paths.join(', ')}{a.limitations ? ` — ${a.limitations}` : ''}</div></td><td><span className={`badge as-${st}`}>{st}</span>{v ? <div className="muted small">{v.passed} passed{v.failed ? `, ${v.failed} failed` : ''}</div> : null}</td></tr>;
         })}</tbody></table>
     </div>
+  );
+}
+
+/**
+ * Creator diagnostics: the unified interaction state behind the robot (state machine, motion, face, activity, lip-sync
+ * source, learning queue). Shown only when NEXUS runs on its own computer — never on the public server.
+ */
+function CreatorDiagnostics() {
+  const snap = useSnapshot(); useStore({ subscribe: learner.subscribe, get version() { return learner.version; } });
+  const d = usePoll(useCallback(() => ({ motion: runtime.motion, face: companion.expressions.current(), indicator: runtime.indicator, lip: companion.tts.lipSync ?? (companion.tts.speaking ? 'browser voice events' : '—') }), []), 300);
+  const m = learner.metrics();
+  return (
+    <details className="creator-diag" data-testid="creator-diagnostics">
+      <summary><h4 style={{ display: 'inline' }}>Creator diagnostics</h4> <span className="muted small">(this computer only)</span></summary>
+      <table className="now small"><tbody>
+        <tr><th>Interaction state</th><td>{snap.state} → body: {d.motion} · face: {d.face} · core light: {d.indicator}</td></tr>
+        <tr><th>Activity</th><td>{snap.activity ? `${snap.activity.kind}: ${snap.activity.label} (${Math.round((Date.now() - snap.activity.since) / 1000)} s)` : 'none'}</td></tr>
+        <tr><th>Lip-sync source</th><td>{d.lip}</td></tr>
+        <tr><th>Learning</th><td>{learner.busy ?? 'idle'} · queue {m.queue.waiting} waiting / {m.queue.approved} approved · research today {m.research.today}/{m.research.limit} · background {learner.settings.background ? (learner.settings.paused ? 'paused' : 'on') : 'off'}{learner.background.lastRunAt ? ` (last ${fmtTime(learner.background.lastRunAt)})` : ''}</td></tr>
+        <tr><th>Knowledge</th><td>{m.knowledge.total} notes · {Object.entries(m.knowledge.byStatus).map(([k, n]) => `${n} ${k}`).join(', ') || 'none'} · experiences {m.experiences.total} ({m.experiences.unprocessed} unreflected)</td></tr>
+      </tbody></table>
+    </details>
   );
 }

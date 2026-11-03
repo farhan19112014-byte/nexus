@@ -13,7 +13,7 @@ import { BUILTIN_EXPRESSIONS } from '../expressions/presets';
 import { BUILTIN_MOTIONS } from '../animation/builtinMotions';
 
 export interface PreviewHandle { play(motionId: string): Promise<boolean>; express(id: string, seconds?: number): boolean; state(id: DemoState): void; reset(): void; busy(): boolean }
-interface Props { title: string; greet?: boolean; face?: string; className?: string; mode?: RobotStyle; onActivity?: (label: string | null) => void; onReady?: () => void }
+interface Props { title: string; greet?: boolean; face?: string; className?: string; mode?: RobotStyle; orbit?: number; onActivity?: (label: string | null) => void; onReady?: () => void }
 
 /** The companion's states, shown on the public page with the same faces, lights and poses the app uses for them. */
 export const DEMO_STATES = [
@@ -21,8 +21,11 @@ export const DEMO_STATES = [
   { id: 'listening', label: 'Listening', face: 'listening', light: 'listening', note: 'While the microphone is capturing.' },
   { id: 'thinking', label: 'Thinking', face: 'thinking', light: 'processing', note: 'While a request is being processed.' },
   { id: 'speaking', label: 'Speaking', face: 'speaking', light: 'speaking', note: 'While a reply is read aloud (silent in this preview).' },
+  { id: 'greeting', label: 'Greeting', face: 'happy', light: 'acting', note: 'When you open the robot — it introduces itself by name.' },
   { id: 'curious', label: 'Curious', face: 'curious', light: 'idle', note: 'When you are typing a question.' },
+  { id: 'excited', label: 'Excited', face: 'excited', light: 'success', note: 'After something you asked for was really saved or completed.' },
   { id: 'confused', label: 'Confused', face: 'confused', light: 'idle', note: 'When a reply came back empty or unreadable, or nothing was heard.' },
+  { id: 'concerned', label: 'Concerned', face: 'concerned', light: 'idle', note: 'When the reply itself is about something difficult.' },
   { id: 'resting', label: 'Resting', face: 'resting', light: 'idle', note: 'After a while without activity (it still works).' },
   { id: 'error', label: 'Error', face: 'error', light: 'error', note: 'When something really failed — always with an explanation.' },
 ] as const satisfies readonly { id: string; label: string; face: string | null; light: Indicator; note: string }[];
@@ -31,7 +34,7 @@ export type DemoState = (typeof DEMO_STATES)[number]['id'];
 export const reducedMotionPreferred = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const MOTIONS = new Map(BUILTIN_MOTIONS.map((m) => [m.id, m]));
 
-export const PreviewRobot = forwardRef<PreviewHandle, Props>(function PreviewRobot({ title, greet, face, className, mode = 'auto', onActivity, onReady }, ref) {
+export const PreviewRobot = forwardRef<PreviewHandle, Props>(function PreviewRobot({ title, greet, face, className, mode = 'auto', orbit, onActivity, onReady }, ref) {
   const rig = useRef<RigHandle>(null);
   const box = useRef<HTMLDivElement>(null);
   const [parts] = useState(() => {
@@ -66,6 +69,7 @@ export const PreviewRobot = forwardRef<PreviewHandle, Props>(function PreviewRob
       expressions.release('user'); expressions.release('reaction');
       if (d.face) expressions.set('system', d.face, 1, null, 3); else expressions.release('system');
       if (id === 'speaking') engine.setSpeaking(true);                    // procedural mouth movement — no audio on this page
+      if (id === 'greeting' && !engine.reducedMotion) { const w = MOTIONS.get('wave'); if (w) void engine.play(w).done; }
       // the 3D robot's motion engine gives each state its body language; the 2D fallback keeps the old waiting loop
       rig.current?.setMotion?.(id, engine.reducedMotion);
       if (id === 'thinking' && !engine.reducedMotion && !is3d.current) { const w = MOTIONS.get('waiting'); if (w) void engine.play(w).done; }
@@ -103,7 +107,7 @@ export const PreviewRobot = forwardRef<PreviewHandle, Props>(function PreviewRob
 
   return (
     <div ref={box} className={className} onPointerMove={(e) => { const r = box.current!.getBoundingClientRect(); engine.lookAt(((e.clientX - r.left) / r.width) * 2 - 1, ((e.clientY - r.top) / r.height) * 2 - 1.1, 'user'); }} onPointerLeave={() => engine.lookAt(null)}>
-      <RobotAuto ref={rig} mode={mode} onReady3d={() => { is3d.current = true; engine.bodyIdle = false; const r = engine.reducedMotion; rig.current?.setMotion?.(greet && !r ? 'curious' : 'idle', r); if (greet && !r) { expressions.set('reaction', 'happy', 0.8, 2.4); setTimeout(() => { if (!picked.current) rig.current?.setMotion?.('idle', r); }, 2600); } onReady?.(); }} environment="transparent" effects accessories={{ antenna: true, sidePanels: true, chestLight: true, cheekLights: true, foreheadIndicator: true }} title={title} className="preview-svg" />
+      <RobotAuto ref={rig} mode={mode} orbit={orbit} onReady3d={() => { is3d.current = true; engine.bodyIdle = false; const r = engine.reducedMotion; rig.current?.setMotion?.(greet && !r ? 'curious' : 'idle', r); if (greet && !r) { expressions.set('reaction', 'happy', 0.8, 2.6); const w = MOTIONS.get('wave'); if (w) setTimeout(() => { if (!picked.current) void engine.play(w).done; }, 500); setTimeout(() => { if (!picked.current) rig.current?.setMotion?.('idle', r); }, 2600); } onReady?.(); }} environment="transparent" effects accessories={{ antenna: true, sidePanels: true, chestLight: true, cheekLights: true, foreheadIndicator: true }} title={title} className="preview-svg" />
     </div>
   );
 });

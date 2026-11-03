@@ -262,11 +262,34 @@ export const SkillCatalogEntrySchema = z.object({
 }).strict();
 export type SkillCatalogEntry = z.infer<typeof SkillCatalogEntrySchema>;
 
+export const PersonalitySchema = z.object({
+  humour: z.enum(['none', 'light', 'playful']).default('light'),
+  energy: z.enum(['calm', 'balanced', 'lively']).default('balanced'),
+  curiosity: z.enum(['quiet', 'normal', 'inquisitive']).default('normal'),
+  formality: z.enum(['casual', 'neutral', 'formal']).default('neutral'),
+}).strict();
+export type Personality = z.infer<typeof PersonalitySchema>;
+
+/** Knowledge NEXUS learned (browser knowledge base), sent with a chat turn when relevant. Status is shown to the model. */
+export const KnowledgeContextSchema = z.object({
+  claim: z.string().min(1).max(400),
+  status: z.enum(['verified', 'pending', 'conflicting', 'outdated']),
+  sources: z.array(z.string().max(200)).max(4).default([]),
+}).strict();
+/** App context for one chat turn: what is open in the workspace (e.g. a HOLOBUILD model) and relevant learned knowledge. */
+export const ChatContextSchema = z.object({
+  workspace: z.string().max(4000).default(''),
+  knowledge: z.array(KnowledgeContextSchema).max(8).default([]),
+}).strict();
+export type ChatContextInput = z.input<typeof ChatContextSchema>;
+
 export const UserProfileSchema = z.object({
   responseStyle: z.enum(['concise', 'balanced', 'detailed']).default('balanced'),
   language: z.string().max(40).default('English'),
   /** The robot's display name chosen by the user (trusted app configuration, validated here too). */
   robotName: z.string().max(200).default(DEFAULT_ROBOT_NAME).transform((v) => effectiveRobotName(v)),
+  /** personality settings (Settings → Personality); they shape tone only — never safety, honesty or the voice */
+  personality: PersonalitySchema.prefault({}),
 }).strict();
 
 export const ChatRequestSchema = z.object({
@@ -279,6 +302,8 @@ export const ChatRequestSchema = z.object({
   lastSkillId: z.string().max(48).nullable().default(null),
   research: z.boolean().default(false),
   stream: z.boolean().default(true),
+  /** optional (older clients omit it) */
+  context: ChatContextSchema.optional(),
 }).strict().refine((r) => Array.isArray(r.messages) && r.messages.reduce((n, m) => n + m.content.length, 0) <= LIMITS.totalChars, 'conversation too large')
   .refine((r) => r.messages.length > 0 && r.messages[r.messages.length - 1].role === 'user', 'last message must be from the user');
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;

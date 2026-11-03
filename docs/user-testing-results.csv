@@ -1,0 +1,5 @@
+participant,order,condition,question_set,q1_clear_state,q2_understood_tone,q3_pleasant,q4_use_again,q5_distracting,looked_at_screen,final_preference,comments
+P1,R-then-V,R,A,,,,,,,,
+P1,R-then-V,V,B,,,,,,,,
+P2,V-then-R,V,B,,,,,,,,
+P2,V-then-R,R,A,,,,,,,,

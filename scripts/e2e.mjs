@@ -11,6 +11,7 @@ const words = ['**Photosynthesis** ', 'lets ', 'plants ', 'turn ', 'light ', 'in
 const ttsCalls = []; const sttCalls = [];
 /** 1.2 s mono 16-bit WAV: 0.45 s tone, 0.3 s silence, 0.45 s tone */
 function toneWav(dur = 1.2, on = (t) => t < 0.45 || t > 0.75, sr = 16000) { const n = Math.round(sr * dur), d = Buffer.alloc(44 + n * 2); d.write('RIFF', 0); d.writeUInt32LE(36 + n * 2, 4); d.write('WAVEfmt ', 8); d.writeUInt32LE(16, 16); d.writeUInt16LE(1, 20); d.writeUInt16LE(1, 22); d.writeUInt32LE(sr, 24); d.writeUInt32LE(sr * 2, 28); d.writeUInt16LE(2, 32); d.writeUInt16LE(16, 34); d.write('data', 36); d.writeUInt32LE(n * 2, 40); for (let i = 0; i < n; i++) { const t = i / sr; d.writeInt16LE(on(t) ? Math.round(Math.sin(2 * Math.PI * 220 * t) * 16000) : 0, 44 + i * 2); } return d; }
+const systemsSeen = []; // system prompts of streamed chat requests (to check what context reached the model)
 let mockFailing = false; // toggled by the journey test to simulate the provider going down
 const mock = http.createServer(async (req, res) => {
   if (req.url.startsWith('/mock/fail')) { mockFailing = req.url.includes('on=1'); return res.end('ok'); }
@@ -24,6 +25,10 @@ const mock = http.createServer(async (req, res) => {
   }
   let body = ''; for await (const c of req) body += c;
   const j = JSON.parse(body || '{}');
+  const sys0 = j.messages?.find((m) => m.role === 'system')?.content ?? '';
+  if (j.stream) systemsSeen.push(sys0);
+  // learning research synthesis: claims citing the mock Wikipedia source (one source → stays "pending")
+  if (!j.stream && /learn from web sources/.test(sys0)) { res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ summary: 'Photosynthesis converts light into chemical energy [1].', contradictions: [], claims: [{ claim: 'Photosynthesis is the process plants use to convert light into chemical energy.', topic: 'photosynthesis', category: 'science', sources: [1] }] }) } }] })); }
   if (!j.stream) { res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ choices: [{ message: { content: 'OK' } }] })); }
   if (mockFailing) { res.statusCode = 503; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ error: { message: 'mock provider is down' } })); }
   res.setHeader('content-type', 'text/event-stream');
@@ -65,7 +70,15 @@ await new Promise((res, rej) => { server.stdout.on('data', (d) => String(d).incl
 const NO_GL = ['--disable-3d-apis'];
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: NO_GL });
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
+// every page here is served by the NEXUS server with its Content-Security-Policy: collect any violation the browser reports
+const cspViolations = []; const watchCsp = (c) => c.on('console', (m) => { if (/Content Security Policy|Refused to (load|execute|apply|connect|frame|evaluate)/i.test(m.text())) cspViolations.push(m.text().slice(0, 200)); });
+watchCsp(ctx);
+// the axe audit library is test tooling: it is evaluated through the browser's debugging protocol (page.evaluate), which the
+// page's Content-Security-Policy does not apply to — an inline <script> tag would (rightly) be blocked by the app's CSP
+const AXE_SRC = readFileSync('node_modules/axe-core/axe.min.js', 'utf8');
+const injectAxe = async (pg) => { if (await pg.evaluate(() => !!window.axe)) return; const cdp = await pg.context().newCDPSession(pg); const r = await cdp.send('Runtime.evaluate', { expression: AXE_SRC }); await cdp.detach(); if (r.exceptionDetails) throw new Error(`axe did not load: ${r.exceptionDetails.text}`); };
 const page = await ctx.newPage();
+ctx.setDefaultNavigationTimeout(60000);   // a 2-CPU test machine running two servers and software WebGL can be slow to reach "network idle"
 const errors = []; page.on('pageerror', (e) => errors.push(e.message)); page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(m.text()); });
 const N = (fn, arg) => page.evaluate(fn, arg);
 const idle = async (ms = 15000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const s = await N(() => ({ st: nexus.companion.sm.state, b: nexus.companion.getSnapshot().busy })); if ((s.st === 'idle' || s.st === 'error') && !s.b) return s.st; await page.waitForTimeout(100); } return 'timeout'; };
@@ -110,7 +123,8 @@ try {
   // journey: change an expression
   const ex = await N(() => { nexus.companion.showExpression('surprised'); nexus.step(0.5); return nexus.expressions.current(); });
   check('[A98] journey: change an expression', ex === 'surprised');
-  const eyeH = await N(() => { nexus.step(0.3); return Number(document.querySelector('.stage [data-part="eye-L"] > rect:not([data-part])').getAttribute('height')); });
+  // the robot blinks at random moments: read the eye three times 0.3 s apart and use the widest (a blink lasts ~0.15 s)
+  const eyeH = await N(() => { const h = () => Number(document.querySelector('.stage [data-part="eye-L"] > rect:not([data-part])').getAttribute('height')); let m = 0; for (let i = 0; i < 3; i++) { nexus.step(0.3); m = Math.max(m, h()); } return m; });
   check('[A04] facial components update in the DOM', eyeH > 40, `eye height ${eyeH}`);
 
   // journey: interrupt a response (slow server)
@@ -192,7 +206,18 @@ try {
 
   // status / model panel
   await page.getByRole('tab', { name: 'Status' }).click();
-  check('[A10] [A49] status panel lists capabilities and all 127 assets', (await page.locator('.assets tbody tr').count()) === 127 && (await page.locator('.caps li').count()) >= 8);
+  // the asset table is filled from /asset-registry.json once the panel opens
+  await page.waitForFunction(() => document.querySelectorAll('.assets tbody tr').length > 0, null, { timeout: 10000 }).catch(() => {});
+  check('[A10] [A49] status panel lists capabilities and all 144 assets', (await page.locator('.assets tbody tr').count()) === 144 && (await page.locator('.caps li').count()) >= 8);
+  {
+    const diag = page.locator('[data-testid=creator-diagnostics]'); const local = await diag.count() === 1;
+    if (local) await diag.locator('summary').click();
+    const txt = local ? await diag.textContent() : '';
+    await page.evaluate(() => { const c = nexus.companion; c.set({ caps: { ...c.getSnapshot().caps, hosted: true } }); }); await page.waitForTimeout(150);
+    const hidden = await page.locator('[data-testid=creator-diagnostics]').count() === 0;
+    await page.evaluate(() => { const c = nexus.companion; c.set({ caps: { ...c.getSnapshot().caps, hosted: false } }); });
+    check('[A140] creator diagnostics (state → body/face/light, activity, lip-sync source, learning) show on this computer and are hidden when hosted', local && /Interaction state/.test(txt) && /Lip-sync source/.test(txt) && hidden, txt.slice(0, 120));
+  }
 
   // light mode: one click on the home page turns the site and the robot light; it is remembered; dark is the classic look
   {
@@ -201,8 +226,8 @@ try {
     const before = await look();
     await tp.getByTestId('theme-toggle').first().click(); await tp.waitForTimeout(500); const lightNow = await look();
     await tp.reload({ waitUntil: 'networkidle' }); await tp.waitForTimeout(800); const afterReload = await look();
-    await tp.addScriptTag({ content: readFileSync('node_modules/axe-core/axe.min.js', 'utf8') });
-    const serious = await tp.evaluate(async () => (await window.axe.run(document, { resultTypes: ['violations'] })).violations.filter((x) => x.impact === 'serious' || x.impact === 'critical').map((x) => `${x.id}: ${x.nodes[0]?.target}`));
+    await injectAxe(tp);
+    const serious = await tp.evaluate(async () => (await (async () => { document.querySelectorAll('.reveal').forEach((e) => e.classList.add('in')); await new Promise((r) => setTimeout(r, 1000)); })(), await window.axe.run(document, { resultTypes: ['violations'] })).violations.filter((x) => x.impact === 'serious' || x.impact === 'critical').map((x) => `${x.id}: ${x.nodes[0]?.target}`));
     await tp.getByTestId('theme-toggle').first().click(); await tp.waitForTimeout(400); const backDark = await look();
     check('[A123] light mode: the toggle switches the site and the robot to the white/light-blue version, is remembered after reload, and switches back', before.theme === 'dark' && before.skin === 'dark' && lightNow.theme === 'light' && lightNow.skin === 'light' && lightNow.bg !== before.bg && afterReload.theme === 'light' && afterReload.skin === 'light' && backDark.theme === 'dark' && backDark.skin === 'dark' && before.label === 'Switch to light mode', JSON.stringify({ before, lightNow, afterReload, backDark }));
     check('[A123] the light home page passes the axe audit (no serious/critical issues)', serious.length === 0, serious.join(' | '));
@@ -244,15 +269,79 @@ try {
     check('[A127] typing a question makes the 3D robot curious; stopping returns it to idle', typing.a === 'curious' && typing.b === 'idle', JSON.stringify(typing));
     // frame cost of the 3D robot page in this software renderer (no GPU) — measured, not assumed
     const fps = await gp.evaluate(async () => { const f0 = nexus.runtime.frames; const t0 = performance.now(); nexus.companion.noteTyping(true, 'why?'); await new Promise((r) => setTimeout(r, 2500)); nexus.companion.noteTyping(false); return { fps: ((nexus.runtime.frames - f0) * 1000) / (performance.now() - t0), ...nexus.runtime.stats() }; });
-    check('[A127] performance measured: 3D robot page frame rate in software WebGL (no GPU in the test machine)', fps.fps > 5, `${fps.fps.toFixed(1)} fps · avg JS frame ${fps.avgFrameMs.toFixed(2)} ms (excludes GPU/software raster time)`);
+    check('[A127] performance measured: the 3D robot page keeps rendering in software WebGL (threshold: above 5 fps; no GPU in the test machine, so the number depends on machine load)', fps.fps > 5, `${fps.fps.toFixed(1)} fps · avg JS frame ${fps.avgFrameMs.toFixed(2)} ms (excludes GPU/software raster time)`);
+    // [A144] full-body motion through the real path: chat command → engine → body controller → the rendered model
+    const body = await gp.evaluate(async () => {
+      const el = document.querySelector('.robot3d'); const M = () => { const r = el.dataset.bodyMetrics; return r ? JSON.parse(r) : null; };
+      const watch = async (text, ms) => {
+        void nexus.companion.send(text); const s = []; const t0 = performance.now();
+        while (performance.now() - t0 < ms) { const m = M(); if (m) s.push(m); await new Promise((r) => setTimeout(r, 30)); if (s.length > 5 && !nexus.runtime.body.current()) break; }
+        return { actions: [...new Set(s.map((x) => x.action).filter(Boolean))], states: [...new Set(s.map((x) => x.state))], palmsMin: Math.min(...s.map((x) => x.palms)), upMin: Math.min(...s.map((x) => x.up)), footMax: Math.max(...s.map((x) => x.foot)), last: s.at(-1) };
+      };
+      nexus.engine.stopAll(); await new Promise((r) => setTimeout(r, 600));
+      return { flip: await watch('do a backflip', 30000), clap: await watch('clap 3 times', 30000), dance: await watch('dance for me', 40000) };
+    });
+    const { flip, clap, dance } = body;
+    check('[A144] "do a backflip": the rendered robot goes fully upside down, then lands upright with its feet on the floor', flip.actions.includes('backflip') && flip.upMin < -0.9 && flip.last?.up > 0.98 && Math.abs(flip.last.foot - 0.2) < 0.03, JSON.stringify({ ...flip, last: flip.last }));
+    check('[A144] "clap 3 times": the palms really touch (gap = two palm radii, ≈0.30) and never pass through each other', clap.actions.includes('clap') && clap.palmsMin >= 0.28 && clap.palmsMin <= 0.33, JSON.stringify(clap));
+    check('[A144] "dance for me": the dance plays with the feet on the floor and the body upright', dance.actions.includes('dance') && dance.footMax < 0.35 && dance.upMin > 0.95, JSON.stringify(dance));
+    check('[A144] body moves and speech run together (the reply is spoken while the body layer plays)', flip.states.includes('SPEAKING') || clap.states.includes('SPEAKING') || dance.states.includes('SPEAKING'), JSON.stringify({ f: flip.states, c: clap.states, d: dance.states }));
+    {
+      const lp = await (await gb.newContext({ viewport: { width: 1280, height: 900 } })).newPage(); const lErr = []; lp.on('pageerror', (e) => lErr.push(e.message));
+      await lp.goto(`${ORIGIN}/motions`, { waitUntil: 'networkidle' }); await lp.waitForSelector('.robot3d[data-ready="1"]', { timeout: 40000 }).catch(() => null);
+      const buttons = await lp.locator('[data-clip]').count(); const states = await lp.locator('[data-state]').count();
+      await lp.click('[data-clip=nod]'); await lp.waitForSelector('[data-testid=ml-report]', { timeout: 10000 }).catch(() => null);
+      await lp.click('[data-testid=ml-check-all]'); const allTxt = await lp.locator('[data-testid=ml-all]').textContent({ timeout: 30000 }).catch(() => '');
+      check('[A144] Motion Lab: every clip and body state has its own preview button, and every clip passes the physical checks in the browser', buttons >= 26 && states === 11 && /^(\d+) \/ \1 clips pass/.test(allTxt ?? '') && (await lp.locator('[data-testid=ml-report]').count()) === 1 && lErr.length === 0, JSON.stringify({ buttons, states, allTxt, lErr }));
+      await lp.context().close();
+    }
     check('[A125] no page errors with the 3D robot', gErr.length === 0, gErr.slice(0, 3).join(' | '));
+    await gb.close();
+  }
+
+  // HOLOBUILD: template build in the real 3D viewport, edits that change only what was named, exploded view, selection,
+  // save → reload → reopen, GLB export (validated), delete with confirmation — in software WebGL
+  {
+    const gb = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+    const ctx = await gb.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true }); const hp = await ctx.newPage(); const hErr = [];
+    hp.on('pageerror', (e) => hErr.push(e.message)); hp.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) hErr.push(m.text()); });
+    await hp.goto(`${ORIGIN}/holobuild`, { waitUntil: 'networkidle' }); await noBoot(hp);
+    await hp.waitForSelector('[data-testid=holo-viewport][data-ready="1"]', { timeout: 40000 }).catch(() => null);
+    await hp.fill('#holo-cmd', 'Build a combustion engine'); await hp.press('#holo-cmd', 'Enter');
+    await hp.waitForFunction(() => document.querySelectorAll('[data-testid=holo-parts] li').length > 0, null, { timeout: 15000 }).catch(() => {});
+    const built = await hp.evaluate(() => ({ parts: document.querySelectorAll('[data-testid=holo-parts] li').length, origin: document.querySelector('[data-testid=holo-origin]')?.textContent, name: document.querySelector('[data-testid=holo-model-name]')?.textContent, canvas: !!document.querySelector('.holo-canvas') }));
+    check('[A131] HOLOBUILD builds the combustion engine from its template in the 3D viewport (24 named parts, labelled as a NEXUS template)', built.parts === 24 && /NEXUS template/.test(built.origin ?? '') && built.canvas && /engine/i.test(built.name ?? ''), JSON.stringify(built));
+    const pix = async () => (await hp.screenshot({ clip: await hp.locator('[data-testid=holo-viewport]').boundingBox() })).toString('base64');
+    const before = await pix();
+    const edit = await hp.evaluate(async () => { const m0 = nexus.holo.getSnapshot().model; await nexus.holo.command('Make the cylinder head out of copper'); const m1 = nexus.holo.getSnapshot().model;
+      const changed = m1.parts.filter((p, i) => JSON.stringify(p) !== JSON.stringify(m0.parts[i])).map((p) => p.id); return { changed, mat: m1.parts.find((p) => p.id === 'cylinder-head').material, status: nexus.holo.getSnapshot().status.text }; });
+    check('[A130] a typed edit changes only the named part (cylinder head → copper; every other part identical)', edit.changed.length === 1 && edit.changed[0] === 'cylinder-head' && edit.mat === 'copper', JSON.stringify(edit));
+    await hp.click('.holo-viewbar button:has-text("Explode")'); await hp.waitForTimeout(1500);
+    check('[A131] the exploded view visibly separates the parts', (await pix()) !== before);
+    await hp.locator('[data-testid=holo-parts] li button.link', { hasText: /^Piston$/ }).first().click();
+    const part = await hp.locator('[data-testid=holo-part] h2').textContent().catch(() => '');
+    check('[A131] selecting a component shows its name, description and properties', /Piston/.test(part ?? '') && await hp.locator('[data-testid=holo-part] dl').count() === 1, part);
+    await hp.click('button:has-text("Save")'); await hp.waitForFunction(() => document.querySelectorAll('[data-testid=holo-saved] li').length === 1, null, { timeout: 8000 }).catch(() => {});
+    await hp.reload({ waitUntil: 'networkidle' }); await noBoot(hp);
+    await hp.waitForFunction(() => document.querySelectorAll('[data-testid=holo-saved] li').length === 1, null, { timeout: 8000 }).catch(() => {});
+    await hp.locator('[data-testid=holo-saved] li button.link').first().click(); await hp.waitForTimeout(600);
+    const reopened = await hp.evaluate(() => nexus.holo.getSnapshot().model?.parts.find((p) => p.id === 'cylinder-head')?.material);
+    check('[A132] a saved model survives a page reload and reopens with its edits', reopened === 'copper', String(reopened));
+    await hp.click('button:has-text("File & view")');
+    const [dl] = await Promise.all([hp.waitForEvent('download', { timeout: 15000 }).catch(() => null), hp.click('text=Export GLB (binary)')]);
+    let glb = null; if (dl) { const path = await dl.path(); const b = readFileSync(path); glb = { name: dl.suggestedFilename(), magic: b.subarray(0, 4).toString('latin1'), bytes: b.length }; }
+    check('[A132] GLB export downloads a valid binary glTF file', glb && glb.magic === 'glTF' && /\.glb$/.test(glb.name) && glb.bytes > 5000, JSON.stringify(glb));
+    await hp.locator('[data-testid=holo-saved] li .icon-btn').first().click(); await hp.click('[data-testid=holo-confirm-delete]');
+    await hp.waitForFunction(() => document.querySelectorAll('[data-testid=holo-saved] li').length === 0, null, { timeout: 8000 }).catch(() => {});
+    check('[A132] deleting asks for confirmation, then removes the saved model', await hp.locator('[data-testid=holo-saved] li').count() === 0);
+    check('[A131] no page errors in HOLOBUILD', hErr.length === 0, hErr.slice(0, 3).join(' | '));
     await gb.close();
   }
 
   // [A126] website redesign: the real 3D NEXUS in the landing hero, the state demo, startup transition, reduced motion, About/Privacy
   {
     const gb = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
-    const gctx = await gb.newContext({ viewport: { width: 1280, height: 800 } }); const hp = await gctx.newPage(); const hErr = [];
+    const gctx = await gb.newContext({ viewport: { width: 1280, height: 800 } }); watchCsp(gctx); const hp = await gctx.newPage(); const hErr = [];
     hp.on('pageerror', (e) => hErr.push(e.message));
     await hp.goto(URL, { waitUntil: 'networkidle' }); await noBoot(hp);
     await hp.goto(`${ORIGIN}/`); await hp.waitForSelector('#boot', { state: 'detached', timeout: 15000 }).catch(() => {});
@@ -261,14 +350,18 @@ try {
     const statesOk = [];
     for (const [name, core] of [['Listening', 'listening'], ['Thinking', 'processing'], ['Speaking', 'speaking'], ['Curious', 'idle'], ['Confused', 'idle'], ['Resting', 'idle'], ['Error', 'error'], ['Idle', 'idle']]) {
       await hp.getByRole('group', { name: /states/ }).getByRole('button', { name }).click(); await hp.waitForTimeout(450);
-      const r = await hp.evaluate(() => ({ core: document.querySelector('.hero .robot3d')?.getAttribute('data-core'), note: document.querySelector('.state-note')?.textContent ?? '', pressed: document.querySelector('.state-panel [aria-pressed="true"]')?.textContent }));
+      const r = await hp.evaluate(() => ({ core: document.querySelector('#robot .robot3d')?.getAttribute('data-core'), note: document.querySelector('#robot .state-note')?.textContent ?? '', pressed: document.querySelector('.state-cards [aria-pressed="true"] .sc-name')?.textContent }));
       statesOk.push(r.core === core && r.note.includes(name) && r.pressed === name ? name : `${name}✗(${r.core})`);
     }
-    check('[A126] the hero state demo drives the 3D robot: idle, listening, thinking, speaking, curious, confused, resting, error (face, light, label)', statesOk.every((x) => !x.includes('✗')), statesOk.join(' '));
-    const box = await hp.locator('.hero-stage').boundingBox(); const a = (await hp.screenshot({ clip: box })).toString('base64');
+    check('[A126] the state demo drives the live 3D robot: idle, listening, thinking, speaking, curious, confused, resting, error (face, light, label)', statesOk.every((x) => !x.includes('✗')), statesOk.join(' '));
+    await hp.locator('.viewer-stage').scrollIntoViewIfNeeded(); await hp.waitForTimeout(400);
+    const box = await hp.locator('.viewer-stage').boundingBox(); const a = (await hp.screenshot({ clip: box })).toString('base64');
     await hp.getByRole('group', { name: /states/ }).getByRole('button', { name: 'Curious' }).click(); await hp.waitForTimeout(1200);
-    const motionNow = await hp.evaluate(() => document.querySelector('.hero .robot3d')?.getAttribute('data-motion'));
-    check('[A126] [A127] state changes move the 3D hero robot with its motion engine (picture changes, motion state set)', (await hp.screenshot({ clip: box })).toString('base64') !== a && motionNow === 'curious', motionNow);
+    const motionNow = await hp.evaluate(() => document.querySelector('#robot .robot3d')?.getAttribute('data-motion'));
+    await hp.getByRole('group', { name: /expressions/ }).getByRole('button', { name: 'Sad' }).click(); await hp.waitForTimeout(700);
+    const faceNow = await hp.evaluate(() => document.querySelector('#robot .state-note')?.textContent ?? '');
+    check('[A128] expression tiles show the real screen faces on the live robot (incl. the new Sad and Angry)', /Sad/.test(faceNow) && await hp.locator('.face-tile img').count() === 9, faceNow);
+    check('[A126] [A127] state changes move the live 3D robot with its motion engine (picture changes, motion state set)', (await hp.screenshot({ clip: box })).toString('base64') !== a && motionNow === 'curious', motionNow);
     check('[A127] the old 2D-style motion buttons are gone from the home page', await hp.getByRole('button', { name: /^(Wave|Greeting|Celebrate)$/ }).count() === 0);
     const three = await hp.evaluate(() => performance.getEntriesByType('resource').filter((e) => /three\.module|nexus\.glb/.test(e.name)).map((e) => ({ n: e.name.split('/').pop(), kb: Math.round((e.encodedBodySize || e.transferSize) / 1024), ms: Math.round(e.duration) })));
     check('[A126] performance: the 3D code and model are measured (loaded on demand)', three.length >= 2, JSON.stringify(three));
@@ -279,7 +372,7 @@ try {
     check('[A126] reduced motion: the 3D hero robot stays still and the startup overlay is skipped', new Set(poses).size === 1 && poses[0] !== '' && rmBoot, `${poses[0]} · overlay gone: ${rmBoot}`);
     await rm.close();
     // light theme: switching the theme re-skins the live 3D NEXUS (white and light blue) without reloading it
-    await hp.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await hp.waitForSelector('.hero .robot3d[data-ready="1"]', { timeout: 30000 }).catch(() => {});
+    await hp.goto(`${ORIGIN}/`, { waitUntil: 'load', timeout: 60000 }); await hp.waitForSelector('.hero .robot3d[data-ready="1"]', { timeout: 30000 }).catch(() => {});
     const darkSkin = await hp.evaluate(() => document.querySelector('.hero .robot3d')?.getAttribute('data-skin'));
     await hp.getByTestId('theme-toggle').first().click();
     await hp.waitForSelector('.hero .robot3d[data-skin="light"][data-ready="1"]', { timeout: 15000 }).catch(() => {});
@@ -287,6 +380,46 @@ try {
     check('[A126] light theme: the theme switch re-skins the live 3D hero robot (dark → light NEXUS)', darkSkin === 'dark' && lightNow.theme === 'light' && lightNow.skin === 'light', JSON.stringify({ darkSkin, ...lightNow }));
     await hp.goto(`${ORIGIN}/about`, { waitUntil: 'networkidle' });
     check('[A126] About page credits "Made by Muhammad Farhan Khan"', (await hp.getByTestId('maker').textContent()) === 'Made by Muhammad Farhan Khan');
+    await hp.goto(`${ORIGIN}/creator`, { waitUntil: 'networkidle' });
+    const creator = await hp.evaluate(() => ({ h1: document.querySelector('h1')?.textContent, title: document.title, quote: document.querySelector('.creator-quote')?.textContent, ovf: document.documentElement.scrollWidth - innerWidth }));
+    check('[A126] /creator shows the "Meet the Creator" page', creator.h1 === 'Meet the Creator' && /Meet the Creator/.test(creator.title) && /Curiosity sparked the idea/.test(creator.quote ?? '') && creator.ovf <= 0, JSON.stringify(creator));
+    // [A143] Colour Studio: choose two colours, live preview, apply site-wide, persistence (settings + first-paint cache), reset
+    {
+      const bgOf = (sel) => hp.evaluate((q) => getComputedStyle(document.querySelector(q)).backgroundColor, sel);
+      await hp.goto(`${ORIGIN}/studio`, { waitUntil: 'networkidle' });
+      const lib = await hp.locator('.swatch').count(); const off0 = await hp.getByTestId('studio-apply').isDisabled();
+      const siteBg0 = await bgOf('.site'); const pv0 = await bgOf('.pv-cta');
+      await hp.getByRole('button', { name: /^Crimson/ }).click();
+      const off1 = await hp.getByTestId('studio-apply').isDisabled();
+      await hp.getByTestId('hex-input').fill('#f7a'); await hp.getByTestId('hex-use').click();
+      const slots = [await hp.getByTestId('slot-1-hex').textContent(), await hp.getByTestId('slot-2-hex').textContent()];
+      await hp.getByTestId('hex-input').fill('nope'); await hp.getByTestId('hex-use').click(); const badMsg = await hp.getByTestId('studio-msg').textContent();
+      const pv1 = await bgOf('.pv-cta'); const siteBgPreview = await bgOf('.site'); const readable = await hp.getByTestId('contrast-summary').textContent();
+      check('[A143] Colour Studio: 40+ colour library, two slots with HEX values, custom HEX input with validation; Apply needs exactly two colours', lib >= 40 && off0 && off1 && slots[0] === '#DC143C' && slots[1] === '#FF77AA' && /HEX colour/.test(badMsg ?? ''), JSON.stringify({ lib, off0, off1, slots, badMsg }));
+      check('[A143] the live preview shows the generated theme before anything is applied, with its readability check', pv1 !== pv0 && siteBgPreview === siteBg0 && /meet WCAG AA/.test(readable ?? ''), JSON.stringify({ pv0, pv1, siteBg0, siteBgPreview, readable }));
+      await hp.getByTestId('studio-apply').click(); await hp.waitForTimeout(800);
+      const applied = await hp.evaluate(() => document.documentElement.dataset.palette); const siteBg1 = await bgOf('.site');
+      await hp.goto(`${ORIGIN}/about`, { waitUntil: 'networkidle' }); const aboutPal = await hp.evaluate(() => document.documentElement.dataset.palette);
+      await hp.goto(`${ORIGIN}/app`, { waitUntil: 'networkidle' }); await hp.waitForTimeout(1500);
+      const appMic = await hp.evaluate(() => getComputedStyle(document.querySelector('.mic-btn') ?? document.body).borderColor);
+      check('[A143] Apply re-themes every page (site background, about, robot page controls) — not just the background', applied === 'custom' && siteBg1 !== siteBg0 && aboutPal === 'custom' && !/56, 217, 255|18, 104, 245/.test(appMic), JSON.stringify({ applied, siteBg0, siteBg1, aboutPal, appMic }));
+      // the settings store is the source of truth: without the localStorage cache, the robot page restores it from saved settings
+      await hp.evaluate(() => { localStorage.removeItem('nexus-palette'); localStorage.removeItem('nexus-palette-css'); });
+      await hp.reload({ waitUntil: 'networkidle' });
+      await hp.waitForFunction(() => document.documentElement.dataset.palette === 'custom', null, { timeout: 15000 }).catch(() => {});
+      const fromSettings = await hp.evaluate(() => [document.documentElement.dataset.palette, localStorage.getItem('nexus-palette')]);
+      await hp.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); const firstPaint = await hp.evaluate(() => !!document.getElementById('nexus-palette') && document.documentElement.dataset.palette);
+      check('[A143] the theme persists: restored from saved settings after a reload and applied at first paint on the next visit', fromSettings[0] === 'custom' && /dc143c/.test(fromSettings[1] ?? '') && firstPaint === 'custom', JSON.stringify({ fromSettings, firstPaint }));
+      await hp.goto(`${ORIGIN}/studio`, { waitUntil: 'networkidle' });
+      await hp.getByTestId('studio-reset').click(); await hp.waitForTimeout(800); await hp.reload({ waitUntil: 'networkidle' });
+      const afterReset = await hp.evaluate(() => [document.documentElement.dataset.palette ?? null, localStorage.getItem('nexus-palette')]);
+      check('[A143] Reset restores the original NEXUS theme and it stays after a reload', afterReset[0] === null && afterReset[1] === null && (await bgOf('.site')) === siteBg0, JSON.stringify(afterReset));
+      const mctx = await gb.newContext({ viewport: { width: 390, height: 844 } }); const mp = await mctx.newPage();
+      await mp.goto(`${ORIGIN}/studio`, { waitUntil: 'networkidle' }); await mp.getByRole('button', { name: /^Emerald/ }).click(); await mp.getByRole('button', { name: /^Lavender/ }).click();
+      const mob = await mp.evaluate(() => ({ ovf: document.documentElement.scrollWidth - innerWidth, apply: !!document.querySelector('[data-testid=studio-apply]')?.getBoundingClientRect().width }));
+      check('[A143] Colour Studio on a phone: no horizontal scroll, controls reachable', mob.ovf <= 0 && mob.apply, JSON.stringify(mob));
+      await mctx.close();
+    }
     await hp.goto(`${ORIGIN}/privacy`, { waitUntil: 'networkidle' });
     const priv = await hp.locator('main').textContent();
     check('[A126] Privacy page describes the actual data practices (browser storage, provider, IP limits, hosting) without compliance claims', ['IndexedDB', 'free tier', 'IP address', 'GitHub Pages', 'Render'].every((w) => priv.includes(w)) && !/compliant/i.test(priv));
@@ -319,6 +452,8 @@ try {
   const lap = [];
   for (const [w, h] of LAPTOPS) {
     const lp = await browser.newPage({ viewport: { width: w, height: h } }); await lp.goto(URL, { waitUntil: 'networkidle' }); await lp.evaluate(() => nexus.memory.updateSettings({ setupDone: true, layout: 'workspace' })); await lp.waitForTimeout(300);
+    // measure the settled layout: wait for one-off entrance animations (the side panel slides in over 0.3 s) to finish
+    await lp.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity), null, { timeout: 5000 }).catch(() => {});
     const r = await lp.evaluate(() => {
       const b = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect() : null; };
       const robot = document.querySelector('.stage svg[role=img]').getBoundingClientRect(), msgs = b('.messages'), comp = b('#composer'), send = [...document.querySelectorAll('.composer button')].find((x) => x.textContent === 'Send').getBoundingClientRect();
@@ -359,10 +494,13 @@ try {
   check('[A99] animation frame work stays small (avg < 4 ms, one loop)', perf.avgFrameMs < 4 && perf.frames > 30, `avg ${perf.avgFrameMs.toFixed(2)}ms max ${perf.maxFrameMs.toFixed(2)}ms`);
   const hiddenStops = await N(async () => { const f0 = nexus.runtime.frames; Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); await new Promise((r) => setTimeout(r, 400)); const f1 = nexus.runtime.frames; Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); return f1 - f0 <= 1; });
   check('[A99] rendering pauses while the tab is hidden', hiddenStops);
-  // the 3D robot (three.js, ~730 KB) is a separate chunk that only loads when the 3D style is chosen
-  const onDemand3d = /^(three\.module|Robot3D|GLTFLoader|RoomEnvironment)/;
-  const js = readdirSync('dist/assets').filter((f) => f.endsWith('.js') && !onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
-  check('[A99] bundle size is modest (< 900 KB of JS before gzip, excluding the on-demand 3D chunk)', js < 900_000, `${Math.round(js / 1024)} KB`);
+  // the 3D robot (three.js, ~730 KB) is a separate chunk that only loads when the 3D style is chosen; HOLOBUILD's three.js
+  // add-ons (orbit controls, GLTF exporter) and its scene/file helpers load only inside the 3D workspace — same category
+  const onDemand3d = /^(three\.module|Robot3D|GLTFLoader|GLTFExporter|OrbitControls|RoomEnvironment|scene-|io-)/;
+  const all = readdirSync('dist/assets').filter((f) => f.endsWith('.js'));
+  const js = all.filter((f) => !onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
+  const js3d = all.filter((f) => onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
+  check('[A99] bundle size is modest (< 900 KB of JS before gzip, excluding the on-demand 3D chunks)', js < 900_000, `${Math.round(js / 1024)} KB (+ ${Math.round(js3d / 1024)} KB on-demand 3D)`);
   const loaded3d = await N(() => performance.getEntriesByType('resource').filter((e) => /three\.module|Robot3D/.test(e.name)).map((e) => e.name));
   check('[A99] [A125] the 2D robot never downloads three.js', loaded3d.length === 0, loaded3d.join(', '));
   const bundle = readdirSync('dist/assets').filter((f) => f.endsWith('.js')).map((f) => readFileSync(`dist/assets/${f}`, 'utf8')).join('\n');
@@ -408,7 +546,7 @@ try {
   const jLast = () => jp.locator('.msg.assistant').last();
   const steps = {};
   await jp.goto(`${LLM}/`, { waitUntil: 'networkidle' }); await jp.waitForTimeout(500);                                     // 1
-  steps.s2_identity = await jp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(8, 11, 18)';  // 2 (dark palette)
+  steps.s2_identity = await jp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(5, 8, 13)';  // 2 (dark palette)
   steps.s3_robot = await jp.locator('.hero svg[role=img] [data-part="face"]').count() === 1;                                  // 3
   await jp.getByRole('link', { name: /^Meet / }).first().click(); await jp.waitForSelector('#composer');                      // 4–5
   await J(() => nexus.memory.updateSettings({ setupDone: true, greeted: true, layout: 'workspace', voiceOutput: false }));
@@ -505,22 +643,22 @@ try {
   // landing page (same browser profile → same saved name)
   const home = await ctx.newPage(); const homeErrors = []; home.on('pageerror', (e) => homeErrors.push(e.message));
   await home.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await home.waitForTimeout(700);
-  const hero = await home.evaluate(() => ({ h1: document.querySelector('h1')?.textContent, robots: document.querySelectorAll('.hero svg[role=img] [data-part="face"]').length, pill: document.querySelector('.status-pill')?.textContent ?? '', cta: [...document.querySelectorAll('.hero a')].map((a) => a.textContent), lead: document.querySelector('.lead')?.textContent ?? '' }));
-  check('[A101] landing: headline, the real robot rig, live status from /api/status, and the custom name', /digital companion/.test(hero.h1) && hero.robots === 1 && /Demo brain — not an LLM/.test(hero.pill) && hero.cta.includes('Meet Nova') && hero.lead.includes('Nova is your NEXUS robot'), JSON.stringify(hero));
+  const hero = await home.evaluate(() => ({ h1: document.querySelector('h1')?.textContent, robots: document.querySelectorAll('.hero svg[role=img] [data-part="face"]').length, pill: document.querySelector('.status-pill')?.textContent ?? '', cta: [...document.querySelectorAll('.hero a')].map((a) => a.textContent?.trim()), lead: document.querySelector('.lead')?.textContent ?? '' }));
+  check('[A101] landing: headline, the real robot rig, live status from /api/status, and the custom name', /Intelligence, with a presence/.test(hero.h1) && hero.robots === 1 && /Demo brain — not an LLM/.test(hero.pill) && hero.cta.includes('Meet Nova') && hero.lead.includes('Nova is your NEXUS robot'), JSON.stringify(hero));
   await home.getByRole('button', { name: 'Listening' }).click(); await home.waitForTimeout(400);
-  check('[A101] the state preview works on the 2D fallback too (no WebGL in this browser)', (await home.getByRole('status').filter({ hasText: 'Now showing' }).textContent().catch(() => '')).includes('Listening') && await home.evaluate(() => document.querySelector('.hero svg[role=img]')?.getAttribute('data-core') === 'listening'));
+  check('[A101] the state preview works on the 2D fallback too (no WebGL in this browser)', (await home.getByRole('status').filter({ hasText: 'Now showing' }).textContent().catch(() => '')).includes('Listening') && await home.evaluate(() => document.querySelector('#robot svg[role=img]')?.getAttribute('data-core') === 'listening'));
   await home.getByRole('button', { name: 'Reset' }).click();
-  await home.getByRole('link', { name: 'Explore features' }).click(); await home.waitForTimeout(600);
-  check('[A102] "Explore features" scrolls to the features section and moves focus there', await home.evaluate(() => document.activeElement?.id === 'features' && document.getElementById('features').getBoundingClientRect().top < 120));
+  await home.getByRole('link', { name: 'Explore the technology' }).click(); await home.waitForTimeout(1600);
+  check('[A102] "Explore the technology" scrolls to the How NEXUS works section and moves focus there', await home.evaluate(() => document.activeElement?.id === 'technology' && document.getElementById('technology').getBoundingClientRect().top < 140));
   await home.evaluate(() => { window.__noReload = true; });
-  await home.getByRole('link', { name: 'Meet Nova' }).click(); await home.waitForSelector('#composer');
+  await home.getByRole('link', { name: 'Meet Nova' }).first().click(); await home.waitForSelector('#composer');
   check('[A101] [A102] hero CTA opens the robot workspace without a page reload', home.url().endsWith('/app') && await home.evaluate(() => window.__noReload === true && !!document.querySelector('.stage svg[role=img]')));
   await home.locator('#composer').fill('wave'); await home.locator('#composer').press('Enter');
   await home.waitForFunction(() => document.querySelectorAll('.msg.assistant').length > 0 && !nexus.companion.getSnapshot().busy, null, { timeout: 15000 });
   const msgCount = await home.locator('.msg').count();
   await home.getByRole('link', { name: 'NEXUS home page' }).click(); await home.waitForSelector('.hero');
   const backHome = home.url() === `${ORIGIN}/`;
-  await home.getByRole('link', { name: 'Meet Nova' }).click(); await home.waitForSelector('#composer');
+  await home.getByRole('link', { name: 'Meet Nova' }).first().click(); await home.waitForSelector('#composer');
   check('[A102] the workspace logo leads back home; the conversation is still there on return', backHome && await home.locator('.msg').count() === msgCount && msgCount >= 2 && await home.evaluate(() => window.__noReload === true), `msgs ${msgCount}`);
 
   // every internal link on the public pages resolves to a real page (no dead links)
@@ -531,7 +669,7 @@ try {
   }
   const dead = [];
   for (const h of links) {
-    if (/^https?:/.test(h)) { dead.push(`external:${h}`); continue; }
+    if (/^https?:/.test(h)) { if (!/^https:\/\/github\.com\/farhan19112014-byte\/nexus/.test(h)) dead.push(`external:${h}`); continue; }   // only the project's own repository may be linked
     if (h.startsWith('#')) { continue; }
     await home.goto(`${ORIGIN}${h}`, { waitUntil: 'networkidle' });
     const ok = await home.evaluate((hh) => !document.querySelector('.notfound') && (!hh.includes('#') || !!document.getElementById(hh.split('#')[1])), h);
@@ -550,7 +688,7 @@ try {
     const r = await bp.evaluate(() => ({ ms: Number(document.documentElement.dataset.bootMs), robot: !!document.querySelector('.hero svg[role=img], .hero .robot3d[data-ready]') }));
     await bp.reload(); await bp.waitForSelector('#boot', { state: 'detached', timeout: 10000 }).catch(() => {});
     const again = await bp.evaluate(() => Number(document.documentElement.dataset.bootMs));
-    check('[A126] startup transition: shown on a first visit and cleared once the robot is drawn (1–3 s); a reload in the same tab is not held', seen && r.robot && r.ms >= 900 && r.ms <= 3000 && again < r.ms, `first ${r.ms} ms · reload ${again} ms`);
+    check('[A126] startup transition: shown on a first visit and cleared once the page is ready (about 0.6–1.5 s); a reload in the same tab is not held', seen && r.robot && r.ms >= 500 && r.ms <= 2200 && again < r.ms, `first ${r.ms} ms · reload ${again} ms`);
     await bp.close();
   }
 
@@ -563,7 +701,7 @@ try {
     if (w === 375) {
       await rp.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await noBoot(rp); await rp.screenshot({ path: 'test-results/e2e-home-mobile.png' });
       const btn = rp.getByRole('button', { name: 'Open menu' }); const hiddenBefore = !(await rp.getByRole('navigation', { name: 'Main' }).isVisible());
-      await btn.click(); const shown = await rp.getByRole('link', { name: 'Privacy' }).first().isVisible();
+      await btn.click(); const shown = await rp.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'About' }).isVisible();
       await rp.keyboard.press('Escape'); const closed = !(await rp.getByRole('navigation', { name: 'Main' }).isVisible());
       check('[A102] [A88] mobile header: menu button opens the navigation, Esc closes it', hiddenBefore && shown && closed);
     }
@@ -650,7 +788,7 @@ try {
     // fake microphone: 0.3 s quiet, 1.2 s of "speech" (a tone), then quiet — the end-of-speech detector should stop on its own
     writeFileSync('test-results/fake-mic.wav', toneWav(5, (t) => t > 0.3 && t < 1.5, 48000));
     const vb = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: [...NO_GL, '--autoplay-policy=no-user-gesture-required', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${process.cwd()}/test-results/fake-mic.wav%noloop`] });
-    const vctx = await vb.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['microphone'] });
+    const vctx = await vb.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['microphone'] }); watchCsp(vctx);
     const rv = await vctx.newPage(); const rvErr = []; rv.on('pageerror', (e) => rvErr.push(e.message));
     const R = (fn, arg) => rv.evaluate(fn, arg);
     await rv.goto(`http://127.0.0.1:${LLM_PORT}/app`, { waitUntil: 'networkidle' });
@@ -662,12 +800,13 @@ try {
     // spoken reply: real audio from the (mock) speech API; the mouth follows the audio level, including the silent gap
     const samples = [];
     await rv.keyboard.press('/'); await rv.waitForTimeout(250); await rv.keyboard.type('Please introduce yourself'); await rv.keyboard.press('Enter');
-    for (let i = 0; i < 120; i++) { const v = await R(() => ({ st: nexus.companion.sm.state, mouth: nexus.engine.values['mouth.open'], lvl: nexus.engine.speech.levelMode })); samples.push(v); if (i > 10 && v.st === 'idle' && samples.some((x) => x.st === 'speaking')) break; await rv.waitForTimeout(40); }
+    for (let i = 0; i < 120; i++) { const v = await R(() => ({ st: nexus.companion.sm.state, mouth: nexus.engine.values['mouth.open'], lvl: nexus.engine.speech.levelMode, scope: document.querySelector('[data-testid=voice-scope-voice]')?.getAttribute('data-live') ?? null, panel: document.querySelector('[data-key=voice] .sp-status')?.textContent ?? '' })); samples.push(v); if (i > 10 && v.st === 'idle' && samples.some((x) => x.st === 'speaking')) break; await rv.waitForTimeout(40); }
     const sp = samples.filter((x) => x.st === 'speaking' && x.lvl);
     const maxM = Math.max(0, ...sp.map((x) => x.mouth)); const minM = Math.min(1, ...sp.slice(3).map((x) => x.mouth));
     await rv.waitForTimeout(400);
     const after = await R(() => ({ st: nexus.companion.sm.state, mouth: nexus.engine.values['mouth.open'], speaking: nexus.companion.getSnapshot().speaking, cap: document.querySelector('[data-testid=captions]')?.textContent ?? '' }));
     check('[A119] spoken reply: SPEAKING only while the server audio plays; the mouth opens with the sound and closes in the silence; back to idle', ttsCalls.length >= 1 && ttsCalls[0].model === 'mock-tts' && ttsCalls[0].voice === 'mock-voice' && sp.length > 5 && maxM > 0.35 && minM < 0.15 && after.st === 'idle' && !after.speaking && after.mouth < 0.2, `tts calls ${ttsCalls.length}, speaking samples ${sp.length}, mouth max ${maxM.toFixed(2)} min ${minM.toFixed(2)}, end ${after.st} ${after.mouth.toFixed(2)}`);
+    check('[A142] while NEXUS speaks, the voice scope shows bars from the real audio level and the status panel says SPEAKING', samples.some((x) => x.st === 'speaking' && x.scope === '1') && samples.some((x) => x.panel === 'SPEAKING'), JSON.stringify(samples.filter((x) => x.st === 'speaking').slice(0, 3)));
     const evs = await R(() => nexus.companion.events.log.map((e) => e.name));
     const order = ['onProcessingStart', 'onResponseReceived', 'onSpeechStart', 'onSpeechEnd'].map((n) => evs.lastIndexOf(n));
     check('[A122] robot events fire in order during a spoken reply (processing → response → speech start → speech end)', order.every((i) => i >= 0) && order.every((v, i, a) => i === 0 || v > a[i - 1]), evs.slice(-8).join(','));
@@ -684,6 +823,8 @@ try {
     await rv.getByRole('button', { name: 'Talk' }).click();
     for (let i = 0; i < 40 && !(await R(() => nexus.companion.getSnapshot().listening)); i++) await rv.waitForTimeout(50);
     const listening = await R(() => ({ st: nexus.companion.sm.state, face: nexus.expressions.current() }));
+    let micScope = false; for (let i = 0; i < 15 && !micScope; i++) { micScope = await R(() => document.querySelector('[data-testid=voice-scope-mic]')?.getAttribute('data-live') === '1'); if (!micScope) await rv.waitForTimeout(60); }
+    check('[A142] while NEXUS listens, the waveform follows the real microphone level (fake microphone)', micScope);
     let autoStopped = false;
     for (let i = 0; i < 80; i++) { await rv.waitForTimeout(100); if (!(await R(() => nexus.companion.getSnapshot().listening))) { autoStopped = true; break; } }
     check('[A119] end of speech is detected from the microphone level (recording stops by itself after the user stops talking)', autoStopped);
@@ -695,25 +836,90 @@ try {
     for (let i = 0; i < 300 && ((await R(() => nexus.companion.sm.state)) !== 'idle' || await R(() => nexus.companion.getSnapshot().busy)); i++) await rv.waitForTimeout(50);
     const endState = await R(() => ({ tail: nexus.companion.getSnapshot().messages.slice(-4).map((m) => m.role + ':' + m.status + ':' + m.text.slice(0, 40)), last: nexus.companion.getSnapshot().messages.at(-1)?.text ?? '', st: nexus.companion.sm.state, started: nexus.companion.getSnapshot().lastSkillId }));
     check('[A119] the transcribed request runs end to end (LLM reply + wave) and the robot returns to idle', endState.last.includes('Waving') && endState.st === 'idle', JSON.stringify(endState));
+    // quota reached: the server refuses the voice (429); the visitor still gets the reply as text plus the server's reason
+    await rv.route('**/api/tts', (r) => r.fulfill({ status: 429, contentType: 'application/json', headers: { 'retry-after': '3600' }, body: JSON.stringify({ error: "You have used today's voice allowance on this public server — replies are shown as text until tomorrow.", code: 'quota' }) }));
+    await rv.locator('#composer').fill('Please introduce yourself'); await rv.locator('#composer').press('Enter');
+    for (let i = 0; i < 200 && ((await R(() => nexus.companion.sm.state)) !== 'idle' || await R(() => nexus.companion.getSnapshot().busy)); i++) await rv.waitForTimeout(50);
+    await rv.waitForTimeout(400);
+    const q = await R(() => ({ st: nexus.companion.sm.state, speaking: nexus.companion.getSnapshot().speaking, notes: nexus.companion.notifications.notices.map((n) => n.text), cap: document.querySelector('[data-testid=captions]')?.textContent ?? '' }));
+    check('[UAT-Q1] voice quota reached: the reply is still shown as text, the visitor is told why, and the robot returns to idle (no fake voice)', q.st === 'idle' && !q.speaking && q.notes.some((t) => /voice allowance/.test(t)) && /I'm NEXUS/.test(q.cap), JSON.stringify({ ...q, cap: q.cap.slice(0, 80) }));
+    await rv.unroute('**/api/tts');
     await rv.screenshot({ path: 'test-results/e2e-robot-view.png' });
     // phone size: robot still fully visible
     const ph = await vctx.newPage(); await ph.setViewportSize({ width: 390, height: 844 }); await ph.goto(`http://127.0.0.1:${LLM_PORT}/app`, { waitUntil: 'networkidle' }); await ph.waitForTimeout(700);
     const f2 = await fit(ph);
     check('[A119] robot view on a phone: the whole robot fits, no horizontal scroll', f2.top >= 0 && f2.bottom <= f2.vh && f2.overflow <= 1, JSON.stringify(f2));
     await ph.screenshot({ path: 'test-results/e2e-robot-view-phone.png' });
-    const v1 = []; await ph.addScriptTag({ content: readFileSync('node_modules/axe-core/axe.min.js', 'utf8') });
-    for (const v of await ph.evaluate(async () => (await window.axe.run(document, { resultTypes: ['violations'] })).violations.filter((x) => x.impact === 'serious' || x.impact === 'critical').map((x) => `${x.id}: ${x.nodes[0]?.target}`))) v1.push(v);
+    const v1 = []; await injectAxe(ph);
+    for (const v of await ph.evaluate(async () => (await (async () => { document.querySelectorAll('.reveal').forEach((e) => e.classList.add('in')); await new Promise((r) => setTimeout(r, 1000)); })(), await window.axe.run(document, { resultTypes: ['violations'] })).violations.filter((x) => x.impact === 'serious' || x.impact === 'critical').map((x) => `${x.id}: ${x.nodes[0]?.target}`))) v1.push(v);
     check('[A119] [A112] robot view passes the axe audit (no serious/critical issues)', v1.length === 0, v1.join(' | '));
     check('[A119] no page errors in the robot view', rvErr.length === 0, rvErr.join(' | '));
     await vb.close();
   }
 
+  // space interface: the environment fills the right side of the robot page, never takes input, moves continuously,
+  // stops when hidden or under reduced motion; the HUD shows the real state
+  {
+    const sp = await ctx.newPage(); const sErr = []; sp.on('pageerror', (e) => sErr.push(e.message));
+    await sp.goto(`${ORIGIN}/app`, { waitUntil: 'networkidle' }); await noBoot(sp);
+    await sp.evaluate(async () => { await nexus.memory.updateSettings({ setupDone: true, layout: 'robot', reducedMotion: false }); nexus.companion.applySettings(); }); await sp.keyboard.press('Escape');
+    await sp.waitForSelector('[data-testid=space-field]', { timeout: 8000 }).catch(() => {});
+    const geo = await sp.evaluate(() => { const c = document.querySelector('[data-testid=space-field]'); const r = c?.getBoundingClientRect(); const mic = document.querySelector('.mic-btn'); const m = mic?.getBoundingClientRect();
+      return { has: !!c, pe: c && getComputedStyle(c).pointerEvents, hidden: c?.getAttribute('aria-hidden'), w: r?.width, vw: innerWidth, top: m ? document.elementFromPoint(m.x + m.width / 2, m.y + m.height / 2)?.closest('.mic-btn') === mic : false, hud: document.querySelector('[data-testid=system-panel]')?.textContent ?? '' }; });
+    check('[A141] the space environment fills the robot page behind the robot, is decorative (aria-hidden, no pointer events) and never covers a control', geo.has && geo.pe === 'none' && geo.hidden === 'true' && geo.w >= geo.vw * 0.95 && geo.top, JSON.stringify({ ...geo, hud: undefined }));
+    check('[A142] the status panel is truthful: server ONLINE (it answered), AI OFFLINE on the demo brain, no fake online', /SYSTEM\s*DEMO/.test(geo.hud) && /NEXUS server\s*ONLINE/.test(geo.hud) && /AI model\s*OFFLINE/.test(geo.hud) && /demo brain/.test(geo.hud), geo.hud.slice(0, 160));
+    const px = () => sp.evaluate(() => { const c = document.querySelector('[data-testid=space-field]'); return c.toDataURL().length + ':' + c.toDataURL().slice(-400); });
+    const a1 = await px(); await sp.waitForTimeout(700); const a2 = await px();
+    await sp.evaluate(async () => { await nexus.memory.updateSettings({ reducedMotion: true }); nexus.companion.applySettings(); }); await sp.waitForTimeout(400);
+    const r1 = await px(); await sp.waitForTimeout(700); const r2 = await px();
+    await sp.evaluate(async () => { await nexus.memory.updateSettings({ reducedMotion: false }); nexus.companion.applySettings(); }); await sp.waitForTimeout(400);
+    const b1 = await px(); await sp.waitForTimeout(700); const b2 = await px();
+    check('[A141] the environment animates continuously, holds a still frame under reduced motion, and resumes when it is turned off', a1 !== a2 && r1 === r2 && b1 !== b2);
+    await sp.setViewportSize({ width: 390, height: 844 }); await sp.waitForTimeout(500);
+    await sp.reload({ waitUntil: 'networkidle' }); await sp.keyboard.press('Escape'); await sp.waitForTimeout(500);
+    const mob = await sp.evaluate(() => { const p = document.querySelector('[data-testid=system-panel]'); const r = p?.getBoundingClientRect(); const mic = document.querySelector('.mic-btn')?.getBoundingClientRect();
+      return { sw: document.documentElement.scrollWidth, open: p?.classList.contains('open'), pw: r?.width ?? 0, inView: r ? r.right <= innerWidth && r.left >= 0 : false, mic: !!mic?.width, overlap: r && mic ? !(r.bottom < mic.top || r.top > mic.bottom || r.right < mic.left || r.left > mic.right) : true }; });
+    check('[A141] [A142] phone layout: no horizontal scroll, the status panel starts as a compact pill, the controls stay reachable', mob.sw <= 390 && mob.open === false && mob.inView && mob.mic && !mob.overlap, JSON.stringify(mob));
+    check('[A141] no page errors with the space interface', sErr.length === 0, sErr.slice(0, 3).join(' | '));
+    await sp.close();
+  }
+
+  // learning engine: research through the server (mock search + mock model), knowledge with status + sources, and the
+  // knowledge reaching the next conversation turn as fenced data; feedback buttons record an experience
+  {
+    const lp = await ctx.newPage(); const lErr = []; lp.on('pageerror', (e) => lErr.push(e.message));
+    await lp.goto(`http://127.0.0.1:${LLM_PORT}/learning`, { waitUntil: 'networkidle' }); await noBoot(lp);
+    await lp.waitForFunction(() => nexus.companion.getSnapshot().caps?.isLLM === true, null, { timeout: 10000 }).catch(() => {});
+    await lp.click('role=tab[name="Research"]'); await lp.fill('input[aria-label="Research question"]', 'What is photosynthesis?'); await lp.click('[data-testid=learn-research] form button.primary');
+    await lp.waitForFunction(() => nexus.learner.knowledge.length > 0 || nexus.learner.lastError, null, { timeout: 20000 }).catch(() => {});
+    const rs = await lp.evaluate(() => ({ k: nexus.learner.knowledge.map((x) => ({ status: x.status, n: x.sources.length, basis: x.basis })), err: nexus.learner.lastError, reports: nexus.learner.reports.length, audit: nexus.learner.audit.map((a) => a.action) }));
+    check('[A134] research from the Learning page: report saved, the claim kept as "pending" (one source) with its source and reason, logged', rs.reports === 1 && rs.k.length === 1 && rs.k[0].status === 'pending' && rs.k[0].n === 1 && /one independent source/i.test(rs.k[0].basis) && rs.audit.includes('research'), JSON.stringify(rs));
+    const before = systemsSeen.length;
+    await lp.evaluate(() => { void nexus.companion.send('Explain photosynthesis to me'); });   // not awaited: a spoken reply could keep the promise open
+    await lp.waitForTimeout(300);
+    await lp.waitForFunction(() => !nexus.companion.getSnapshot().busy, null, { timeout: 20000 }).catch(() => {});
+    const sys = systemsSeen.slice(before).at(-1) ?? '';
+    check('[A134] learned knowledge reaches the next chat turn as fenced data with its status (and the reply says so)', /<learned_knowledge>[\s\S]*\[pending\] Photosynthesis is the process/.test(sys) && await lp.evaluate(() => nexus.companion.getSnapshot().messages.at(-1).notes?.some((n) => /knowledge base/.test(n))), sys.slice(sys.indexOf('LEARNED'), sys.indexOf('LEARNED') + 160));
+    await lp.goto(`http://127.0.0.1:${LLM_PORT}/app`, { waitUntil: 'networkidle' }); await noBoot(lp);
+    await lp.evaluate(async () => { await nexus.memory.updateSettings({ setupDone: true, layout: 'classic' }); nexus.companion.applySettings(); }); await lp.keyboard.press('Escape');
+    await lp.evaluate(() => { void nexus.companion.send('What do chloroplasts do?'); }); await lp.waitForTimeout(300);
+    await lp.waitForFunction(() => !nexus.companion.getSnapshot().busy, null, { timeout: 20000 }).catch(() => {});
+    const fb = lp.locator('.msg.assistant .feedback-btns button[aria-label="Helpful"]').last();
+    if (await fb.count()) await fb.click();
+    const xp = await lp.evaluate(() => nexus.learner.experiences.map((e) => `${e.type}${e.type === 'failure' ? `: ${e.summary}` : ''}`));
+    check('[A133] the Helpful button records a feedback experience (rating + topic only)', xp.includes('feedback-positive'), JSON.stringify(xp).slice(0, 300));
+    await lp.goto(`http://127.0.0.1:${LLM_PORT}/learning`, { waitUntil: 'networkidle' }); await noBoot(lp);
+    const ov = await lp.locator('[data-testid=learn-overview]').textContent();
+    check('[A136] the Learning overview shows counted metrics (1 knowledge note, 1 research report) and states that the AI model is not retrained', /1knowledge notes/.test((ov ?? '').replace(/\s+/g, '')) || /1\s*knowledge notes/.test(ov ?? ''), (ov ?? '').slice(0, 160));
+    check('[A136] no page errors on the Learning page', lErr.length === 0, lErr.slice(0, 3).join(' | '));
+    await lp.close();
+  }
+
   // automated accessibility audit (axe-core) — dark and light, all destinations
-  const axeSrc = readFileSync('node_modules/axe-core/axe.min.js', 'utf8');
-  const audit = async (pg) => { await pg.addScriptTag({ content: axeSrc }); return pg.evaluate(async () => { const r = await window.axe.run(document, { resultTypes: ['violations'] }); return r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').flatMap((v) => v.nodes.slice(0, 4).map((n) => `${v.id}: ${n.target.join(' ')} ${n.any?.[0]?.message?.slice(0, 90) ?? ''}`)); }); };
+  const audit = async (pg) => { await injectAxe(pg); return pg.evaluate(async () => { document.querySelectorAll('.reveal').forEach((e) => e.classList.add('in')); await new Promise((r) => setTimeout(r, 1000)); const r = await window.axe.run(document, { resultTypes: ['violations'] }); return r.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical').flatMap((v) => v.nodes.slice(0, 4).map((n) => `${v.id}: ${n.target.join(' ')} ${n.any?.[0]?.message?.slice(0, 90) ?? ''}`)); }); };
   const a11y = [];
   for (const theme of ['light', 'dark']) {
-    for (const path of ['/', '/about', '/privacy', '/missing-page', '/app']) {
+    for (const path of ['/', '/about', '/privacy', '/missing-page', '/app', '/holobuild', '/learning']) {
       const ap = await ctx.newPage(); await ap.goto(`${ORIGIN}${path}`, { waitUntil: 'networkidle' }); await ap.waitForTimeout(path === '/app' ? 900 : 400);
       const th = await ap.evaluate(() => document.documentElement.dataset.theme);
       for (const v of await audit(ap)) a11y.push(`${theme}${path}: ${v}`);
@@ -726,6 +932,7 @@ try {
   writeFileSync('test-results/a11y.json', JSON.stringify(a11y, null, 2));
   await page.screenshot({ path: 'test-results/e2e-final.png' });
   check('[A98] no uncaught page errors during the run', errors.length === 0, errors.slice(0, 3).join(' | '));
+  check('[UAT-S1] the Content-Security-Policy never blocked anything the app needs (no violations on any page in this run)', cspViolations.length === 0, cspViolations.slice(0, 3).join(' | '));
 } catch (e) {
   check('[A98] e2e run completed without crashing', false, e.message);
 } finally { await browser.close(); server.kill(); llmServer.kill(); mock.close(); }

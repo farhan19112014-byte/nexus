@@ -28,7 +28,10 @@ export class StreamParser {
     if (this.state === 'head') {
       const trimmed = this.buf.replace(/^\s+/, '');
       if (!trimmed.length) return { delta: '', headParsed };
-      if (!'HEAD '.startsWith(trimmed.slice(0, 5)) && !trimmed.startsWith('HEAD')) { this.state = 'text'; this.buf = trimmed; }
+      // the head line is "HEAD" + optional spaces + a JSON object; a reply that merely starts with the word HEAD
+      // ("HEADS UP", "HEAD office …") is reply text
+      const couldBeHead = /^HEAD\s*\{/.test(trimmed) || /^(?:H|HE|HEA|HEAD\s*)$/.test(trimmed);   // complete head, or still too short to tell
+      if (!couldBeHead) { this.state = 'text'; this.buf = trimmed; }
       else {
         const nl = trimmed.indexOf('\n');
         if (nl < 0 && trimmed.length < 800) return { delta: '', headParsed };

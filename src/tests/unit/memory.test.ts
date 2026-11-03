@@ -70,7 +70,18 @@ describe('Category F — memory & personalization', () => {
   });
   it('[A58] boundaries documented: session, persistent, provider-side, retrieval, skills', () => {
     const doc = readFileSync('docs/PRIVACY.md', 'utf8');
-    for (const h of ['Session context', 'Persistent memory', 'Provider-side', 'Retrieved information', 'Skill registry', 'Not stored']) expect(doc).toContain(h);
+    for (const h of ['Stored in your browser', 'Memories', 'Sent when you chat', 'Research', 'animation skills', 'does not save']) expect(doc).toContain(h);
+  });
+  it('[A58] the privacy document and the in-app Privacy page describe the same deployment and providers', () => {
+    const doc = readFileSync('docs/PRIVACY.md', 'utf8'); const page = readFileSync('src/site/Pages.tsx', 'utf8');
+    // both cover the public deployment, its AI provider and hosts, the free-tier caveat, the voice services and IP use
+    for (const t of ['Google Gemini', 'GitHub Pages', 'Render', 'free tier', 'ElevenLabs', 'transcription service', 'IP address', 'does not save conversations', 'not a legal certification', 'no analytics', 'salted hash', '10 minutes', 'two days']) {
+      expect(doc, `docs/PRIVACY.md: ${t}`).toContain(t); expect(page, `Privacy page: ${t}`).toContain(t);
+    }
+    // the numbers in the disclosure are the numbers in the code
+    expect(readFileSync('server/app.ts', 'utf8')).toContain('AUDIO_CACHE_TTL = 10 * 60_000'); expect(readFileSync('server/budget.ts', 'utf8')).toContain('TTL_S = 2 * 86400');
+    // the stale claims are gone: NEXUS is not only local, and server transcription exists
+    expect(doc).not.toMatch(/is a \*\*local, single-user\*\* app/); expect(doc).not.toMatch(/Microphone audio \(speech recognition is performed by your browser/);
   });
   it('[A59] conflicts: same key → newer explicit wins (older kept as superseded); weaker source cannot override', async () => {
     const m = await mk();

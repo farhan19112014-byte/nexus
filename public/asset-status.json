@@ -1,55 +1,55 @@
 {
-  "generatedAt": "2026-10-26T15:24:49.800Z",
+  "generatedAt": "2026-11-02T12:48:05.501Z",
   "steps": [
     {
       "name": "typecheck",
       "ok": true,
       "code": 0,
-      "seconds": 9.429
+      "seconds": 16.595
     },
     {
       "name": "build (app + server bundle)",
       "ok": true,
       "code": 0,
-      "seconds": 15.768
+      "seconds": 23.89
     },
     {
       "name": "lint (eslint, 0 warnings)",
       "ok": true,
       "code": 0,
-      "seconds": 6.524
+      "seconds": 10.984
     },
     {
       "name": "unit + integration tests",
       "ok": true,
       "code": 0,
-      "seconds": 37.526
+      "seconds": 57.518
     },
     {
       "name": "end-to-end tests",
-      "ok": true,
-      "code": 0,
-      "seconds": 333.167
+      "ok": false,
+      "code": 1,
+      "seconds": 904.723
     },
     {
       "name": "desktop app smoke test",
       "ok": true,
       "code": 0,
-      "seconds": 2.791
+      "seconds": 26.623
     }
   ],
   "suites": {
     "unit": {
-      "total": 145,
-      "passed": 145
+      "total": 223,
+      "passed": 223
     },
     "integration": {
-      "total": 56,
-      "passed": 56
+      "total": 70,
+      "passed": 70
     },
     "e2e": {
-      "total": 122,
-      "passed": 122
+      "total": 158,
+      "passed": 156
     }
   },
   "assets": {
@@ -307,7 +307,7 @@
     },
     "A43": {
       "status": "verified",
-      "passed": 6,
+      "passed": 7,
       "failed": 0,
       "missing": []
     },
@@ -397,7 +397,7 @@
     },
     "A58": {
       "status": "verified",
-      "passed": 1,
+      "passed": 2,
       "failed": 0,
       "missing": []
     },
@@ -547,7 +547,7 @@
     },
     "A83": {
       "status": "verified",
-      "passed": 1,
+      "passed": 2,
       "failed": 0,
       "missing": []
     },
@@ -625,32 +625,32 @@
     },
     "A96": {
       "status": "verified",
-      "passed": 145,
+      "passed": 223,
       "failed": 0,
       "missing": []
     },
     "A97": {
       "status": "verified",
-      "passed": 56,
+      "passed": 70,
       "failed": 0,
       "missing": []
     },
     "A98": {
-      "status": "verified",
-      "passed": 122,
-      "failed": 0,
+      "status": "failing",
+      "passed": 156,
+      "failed": 2,
       "missing": []
     },
     "A99": {
-      "status": "verified",
-      "passed": 6,
-      "failed": 0,
+      "status": "failing",
+      "passed": 5,
+      "failed": 1,
       "missing": []
     },
     "A100": {
-      "status": "verified",
-      "passed": 6,
-      "failed": 0,
+      "status": "failing",
+      "passed": 5,
+      "failed": 1,
       "missing": []
     },
     "A101": {
@@ -703,7 +703,7 @@
     },
     "A109": {
       "status": "verified",
-      "passed": 11,
+      "passed": 12,
       "failed": 0,
       "missing": []
     },
@@ -757,7 +757,7 @@
     },
     "A119": {
       "status": "verified",
-      "passed": 27,
+      "passed": 30,
       "failed": 0,
       "missing": []
     },
@@ -769,7 +769,7 @@
     },
     "A121": {
       "status": "verified",
-      "passed": 2,
+      "passed": 3,
       "failed": 0,
       "missing": []
     },
@@ -787,7 +787,7 @@
     },
     "A124": {
       "status": "verified",
-      "passed": 4,
+      "passed": 24,
       "failed": 0,
       "missing": []
     },
@@ -799,19 +799,121 @@
     },
     "A126": {
       "status": "verified",
-      "passed": 21,
+      "passed": 24,
       "failed": 0,
       "missing": []
     },
     "A127": {
+      "status": "failing",
+      "passed": 15,
+      "failed": 1,
+      "missing": []
+    },
+    "A128": {
       "status": "verified",
-      "passed": 16,
+      "passed": 1,
       "failed": 0,
       "missing": []
     },
     "A113": {
       "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A129": {
+      "status": "verified",
+      "passed": 5,
+      "failed": 0,
+      "missing": []
+    },
+    "A130": {
+      "status": "verified",
+      "passed": 5,
+      "failed": 0,
+      "missing": []
+    },
+    "A131": {
+      "status": "verified",
+      "passed": 8,
+      "failed": 0,
+      "missing": []
+    },
+    "A132": {
+      "status": "verified",
+      "passed": 6,
+      "failed": 0,
+      "missing": []
+    },
+    "A133": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A134": {
+      "status": "verified",
+      "passed": 5,
+      "failed": 0,
+      "missing": []
+    },
+    "A135": {
+      "status": "verified",
       "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A136": {
+      "status": "verified",
+      "passed": 3,
+      "failed": 0,
+      "missing": []
+    },
+    "A137": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A138": {
+      "status": "verified",
+      "passed": 2,
+      "failed": 0,
+      "missing": []
+    },
+    "A139": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A140": {
+      "status": "verified",
+      "passed": 1,
+      "failed": 0,
+      "missing": []
+    },
+    "A141": {
+      "status": "verified",
+      "passed": 8,
+      "failed": 0,
+      "missing": []
+    },
+    "A142": {
+      "status": "verified",
+      "passed": 9,
+      "failed": 0,
+      "missing": []
+    },
+    "A143": {
+      "status": "verified",
+      "passed": 18,
+      "failed": 0,
+      "missing": []
+    },
+    "A144": {
+      "status": "verified",
+      "passed": 20,
       "failed": 0,
       "missing": []
     }

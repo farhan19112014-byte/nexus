@@ -25,6 +25,11 @@ services:
         sync: false
       - key: ELEVENLABS_VOICE_ID
         sync: false
+      # research for the learning engine: wikipedia is free (no key); searxng / tavily give independent sources
+      - key: RESEARCH_PROVIDER
+        value: wikipedia
+      - key: TAVILY_API_KEY
+        sync: false
       # the GitHub Pages site may call this server from the browser
       - key: ALLOWED_ORIGINS
         value: https://farhan19112014-byte.github.io
@@ -35,5 +40,19 @@ services:
         value: "60"
       - key: DAILY_SPEECH_CHAR_LIMIT
         value: "20000"
+      - key: DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR
+        value: "3000"
+      - key: DAILY_TRANSCRIPTION_LIMIT
+        value: "600"
+      - key: DAILY_TRANSCRIPTION_LIMIT_PER_VISITOR
+        value: "60"
       - key: RATE_LIMIT_PER_MIN
         value: "12"
+      # visitor addresses: Render adds one X-Forwarded-For hop (check with `npm run verify:live -- --server …`)
+      - key: TRUST_PROXY
+        value: "1"
+      # durable daily counts (the free plan's disk is wiped on spin-down): add a free Upstash Redis database
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false

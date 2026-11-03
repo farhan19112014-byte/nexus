@@ -1,5 +1,8 @@
 /** Shared shell for the public pages: logo, header with accessible mobile menu, footer, and live status. */
-import { API_BASE, REMOTE_API, WEB_DEMO } from '../webDemo';
+import { usePalette } from '../theme/usePalette';
+import { themeSkin } from '../theme/robotSkin';
+import { SpaceField } from '../space/SpaceField';
+import { API_BASE, REMOTE_API, REPO_URL, WEB_DEMO } from '../webDemo';
 import { Icon } from '../components/Icon';
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Link, PATHS, useLocation } from '../router';
@@ -9,13 +12,14 @@ import { skinFor } from '../character/tokens';
 import { useResolvedTheme } from '../themeHook';
 import { applyTheme } from '../theme';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { StudioLink } from '../components/StudioLink';
 import type { RobotStyle } from '../character3d/webgl';
 
 /** Original NEXUS mark: the robot's rounded head with its two happy eyes, shaded like the robot (same artwork as build/icon.svg). */
 export function Logo({ size = 28 }: { size?: number }) {
   const id = useId().replace(/[:]/g, '');
   const u = (n: string) => `url(#${n}-${id})`;
-  const light = useResolvedTheme() === 'light'; const K = skinFor(light ? 'light' : 'dark');
+  const light = useResolvedTheme() === 'light'; const pal = usePalette(); const K = themeSkin(skinFor(light ? 'light' : 'dark'), pal);
   return (
     <svg className="logo-mark" width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
       <defs>
@@ -86,14 +90,29 @@ export function StatusPill({ s }: { s: LiveStatus }) {
 }
 
 const NAV = [
-  { to: `${PATHS.home}#features`, label: 'Features' },
+  { to: PATHS.app, label: 'Robot' },
+  { to: PATHS.holobuild, label: 'HOLOBUILD' },
+  { to: `${PATHS.home}#capabilities`, label: 'Capabilities' },
+  { to: `${PATHS.home}#technology`, label: 'Technology' },
   { to: PATHS.about, label: 'About' },
-  { to: PATHS.privacy, label: 'Privacy' },
 ];
+
+/** true once the page has scrolled a little — the header turns from transparent to a readable surface */
+function useScrolled(px = 12) {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    let raf = 0;
+    const f = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => setOn(window.scrollY > px)); };
+    f(); window.addEventListener('scroll', f, { passive: true });
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('scroll', f); };
+  }, [px]);
+  return on;
+}
 
 export function SiteHeader() {
   const loc = useLocation();
   const [open, setOpen] = useState(false);
+  const scrolled = useScrolled();
   const menuId = useId();
   useEffect(() => { setOpen(false); }, [loc]);
   useEffect(() => {
@@ -101,20 +120,20 @@ export function SiteHeader() {
     const k = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
   }, [open]);
-  const here = loc.split(/[?#]/)[0];
+  const [here, hash = ''] = loc.split('?')[0].split('#');
+  const current = (to: string) => { const [p, h] = to.split('#'); return p === here && (h ? `#${h}` === `#${hash}` : !hash || p !== '/') ? 'page' : undefined; };
   return (
-    <header className="site-header">
+    <header className={`site-header ${scrolled || open ? 'scrolled' : ''}`}>
       <div className="site-wrap site-header-row">
         <Wordmark />
-        <span className="tagline">your 3D robot companion</span>
         <button className="menu-btn" aria-expanded={open} aria-controls={menuId} onClick={() => setOpen(!open)}>
           <Icon name={open ? 'close' : 'menu'} size={20} /><span className="sr-only">{open ? 'Close menu' : 'Open menu'}</span>
         </button>
         <nav id={menuId} className={`site-nav ${open ? 'open' : ''}`} aria-label="Main">
-          <Link to={PATHS.home} aria-current={here === '/' ? 'page' : undefined}>Home</Link>
-          {NAV.map((n) => <Link key={n.to} to={n.to} aria-current={here === n.to ? 'page' : undefined}>{n.label}</Link>)}
-          <ThemeToggle className="nav-theme" />
-          <Link to={PATHS.app} className="btn btn-primary nav-cta">Meet your robot</Link>
+          <Link to={PATHS.home} aria-current={current('/')}>Home</Link>
+          {NAV.map((n) => <Link key={n.to} to={n.to} aria-current={current(n.to)}>{n.label}</Link>)}
+          <span className="nav-theme nav-tools"><StudioLink /><ThemeToggle /></span>
+          <Link to={PATHS.app} className="btn btn-primary nav-cta">Meet NEXUS</Link>
         </nav>
       </div>
     </header>
@@ -124,17 +143,34 @@ export function SiteHeader() {
 export function SiteFooter() {
   return (
     <footer className="site-footer">
-      <div className="site-wrap footer-row">
-        <div className="footer-brand"><Wordmark /><p className="muted small">An original robot companion — in your browser or on your own computer.</p></div>
-        <nav aria-label="Footer">
+      <div className="site-wrap footer-grid">
+        <div className="footer-brand">
+          <Wordmark />
+          <p className="small">An interactive AI robotics experience — conversation, expression and motion in one curious digital companion.</p>
+          <p className="maker">Made by Muhammad Farhan Khan</p>
+        </div>
+        <nav aria-label="Footer" className="footer-nav">
+          <p className="label">Explore</p>
           <Link to={PATHS.home}>Home</Link>
-          <Link to={PATHS.app}>Robot app</Link>
-          <Link to={`${PATHS.home}#features`}>Features</Link>
+          <Link to={PATHS.app}>Robot</Link>
+          <Link to={PATHS.holobuild}>HOLOBUILD</Link>
+          <Link to={PATHS.learning}>Learning</Link>
+          <Link to={`${PATHS.home}#capabilities`}>Capabilities</Link>
+          <Link to={`${PATHS.home}#technology`}>Technology</Link>
+        </nav>
+        <nav aria-label="Project" className="footer-nav">
+          <p className="label">Project</p>
           <Link to={PATHS.about}>About</Link>
+          <Link to={PATHS.creator}>Creator</Link>
+          <Link to={PATHS.studio}>Colour Studio</Link>
+          <Link to={PATHS.motions}>Motion Lab</Link>
           <Link to={PATHS.privacy}>Privacy</Link>
+          <a href={REPO_URL} rel="noopener">Source code on GitHub</a>
         </nav>
       </div>
-      <div className="site-wrap"><p className="muted small copy">{PRODUCT_NAME} — original character and code, made by Muhammad Farhan Khan. Language-model replies come from the configured AI provider.</p></div>
+      <div className="site-wrap footer-base">
+        <p className="small">© {new Date().getFullYear()} {PRODUCT_NAME}. Original character and code. Replies come from the configured AI provider.</p>
+      </div>
     </footer>
   );
 }
@@ -142,6 +178,8 @@ export function SiteFooter() {
 export function SitePage({ children, className = '' }: { children: ReactNode; className?: string }) {
   return (
     <div className={`site ${className}`}>
+      {/* About, Privacy and 404 share the space environment, kept to the right of the reading column */}
+      {className.includes('doc-page') && <div className="doc-space" aria-hidden><SpaceField focus="full" /></div>}
       <a className="skip" href="#main">Skip to content</a>
       <SiteHeader />
       <main id="main" tabIndex={-1}>{children}</main>

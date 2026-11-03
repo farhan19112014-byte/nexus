@@ -19,7 +19,7 @@
  * cancels the running sequence. No network, no AI calls: Gemini never drives blinking, idle or timing.
  */
 
-export type MotionState = 'idle' | 'listening' | 'thinking' | 'speaking' | 'curious' | 'confused' | 'resting' | 'interrupted' | 'error' | 'acting';
+export type MotionState = 'idle' | 'greeting' | 'listening' | 'thinking' | 'speaking' | 'explaining' | 'waiting' | 'curious' | 'excited' | 'confused' | 'concerned' | 'resting' | 'interrupted' | 'error' | 'acting';
 
 /** Joint offsets this engine adds (radians; gaze in channel units). */
 export interface Pose {
@@ -62,17 +62,24 @@ export const STATE_POSES: Record<MotionState, Partial<Pose>> = {
   listening: { lean: deg(2.5), headNod: deg(2), headTilt: deg(3) },
   thinking: { headTilt: deg(-3), headNod: deg(-5), headTurn: deg(-5), gazeX: -0.2, gazeY: -0.25 },
   speaking: { headNod: deg(-1) },
+  /** a longer explanation: upright, open posture, more hand gestures */
+  explaining: { headNod: deg(-2), lean: deg(1.5), armLOut: deg(2), armROut: deg(2) },
+  /** asked the user something and waits for the answer: attentive, still */
+  waiting: { headTilt: deg(4), lean: deg(1.5), headNod: deg(1) },
   curious: { headTilt: deg(3), lean: deg(3), headNod: deg(-2) },
   confused: { headTilt: deg(-4), headTurn: deg(5), sway: deg(-1.5) },
   resting: { headNod: deg(8), lean: deg(-1.5), armLOut: deg(-1), armROut: deg(-1) },
   interrupted: {},
   error: { headNod: deg(6), lean: deg(-1) },
   acting: {},
+  greeting: { headTilt: deg(4), headNod: deg(-3), lean: deg(1.5) },
+  excited: { headNod: deg(-6), lean: deg(1), armLOut: deg(4), armROut: deg(4) },
+  concerned: { headNod: deg(7), headTilt: deg(-3), lean: deg(-1) },
 };
 /** How often a new sequence starts in each state [min, max] seconds (null = none). */
 export const STATE_RHYTHM: Record<MotionState, [number, number] | null> = {
-  idle: [3.5, 7.5], listening: [3, 6], thinking: [2.2, 4], speaking: [1.6, 3.2], curious: [2.5, 4.5], confused: [3, 5],
-  resting: [9, 16], interrupted: null, error: null, acting: null,
+  idle: [3.5, 7.5], listening: [3, 6], thinking: [2.2, 4], speaking: [1.6, 3.2], explaining: [1.1, 2.2], waiting: [4, 7], curious: [2.5, 4.5], confused: [3, 5],
+  resting: [9, 16], interrupted: null, error: null, acting: null, greeting: [1.2, 2], excited: [0.9, 1.6], concerned: [3.5, 6],
 };
 
 /* ------------------------------------------------------------------ primitives and sequences */
@@ -119,6 +126,18 @@ const SEQUENCES: Partial<Record<MotionState, { id: string; make: (rng: Rng) => P
     { id: 'explain', make: (r) => [PRIMITIVES.armGesture(r, 0.8), PRIMITIVES.nod(r, 0.5, 0.25)] },
     { id: 'beat-turn', make: (r) => [PRIMITIVES.headTurn(r, 0.4), PRIMITIVES.posture(r, 0.4)] },
   ],
+  explaining: [
+    { id: 'explain-left', make: (r) => [PRIMITIVES.armGesture(r, 1), PRIMITIVES.nod(r, 0.5, 0.25)] },
+    { id: 'explain-both', make: (r) => [PRIMITIVES.armGesture(r, 0.8), PRIMITIVES.armGesture(r, 0.7, 0.35), PRIMITIVES.headTilt(r, 0.4, 0.2)] },
+    { id: 'explain-beat', make: (r) => [PRIMITIVES.nod(r, 0.7), PRIMITIVES.headTurn(r, 0.3, 0.2)] },
+  ],
+  waiting: [{ id: 'wait-tilt', make: (r) => [PRIMITIVES.headTilt(r, 0.4)] }, { id: 'wait-blink-look', make: (r) => [PRIMITIVES.gazeShift(r, 0.3)] }],
+  greeting: [{ id: 'hello-nod', make: (r) => [PRIMITIVES.nod(r, 0.8), PRIMITIVES.headTilt(r, 0.6, 0.2)] }],
+  excited: [
+    { id: 'bounce-nod', make: (r) => [PRIMITIVES.nod(r, 1), PRIMITIVES.nod(r, 0.8, 0.45)] },
+    { id: 'happy-arms', make: (r) => [PRIMITIVES.armGesture(r, 0.9), PRIMITIVES.headTilt(r, 0.6, 0.1)] },
+  ],
+  concerned: [{ id: 'worried-shift', make: (r) => [PRIMITIVES.posture(r, 0.4), PRIMITIVES.gazeShift(r, 0.4, 0.3)] }],
   curious: [
     { id: 'curious-look', make: (r) => [PRIMITIVES.gazeShift(r, 0.7), PRIMITIVES.headTilt(r, 0.6, 0.2)] },
     { id: 'curious-lean', make: (r) => [PRIMITIVES.posture(r, 0.6), PRIMITIVES.nod(r, 0.4, 0.5)] },

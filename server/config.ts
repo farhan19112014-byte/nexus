@@ -3,6 +3,7 @@
  * runtime config file written through the Model panel (loopback only). Secrets are NEVER returned
  * to the browser — only "set/not set" and a 4-character hint.
  */
+import type { BudgetLimits, StoreEnv } from './budget';
 import { readFileSync, existsSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { z } from 'zod';
@@ -35,7 +36,9 @@ export interface ServerConfig {
   publicMode: boolean;
   /** browser origins allowed to call this API from another site (e.g. the GitHub Pages site), exact matches */
   allowedOrigins: string[];
-  budget: { chatsPerDay: number; chatsPerIpPerDay: number; speechCharsPerDay: number };
+  budget: BudgetLimits;
+  /** where the budget counters live (BUDGET_STORE, BUDGET_FILE, UPSTASH_REDIS_REST_URL/TOKEN) — see server/budget.ts */
+  budgetStore: StoreEnv;
   /** auto: compact prompt for local models; full / compact to force. */
   promptMode: 'auto' | 'full' | 'compact';
   /** optional server-side speech (text-to-speech and transcription) */
@@ -81,8 +84,9 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     allowedOrigins: (env.ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter((o) => /^https?:\/\/[^/\s]+$/i.test(o)),
     // 0 = unlimited (the default on your own computer); public hosts get conservative defaults
     budget: pub
-      ? { chatsPerDay: n(env.DAILY_CHAT_LIMIT, 400), chatsPerIpPerDay: n(env.DAILY_CHAT_LIMIT_PER_VISITOR, 60), speechCharsPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT, 20000) }
-      : { chatsPerDay: n(env.DAILY_CHAT_LIMIT, 0), chatsPerIpPerDay: n(env.DAILY_CHAT_LIMIT_PER_VISITOR, 0), speechCharsPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT, 0) },
+      ? { chatsPerDay: n(env.DAILY_CHAT_LIMIT, 400), chatsPerIpPerDay: n(env.DAILY_CHAT_LIMIT_PER_VISITOR, 60), speechCharsPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT, 20000), speechCharsPerIpPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR, 3000), transcriptionsPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT, 600), transcriptionsPerIpPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT_PER_VISITOR, 60) }
+      : { chatsPerDay: n(env.DAILY_CHAT_LIMIT, 0), chatsPerIpPerDay: n(env.DAILY_CHAT_LIMIT_PER_VISITOR, 0), speechCharsPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT, 0), speechCharsPerIpPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR, 0), transcriptionsPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT, 0), transcriptionsPerIpPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT_PER_VISITOR, 0) },
+    budgetStore: { BUDGET_STORE: env.BUDGET_STORE, BUDGET_FILE: env.BUDGET_FILE, UPSTASH_REDIS_REST_URL: env.UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN: env.UPSTASH_REDIS_REST_TOKEN },
     runtimeConfigPath: env.RUNTIME_CONFIG_PATH ?? 'data/runtime-config.json',
     promptMode: (['full', 'compact'].includes(env.PROMPT_MODE ?? '') ? env.PROMPT_MODE : 'auto') as ServerConfig['promptMode'],
     speech: readSpeechConfig(env),
@@ -151,7 +155,13 @@ export function configWarnings(c: ServerConfig): string[] {
   const t = c.speech.tts;
   if (t.provider === 'elevenlabs' && !t.apiKey) w.push('ElevenLabs voice selected but ELEVENLABS_API_KEY is missing — spoken replies will report an error.');
   if (t.provider === 'elevenlabs' && t.apiKey && !t.voice) w.push('ELEVENLABS_VOICE_ID is missing — choose a voice in Settings → Voice → Speech services, or set it in .env.');
-  if (c.publicMode) w.push(`Public mode: settings cannot be changed from the browser; daily limits — ${c.budget.chatsPerDay || '∞'} chats, ${c.budget.chatsPerIpPerDay || '∞'} per visitor, ${c.budget.speechCharsPerDay || '∞'} spoken characters.${c.allowedOrigins.length ? ` Other sites allowed: ${c.allowedOrigins.join(', ')}.` : ''}`);
+  if (c.publicMode) w.push(`Public mode: settings cannot be changed from the browser; daily limits — ${c.budget.chatsPerDay || '∞'} chats, ${c.budget.chatsPerIpPerDay || '∞'} per visitor, ${c.budget.speechCharsPerDay || '∞'} spoken characters (${c.budget.speechCharsPerIpPerDay || '∞'} per visitor), ${c.budget.transcriptionsPerDay || '∞'} voice inputs (${c.budget.transcriptionsPerIpPerDay || '∞'} per visitor).${c.allowedOrigins.length ? ` Other sites allowed: ${c.allowedOrigins.join(', ')}.` : ''}`);
+  if (c.publicMode) {
+    const b = c.budgetStore; const up = !!(b.UPSTASH_REDIS_REST_URL?.trim() && b.UPSTASH_REDIS_REST_TOKEN?.trim());
+    const kind = (b.BUDGET_STORE ?? '').trim().toLowerCase() || (up ? 'upstash' : 'file');
+    if (kind === 'upstash' && !up) w.push('BUDGET_STORE=upstash but UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are missing — AI and voice requests are refused until they are set.');
+    else if (kind !== 'upstash') w.push(`Daily usage counts are kept in ${kind === 'memory' ? 'memory' : (b.BUDGET_FILE || 'data/budget.json')}: a restart${kind === 'file' ? ' on a wiped disk (Render free plan spin-down)' : ''} starts the day's counts again. For durable counts set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.`);
+  }
   if (t.provider === 'none') w.push('No voice service configured — spoken replies use this computer\'s built-in voices. Set ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID for the ElevenLabs voice.');
   return w;
 }

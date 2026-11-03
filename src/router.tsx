@@ -5,15 +5,20 @@
 import { useEffect, useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from 'react';
 import { stripBase, withBase } from './webDemo';
 
-export type Route = 'home' | 'app' | 'about' | 'privacy' | 'sheet' | 'notfound';
-export const PATHS = { home: '/', app: '/app', about: '/about', privacy: '/privacy' } as const;
+export type Route = 'home' | 'app' | 'holobuild' | 'learning' | 'about' | 'creator' | 'studio' | 'motions' | 'privacy' | 'sheet' | 'notfound';
+export const PATHS = { home: '/', app: '/app', holobuild: '/holobuild', learning: '/learning', about: '/about', creator: '/creator', studio: '/studio', motions: '/motions', privacy: '/privacy' } as const;
 
 export function routeFor(pathname: string, search = ''): Route {
   if (new URLSearchParams(search).has('sheet')) return 'sheet'; // character sheet (dev/reference)
   const p = pathname.replace(/\/+$/, '') || '/';
   if (p === '/') return 'home';
   if (p === '/app' || p === '/settings') return 'app';
+  if (p === '/holobuild') return 'holobuild';
+  if (p === '/learning') return 'learning';
   if (p === '/about') return 'about';
+  if (p === '/creator') return 'creator';
+  if (p === '/studio') return 'studio';
+  if (p === '/motions') return 'motions';
   if (p === '/privacy') return 'privacy';
   return 'notfound';
 }
@@ -22,13 +27,30 @@ const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((f) => f());
 if (typeof window !== 'undefined') window.addEventListener('popstate', notify);
 const subscribe = (f: () => void) => { listeners.add(f); return () => { listeners.delete(f); }; };
-const snapshot = () => (typeof location === 'undefined' ? '/' : stripBase(location.pathname) + location.search + location.hash);
+/**
+ * Query routing (VITE_ROUTER=query) for static hosts that can only serve one page at an unknown path (e.g. a hosted
+ * preview): the route lives in ?p=/app instead of the pathname. Normal builds use real paths.
+ */
+export const QUERY_ROUTER = import.meta.env.VITE_ROUTER === 'query';
+/** in-app path (with optional ?query and #hash) → the href for this build */
+export function hrefFor(to: string) {
+  if (!QUERY_ROUTER || !to.startsWith('/')) return withBase(to);
+  const [pathq, hash = ''] = to.split('#'); const [path, q = ''] = pathq.split('?');
+  const sp = new URLSearchParams(q); if (path && path !== '/') sp.set('p', path);
+  const qs = sp.toString();
+  return `${location.pathname}${qs ? `?${qs}` : ''}${hash ? `#${hash}` : ''}`;
+}
+const snapshot = () => {
+  if (typeof location === 'undefined') return '/';
+  if (QUERY_ROUTER) { const sp = new URLSearchParams(location.search); const p = sp.get('p') || '/'; sp.delete('p'); const rest = sp.toString(); return p + (rest ? `?${rest}` : '') + location.hash; }
+  return stripBase(location.pathname) + location.search + location.hash;
+};
 
 export function useLocation() { return useSyncExternalStore(subscribe, snapshot, () => '/'); }
 
 /** Navigate inside the app. Hash-only targets on the same page scroll to the section (respecting reduced motion). */
 export function navigate(to: string, o: { replace?: boolean } = {}) {
-  const url = new URL(withBase(to), location.href);
+  const url = new URL(hrefFor(to), location.href);
   if (url.origin !== location.origin) { location.href = to; return; }
   const samePage = url.pathname === location.pathname && url.search === location.search;
   if (o.replace) history.replaceState(null, '', url); else history.pushState(null, '', url);
@@ -54,7 +76,7 @@ export function Link({ to, onClick, ...rest }: AnchorHTMLAttributes<HTMLAnchorEl
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     e.preventDefault(); navigate(to);
   };
-  return <a href={withBase(to)} onClick={handle} {...rest} />;
+  return <a href={hrefFor(to)} onClick={handle} {...rest} />;
 }
 
 /** Sets document.title for a page. */

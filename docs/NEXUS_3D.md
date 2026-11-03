@@ -63,7 +63,7 @@ While the model downloads, the stage says "Loading the 3D NEXUS…".
 The model is made of rigid parts on pivoted nodes (no skeleton, no animation clips). Two layers drive it:
 
 1. **Shared animation channels** (`rig3d.ts`) — the same engine as the 2D robot: expressions (eyes, brows, mouth, blinks),
-   gaze, speech mouth (audio level), and the gestures the AI or the user asks for (wave, nod…).
+   gaze, speech mouth (audio loudness + approximate lip shape from the spectrum), and the gestures the AI or the user asks for (wave, nod…).
 2. **3D Motion Engine** — the robot's own body language, which replaces the old 2D-style idle bob/arm sway and ambient
    motions when 3D is shown:
    - per-state base pose: idle, listening (leans in), thinking (looks up, tilts), speaking, curious, confused, resting,
@@ -82,7 +82,7 @@ The state comes from the companion's real state machine (`companion.ts → runti
 request is pending, "speaking" only while speech audio plays, "curious" while you type a question, "confused" when a reply
 came back empty or unreadable. No AI call drives any of it. Reduced motion turns the procedural layer off.
 
-Limits (honest): the mouth follows speech loudness (no phoneme visemes); there are no fingers or torso-vs-hips joint, so
+Limits (honest): the mouth follows the playing audio's loudness, with an approximate rounded/wide lip shape from its spectrum (no phoneme visemes); there are no fingers or torso-vs-hips joint, so
 "lean" bends at the hips; a skinned rig with a spine and fingers would be the next asset step for richer gestures.
 
 ## Using the model in another website

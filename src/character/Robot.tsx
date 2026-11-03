@@ -8,7 +8,9 @@
  * React renders the static structure; `CharacterRig.apply(values)` updates transforms each frame
  * through refs, so animation never triggers React re-renders.
  */
-import { forwardRef, useEffect, useId, useImperativeHandle, useRef } from 'react';
+import { usePalette } from '../theme/usePalette';
+import { themeSkin } from '../theme/robotSkin';
+import { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef } from 'react';
 import type { Channel } from '../../shared/channels';
 import { COLORS, GLOW, RADII, STROKES, skinFor, type RobotSkin } from './tokens';
 import { useResolvedTheme } from '../themeHook';
@@ -38,6 +40,8 @@ export interface RigHandle {
   setMotion?(state: import('../character3d/motion3d').MotionState, reduced: boolean): void;
   /** 3D robot only: true while its procedural motion is still moving (keeps the frame rate up) */
   busy?(): boolean;
+  /** 3D robot only: the full-body animation layers for this frame (the 2D rig ignores them) */
+  setBody?(o: import('../character3d/body/controller').BodyOutput): void;
 }
 
 type Refs = Record<string, SVGElement | null>;
@@ -55,7 +59,8 @@ export const Robot = forwardRef<RigHandle, RobotProps>(function Robot(props, ref
   const glow = effects ? `url(#glow-${uid})` : undefined;
   const theme = useResolvedTheme();
   const variant = props.skin ?? theme;
-  const K = skinFor(variant);
+  const pal = usePalette();
+  const K = useMemo(() => themeSkin(skinFor(variant), pal), [variant, pal]);
   const skinRef = useRef(K); skinRef.current = K;
   const ind = useRef<Indicator>('idle');
   // re-colour the state lights (set imperatively) when the skin changes

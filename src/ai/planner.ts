@@ -6,7 +6,8 @@ import type { RunStep } from '../core/skillRunner';
 export interface PlannedStep extends RunStep { timing: 'before_speech' | 'with_speech' | 'after_speech'; reason?: string }
 export interface Plan { before: PlannedStep[]; during: PlannedStep[]; after: PlannedStep[]; notes: string[]; unsupported: { request: string; reason: string }[] }
 const CONTEXT_DEFAULTS: Record<string, string> = { greeting: 'wave', farewell: 'wave', agreement: 'nod', celebration: 'clap', thinking: 'think_chin', apology: 'head_forward' };
-const ALIASES: Record<string, string> = { hello: 'wave', point_at: 'point', jump: 'bounce', hop: 'bounce', think: 'think_chin', tilt_head: 'head_tilt', walk: 'walk_across', yes: 'nod', no: 'shake_head' };
+const ALIASES: Record<string, string> = { hello: 'wave', point_at: 'point', hop: 'bounce', think: 'think_chin', tilt_head: 'head_tilt', walk: 'walk_across', yes: 'nod', no: 'shake_head',
+  flip: 'backflip', back_flip: 'backflip', somersault: 'backflip', roll: 'forward_roll', laughing: 'laugh', laughter: 'laugh', thumbsup: 'thumbs_up', spin: 'turn_around', dancing: 'dance', excitement: 'excited', surprise: 'surprised', confusion: 'confused', curiosity: 'curious' };
 
 export function resolveSkill(raw: string, reg: SkillRegistry): string | null {
   const id = raw.trim().toLowerCase().replace(/[\s-]+/g, '_');

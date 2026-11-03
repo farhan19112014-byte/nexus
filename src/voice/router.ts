@@ -45,8 +45,10 @@ export class VoiceOutputRouter implements SpeechOut {
     // one combined lifecycle: start once, idle only when neither engine is speaking
     let on = false;
     const start = () => { if (!on) { on = true; this.h.onStart?.(); } };
-    const idle = () => { setTimeout(() => { if (on && !this.speaking) { on = false; this.h.onIdle?.(); } }, 0); };
-    const hooks: TTSHooks = { onStart: start, onIdle: idle, onWord: (w) => this.h.onWord?.(w), onLevel: (l) => this.h.onLevel?.(l) };
+    // idle is reported even when no audio ever started (the voice failed or was refused before playing): otherwise the
+    // robot would wait in SPEAKING for audio that never comes. onIdle is idempotent for the companion.
+    const idle = () => { setTimeout(() => { if (!this.speaking) { on = false; this.h.onIdle?.(); } }, 0); };
+    const hooks: TTSHooks = { onStart: start, onIdle: idle, onWord: (w) => this.h.onWord?.(w), onLevel: (l, sh) => this.h.onLevel?.(l, sh) };
     this.browser.hooks = hooks; this.server.hooks = hooks;
   }
   voices() { return this.browser.voices(); }

@@ -1,11 +1,13 @@
 /** Minimal promise wrapper over IndexedDB (local-first persistence). Falls back to memory. */
-export type StoreName = 'skills' | 'feedback' | 'memory' | 'summaries' | 'kv' | 'log' | 'chats' | 'reminders';
+export type StoreName = 'skills' | 'feedback' | 'memory' | 'summaries' | 'kv' | 'log' | 'chats' | 'reminders'
+  // v3: HOLOBUILD models + imported files; learning engine (knowledge, experiences, research reports, workflow skills, audit log)
+  | 'holo' | 'holoFiles' | 'knowledge' | 'experiences' | 'research' | 'wskills' | 'audit';
 
 /** Thrown by stores when persistence fails, so callers can report instead of claiming success. */
 export class StorageError extends Error {}
 
 const DB_NAME = 'nexus-companion-2d';
-const DB_VERSION = 2; // v2 adds 'chats' and 'reminders' (existing data is kept)
+const DB_VERSION = 3; // v2 adds 'chats' and 'reminders'; v3 adds HOLOBUILD + learning stores (existing data is kept)
 
 export interface KV { get<T>(store: StoreName, key: IDBValidKey): Promise<T | undefined>; put<T>(store: StoreName, value: T, key?: IDBValidKey): Promise<void>; del(store: StoreName, key: IDBValidKey): Promise<void>; all<T>(store: StoreName): Promise<T[]>; clear(store: StoreName): Promise<void>; readonly persistent: boolean }
 
@@ -29,6 +31,9 @@ class IDBStore implements KV {
         if (!db.objectStoreNames.contains('log')) db.createObjectStore('log', { keyPath: 'id', autoIncrement: true });
         if (!db.objectStoreNames.contains('chats')) db.createObjectStore('chats', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('reminders')) db.createObjectStore('reminders', { keyPath: 'id' });
+        for (const s of ['holo', 'knowledge', 'experiences', 'research', 'wskills'] as const) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s, { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('holoFiles')) db.createObjectStore('holoFiles');
+        if (!db.objectStoreNames.contains('audit')) db.createObjectStore('audit', { keyPath: 'id', autoIncrement: true });
       };
       open.onsuccess = () => { const db = open.result; db.onversionchange = () => db.close(); res(db); };
       open.onblocked = () => console.warn('[nexus] storage upgrade is waiting for another NEXUS tab to close.');

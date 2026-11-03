@@ -1,3 +1,7 @@
+# Publishes the website to GitHub Pages at https://<user>.github.io/<repo>/ on every push to main.
+# With the repository variable NEXUS_API_URL set (Settings → Secrets and variables → Actions → Variables, e.g.
+# https://nexus-xxxx.onrender.com) the site talks to that hosted NEXUS server (Gemini, voice). Without it, it is the
+# offline web demo (the scripted demo brain, labelled "not an AI").
 name: Web demo (GitHub Pages)
 on:
   push:
@@ -24,9 +28,11 @@ jobs:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
       - run: npx vite build
         env:
-                       VITE_WEB_DEMO: ${{ vars.NEXUS_API_URL == '' && '1' || '0' }}
-             VITE_API_BASE: ${{ vars.NEXUS_API_URL }}
+          VITE_WEB_DEMO: ${{ vars.NEXUS_API_URL == '' && '1' || '0' }}
+          VITE_API_BASE: ${{ vars.NEXUS_API_URL }}
           NEXUS_BASE: /${{ github.event.repository.name }}/
+          NEXUS_META_CSP: '1'
+      # single-page app: unknown paths (/nexus/app, /nexus/about…) fall back to the app shell
       - run: cp dist/index.html dist/404.html
       - uses: actions/upload-pages-artifact@v3
         with:
@@ -40,4 +46,3 @@ jobs:
     steps:
       - id: deployment
         uses: actions/deploy-pages@v4
-

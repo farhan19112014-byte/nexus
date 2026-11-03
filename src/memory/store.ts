@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import { DEFAULT_ROBOT_NAME, effectiveRobotName } from '../../shared/identity';
-import { MEMORY_CATEGORIES, type MemoryCandidate } from '../../shared/schema';
+import { MEMORY_CATEGORIES, PersonalitySchema, type MemoryCandidate } from '../../shared/schema';
 import { StorageError, type KV } from '../storage/db';
 import { jaccard, rankMemories } from './retrieval';
 import { looksSensitive } from '../security/validation';
@@ -31,6 +31,8 @@ export const SETTINGS_VERSION = 4;
 export const SettingsSchema = z.object({
   memoryEnabled: z.boolean().default(true),
   responseStyle: z.enum(['concise', 'balanced', 'detailed']).default('balanced'),
+  /** tone only (humour, energy, curiosity, formality) — never safety, honesty or the voice */
+  personality: PersonalitySchema.prefault({}),
   language: z.string().max(40).default('English'),
   animationIntensity: z.number().min(0.3).max(1.3).default(1),
   voiceOutput: z.boolean().default(true),
@@ -78,6 +80,8 @@ export const SettingsSchema = z.object({
   dailyGreeting: z.boolean().default(true).catch(true),
   lastGreetDay: z.string().max(10).default('').catch(''),
   theme: z.enum(['dark', 'light', 'system']).default('dark').catch('dark'),
+  /** Colour Studio: two colours a theme is generated from (null = the original NEXUS colours) */
+  palette: z.object({ a: z.string().regex(/^#[0-9a-f]{6}$/), b: z.string().regex(/^#[0-9a-f]{6}$/) }).refine((p) => p.a !== p.b).nullable().default(null).catch(null),
   ambientBehaviours: z.boolean().default(true).catch(true),
   setupDone: z.boolean().default(false).catch(false),
   robotSize: z.enum(['small', 'medium', 'large']).default('medium').catch('medium'),
@@ -89,7 +93,7 @@ export const SettingsSchema = z.object({
   settingsVersion: z.number().int().default(SETTINGS_VERSION).catch(SETTINGS_VERSION),
 });
 /** Settings that "Reset personalization" restores (everything else — memories, skills, model, privacy — is untouched). */
-export const PERSONALIZATION_KEYS = ['robotName', 'defaultExpression', 'greetingStyle', 'greetEverySession', 'idleLevel', 'speakingMouth', 'animationIntensity', 'environment', 'effects', 'accessories', 'playfulReactions', 'completionReaction', 'theme', 'ambientBehaviours', 'robotSize', 'layout'] as const;
+export const PERSONALIZATION_KEYS = ['robotName', 'defaultExpression', 'greetingStyle', 'greetEverySession', 'idleLevel', 'speakingMouth', 'animationIntensity', 'environment', 'effects', 'accessories', 'playfulReactions', 'completionReaction', 'theme', 'palette', 'ambientBehaviours', 'robotSize', 'layout'] as const;
 export type Settings = z.infer<typeof SettingsSchema>;
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});
 

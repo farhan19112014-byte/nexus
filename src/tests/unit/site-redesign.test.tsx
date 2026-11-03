@@ -37,23 +37,24 @@ describe('[A126] robot style', () => {
 
 describe('[A126] startup transition', () => {
   const overlay = () => { const b = document.createElement('div'); b.id = 'boot'; document.body.append(b); return b; };
-  it('[A126] stays at least ~1 s on a first visit, then fades and is removed once the page has rendered', () => {
-    vi.useFakeTimers(); sessionStorage.clear();
+  it('[A126] stays at least ~0.6 s on a first visit, then fades, is removed, and releases the entrance animation', () => {
+    vi.useFakeTimers(); sessionStorage.clear(); document.documentElement.classList.add('booting');
     const b = overlay(); const main = document.createElement('main'); main.id = 'main'; document.body.append(main);
     finishBoot();
-    vi.advanceTimersByTime(600); expect(b.classList.contains('done')).toBe(false);
-    vi.advanceTimersByTime(600); expect(b.classList.contains('done')).toBe(true);
+    vi.advanceTimersByTime(400); expect(b.classList.contains('done')).toBe(false);
+    vi.advanceTimersByTime(300); expect(b.classList.contains('done')).toBe(true);
+    expect(document.documentElement.classList.contains('booting')).toBe(false); expect(document.documentElement.classList.contains('booted')).toBe(true);
     vi.advanceTimersByTime(600); expect(document.getElementById('boot')).toBeNull();
   });
-  it('[A126] waits for the robot to be drawn, but never longer than ~2.6 s', () => {
+  it('[A126] waits for the robot to be drawn, but never longer than ~1.5 s (a slow 3D download never holds the page)', () => {
     vi.useFakeTimers(); sessionStorage.clear();
     const b = overlay(); const main = document.createElement('main'); main.id = 'main'; main.innerHTML = '<div class="hero-robot"><div class="robot3d"></div></div>'; document.body.append(main);
     finishBoot();
-    vi.advanceTimersByTime(1500); expect(b.classList.contains('done')).toBe(false);          // 3D model not ready yet
+    vi.advanceTimersByTime(900); expect(b.classList.contains('done')).toBe(false);           // 3D model not ready yet
     main.querySelector('.robot3d')!.setAttribute('data-ready', '1');
     vi.advanceTimersByTime(100); expect(b.classList.contains('done')).toBe(true);
-    sessionStorage.clear(); const b2 = overlay(); b2.id = 'boot'; document.getElementById('main')!.innerHTML = '<div class="hero-robot"><div class="robot3d"></div></div>';
-    b.remove(); finishBoot(); vi.advanceTimersByTime(2700); expect(b2.classList.contains('done')).toBe(true);
+    sessionStorage.clear(); const b2 = overlay(); document.getElementById('main')!.innerHTML = '<div class="hero-robot"><div class="robot3d"></div></div>';
+    b.remove(); finishBoot(); vi.advanceTimersByTime(1600); expect(b2.classList.contains('done')).toBe(true);
   });
   it('[A126] later loads in the same tab do not hold the page', () => {
     vi.useFakeTimers(); sessionStorage.setItem('nexus-booted', '1');
@@ -65,7 +66,7 @@ describe('[A126] startup transition', () => {
 describe('[A126] public pages', () => {
   it('[A126] every demo state uses a real built-in expression and an honest description', () => {
     const ids = new Set(BUILTIN_EXPRESSIONS.map((e) => e.id));
-    expect(DEMO_STATES.map((d) => d.id)).toEqual(['idle', 'listening', 'thinking', 'speaking', 'curious', 'confused', 'resting', 'error']);
+    expect(DEMO_STATES.map((d) => d.id)).toEqual(['idle', 'listening', 'thinking', 'speaking', 'greeting', 'curious', 'excited', 'confused', 'concerned', 'resting', 'error']);
     for (const d of DEMO_STATES) { if (d.face) expect(ids.has(d.face)).toBe(true); expect(d.note.length).toBeGreaterThan(10); }
   });
   const render = async (C: () => React.JSX.Element) => { const el = document.createElement('div'); document.body.append(el); const r = createRoot(el); await act(async () => { r.render(<C />); }); const text = el.textContent ?? ''; await act(async () => { r.unmount(); }); return text; };

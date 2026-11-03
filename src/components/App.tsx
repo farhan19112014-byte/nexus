@@ -14,9 +14,16 @@ import StatusPanel from './StatusPanel';
 import { ChatsPanel, RemindersPanel } from './CompanionPanels';
 import { applyCssTokens } from '../character/tokens';
 import { ThemeToggle } from './ThemeToggle';
+import { StudioLink } from './StudioLink';
+import { SpaceField } from '../space/SpaceField';
+import type { Mood } from '../space/spaceScene';
+/** the robot's state, as the space environment feels it */
+const spaceMood = (s: string, listening: boolean): Mood => (listening || s === 'listening' ? 'listening' : s === 'processing' ? 'thinking' : s === 'speaking' || s === 'responding' ? 'speaking' : s === 'error' ? 'error' : 'idle');
+import { SystemPanel } from '../space/SystemPanel';
 import { RenameDialog, RENAME_EVENT, openRenameDialog } from './RenameDialog';
 import { SetupWizard } from './SetupWizard';
-import { Link, PATHS, useTitle } from '../router';
+import { Link, PATHS, navigate, useTitle } from '../router';
+import { isChatBuildRequest } from '../holobuild/intent';
 import { Logo } from '../site/Site';
 import { PRODUCT_NAME } from '../../shared/identity';
 
@@ -55,6 +62,21 @@ export default function App() {
   const openTab = (t: Tab) => { setTab(t); setSide(true); };
   const s = memory.settings;
   useEffect(() => { applyCssTokens(); void companion.init(); }, []);
+  // optional startup sound: once per session, on the first interaction (never autoplayed)
+  useEffect(() => {
+    const first = () => { try { if (sessionStorage.getItem('nexus-startup-sound')) return; sessionStorage.setItem('nexus-startup-sound', '1'); } catch { /* storage blocked */ } companion.ui.play('startup'); };
+    window.addEventListener('pointerdown', first, { once: true }); return () => window.removeEventListener('pointerdown', first);
+  }, []);
+  // "build a 3D model of …" in the conversation opens HOLOBUILD and builds it there (the robot comes along)
+  useEffect(() => {
+    companion.intercept = (t) => {
+      if (!isChatBuildRequest(t)) return false;
+      companion.announce('Opening HOLOBUILD to build that…', { speak: false });
+      navigate(PATHS.holobuild); void import('../holobuild/instance').then(({ holo }) => holo.command(t));
+      return true;
+    };
+    return () => { companion.intercept = null; };
+  }, []);
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
@@ -91,17 +113,23 @@ export default function App() {
           {llm && <span className={`badge cap-${snap.connection.state === 'failed' ? 'unavailable' : llm.state}`} title={`${llm.detail} — ${snap.connection.detail}${snap.connection.at ? ` (${new Date(snap.connection.at).toLocaleTimeString()})` : ''}`} data-testid="ai-chip">
             {snap.caps?.provider === 'web-demo' ? 'web demo · not an LLM' : snap.caps?.provider === 'local-demo' ? 'server offline' : snap.caps?.isLLM ? `${snap.caps.model ?? 'LLM'} · ${snap.connection.state === 'ok' ? 'connected' : snap.connection.state === 'failed' ? 'last request failed' : 'not checked yet'}` : 'demo brain · not an LLM'}
           </span>}
+          {snap.activity && <span className="badge cap-operational activity-chip" role="status" data-testid="activity-chip" title="Real work in progress">{snap.activity.kind}: {snap.activity.label.slice(0, 40)}</span>}
           {s.quietMode && <span className="badge">quiet</span>}
           {s.research && <span className={`badge ${snap.caps?.research.configured ? 'cap-operational' : 'cap-needs_config'}`}>research {snap.caps?.research.configured ? 'on' : 'unavailable'}</span>}
         </div>
-        <ThemeToggle />
+        <nav className="app-links" aria-label="Workspaces"><Link to={PATHS.holobuild} className="btn btn-ghost" title="HOLOBUILD — build and explore 3D models" aria-label="HOLOBUILD"><Icon name="cube" /><span>HOLOBUILD</span></Link><Link to={PATHS.learning} className="btn btn-ghost" title="What NEXUS has learned, its research and skills" aria-label="Learning"><Icon name="book" /><span>Learning</span></Link></nav>
+        <StudioLink /><ThemeToggle />
         {robotMode
           ? <button className="menu-toggle" onClick={() => setSide(!side)} aria-expanded={side} aria-controls="side" title="Conversation, skills, memory, settings (Alt+P)"><Icon name="menu" /> Menu</button>
           : <button className="link" onClick={() => setSide(!side)} aria-expanded={side} aria-controls="side" title="Alt+P">{side ? 'Hide panel' : drawerMode ? 'Skills · Memory · Settings' : 'Show panel'}</button>}
       </header>
       <main className={`layout ${side && !drawerMode ? '' : 'no-side'}${robotMode ? ' robot-layout' : ''}`}>
         {robotMode
-          ? <ErrorBoundary area="robot view"><RobotView onOpenConversation={() => openTab('conversation')} /></ErrorBoundary>
+          ? <>
+              {!s.highContrast && <SpaceField focus="right" className="robot-space" reducedMotion={s.reducedMotion} mood={spaceMood(snap.state, snap.listening)} />}
+              <ErrorBoundary area="robot view"><RobotView onOpenConversation={() => openTab('conversation')} /></ErrorBoundary>
+              {!s.highContrast && <SystemPanel />}
+            </>
           : <div className="companion"><ErrorBoundary area="robot view" compact><Stage /></ErrorBoundary><ErrorBoundary area="chat"><ChatPanel /></ErrorBoundary></div>}
         {side && drawerMode && <button className="backdrop" aria-label="Close panel" tabIndex={-1} onClick={() => setSide(false)} />}
         {side && (

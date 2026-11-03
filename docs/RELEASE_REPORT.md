@@ -1,24 +1,41 @@
 # NEXUS — Release readiness & acceptance report
 
-Generated 2026-10-26T15:24:49.800Z by `npm run report` from actual command results. Do not edit by hand.
+Generated 2026-11-02T12:48:05.501Z by `npm run report` from actual command results. Do not edit by hand.
 
 ## Summary
 
 | | |
 |---|---|
-| Overall | **All checks passed** |
-| typecheck | ✅ pass · 9.4s |
-| build (app + server bundle) | ✅ pass · 15.8s |
-| lint (eslint, 0 warnings) | ✅ pass · 6.5s |
-| unit + integration tests | ✅ pass · 37.5s |
-| end-to-end tests | ✅ pass · 333.2s |
-| desktop app smoke test | ✅ pass · 2.8s |
-| Unit tests | 145/145 passed |
-| Integration tests | 56/56 passed |
-| End-to-end checks | 122/122 passed |
-| Assets | 127 verified · 0 implemented but not fully verified · 0 failing · 0 blocked · 0 not done |
+| Overall | **Some checks failed — see below** |
+| typecheck | ✅ pass · 16.6s |
+| build (app + server bundle) | ✅ pass · 23.9s |
+| lint (eslint, 0 warnings) | ✅ pass · 11.0s |
+| unit + integration tests | ✅ pass · 57.5s |
+| end-to-end tests | ❌ fail (exit 1) · 904.7s |
+| desktop app smoke test | ✅ pass · 26.6s |
+| Unit tests | 223/223 passed |
+| Integration tests | 70/70 passed |
+| End-to-end checks | 156/158 passed |
+| Assets | 140 verified · 0 implemented but not fully verified · 4 failing · 0 blocked · 0 not done |
 
 **Status meanings.** *verified*: implemented and every test tagged with the asset id passed in this run. *implemented*: code exists but at least one required verification is missing in this run. *failing*: a tagged test failed. Verification uses headless Chromium and mocked external services; see each asset's limitation for what that does not prove.
+
+## Failures
+
+### end-to-end tests
+
+```
+✔ [A136] the Learning overview shows counted metrics (1 knowledge note, 1 research report) and states that the AI model is not retrained — 1knowledge notes1 pending1research reports1 sources · today 1/51experiences1 not reflected on yet0reflections0workflow skills0 approved · 0 runs—replies rated h
+✔ [A136] no page errors on the Learning page
+✔ [A112] [A88] axe accessibility audit: no serious or critical issues on any page, dark and light
+✔ [A98] no uncaught page errors during the run
+✔ [UAT-S1] the Content-Security-Policy never blocked anything the app needs (no violations on any page in this run)
+156/158 browser checks passed
+```
+
+Failing tests:
+- [A127] performance measured: the 3D robot page keeps rendering in software WebGL (threshold: above 5 fps; no GPU in the test machine, so the number depends on machine load)
+- [A99] bundle size is modest (< 900 KB of JS before gzip, excluding the on-demand 3D chunks)
 
 ## Asset registry
 
@@ -88,7 +105,7 @@ Generated 2026-10-26T15:24:49.800Z by `npm run report` from actual command resul
 |---|---|---|---|---|---|
 | A41 | LLM Provider Interface | ✅ verified | 2/0 | `server/providers/types.ts`, `server/providers/openai.ts`, `server/providers/anthropic.ts` |  |
 | A42 | Secure Backend Integration | ✅ verified | 3/0 | `server/app.ts`, `server/config.ts` |  |
-| A43 | Streaming Responses | ✅ verified | 6/0 | `server/brainService.ts`, `shared/streamParser.ts`, `src/ai/apiClient.ts` | Verified against mock OpenAI/Anthropic streams; not against a live paid API in this build. |
+| A43 | Streaming Responses | ✅ verified | 7/0 | `server/brainService.ts`, `shared/streamParser.ts`, `src/ai/apiClient.ts` | Verified against mock OpenAI/Anthropic streams; not against a live paid API in this build. |
 | A44 | Conversation Context Manager | ✅ verified | 2/0 | `src/ai/context.ts`, `server/brainService.ts` |  |
 | A45 | System Instruction Manager | ✅ verified | 1/0 | `server/prompts/system.ts` |  |
 | A46 | Conversation Cancellation | ✅ verified | 4/0 | `src/core/companion.ts`, `src/ai/apiClient.ts`, `server/app.ts` |  |
@@ -108,7 +125,7 @@ Generated 2026-10-26T15:24:49.800Z by `npm run report` from actual command resul
 | A55 | Memory Inspection Interface | ✅ verified | 2/0 | `src/components/MemoryPanel.tsx` |  |
 | A56 | Memory Editing and Deletion | ✅ verified | 2/0 | `src/memory/store.ts`, `src/components/MemoryPanel.tsx` |  |
 | A57 | User Preference Profile | ✅ verified | 2/0 | `src/memory/store.ts`, `src/components/SettingsPanel.tsx` |  |
-| A58 | Context and Memory Boundaries | ✅ verified | 1/0 | `docs/PRIVACY.md`, `src/components/MemoryPanel.tsx` |  |
+| A58 | Context and Memory Boundaries | ✅ verified | 2/0 | `docs/PRIVACY.md`, `src/components/MemoryPanel.tsx` |  |
 | A59 | Memory Conflict Resolution | ✅ verified | 1/0 | `src/memory/store.ts` |  |
 | A60 | Memory Import and Export | ✅ verified | 1/0 | `src/memory/store.ts` |  |
 
@@ -148,7 +165,7 @@ Generated 2026-10-26T15:24:49.800Z by `npm run report` from actual command resul
 |---|---|---|---|---|---|
 | A81 | Microphone Permission Controller | ✅ verified | 1/0 | `src/voice/mic.ts` | Real permission prompts cannot be exercised in headless CI. |
 | A82 | Speech Recognition | ✅ verified | 2/0 | `src/voice/recognition.ts` | Logic tested with a fake recognizer; real recognition depends on the browser (Chrome/Edge/Safari). |
-| A83 | Text-to-Speech | ✅ verified | 1/0 | `src/voice/tts.ts` | Logic tested with a fake speechSynthesis; real voices depend on the OS/browser. |
+| A83 | Text-to-Speech | ✅ verified | 2/0 | `src/voice/tts.ts` | Logic tested with a fake speechSynthesis; real voices depend on the OS/browser. |
 | A84 | Voice Interruption | ✅ verified | 2/0 | `src/core/companion.ts`, `src/voice/recognition.ts` |  |
 | A85 | Main Companion Workspace | ✅ verified | 1/0 | `src/components/App.tsx`, `src/components/Stage.tsx` |  |
 | A86 | Conversation History Interface | ✅ verified | 1/0 | `src/components/ChatPanel.tsx` |  |
@@ -166,11 +183,11 @@ Generated 2026-10-26T15:24:49.800Z by `npm run report` from actual command resul
 | A93 | Input and Output Validation | ✅ verified | 1/0 | `shared/schema.ts`, `src/security/validation.ts` |  |
 | A94 | Abuse and Resource Limits | ✅ verified | 2/0 | `shared/schema.ts`, `server/app.ts`, `src/animation/engine.ts` |  |
 | A95 | Observability and Diagnostics | ✅ verified | 1/0 | `src/diagnostics/log.ts`, `src/components/StatusPanel.tsx` |  |
-| A96 | Automated Unit Tests | ✅ verified | 145/0 | `src/tests/unit` |  |
-| A97 | Integration Tests | ✅ verified | 56/0 | `src/tests/integration` |  |
-| A98 | End-to-End Tests | ✅ verified | 122/0 | `scripts/e2e.mjs` |  |
-| A99 | Performance and Compatibility | ✅ verified | 6/0 | `scripts/e2e.mjs`, `src/core/characterRuntime.ts` |  |
-| A100 | Release Readiness and Acceptance Report | ✅ verified | 6/0 | `scripts/report.mjs`, `docs/RELEASE_REPORT.md` |  |
+| A96 | Automated Unit Tests | ✅ verified | 223/0 | `src/tests/unit` |  |
+| A97 | Integration Tests | ✅ verified | 70/0 | `src/tests/integration` |  |
+| A98 | End-to-End Tests | ❌ failing | 156/2 | `scripts/e2e.mjs` |  |
+| A99 | Performance and Compatibility | ❌ failing | 5/1 | `scripts/e2e.mjs`, `src/core/characterRuntime.ts` |  |
+| A100 | Release Readiness and Acceptance Report | ❌ failing | 5/1 | `scripts/report.mjs`, `docs/RELEASE_REPORT.md` |  |
 
 ### Website, identity & personalization
 
@@ -184,7 +201,7 @@ Generated 2026-10-26T15:24:49.800Z by `npm run report` from actual command resul
 | A106 | Safe Markdown Replies | ✅ verified | 8/0 | `src/components/Markdown.tsx` |  |
 | A107 | Saved Chats and Search | ✅ verified | 6/0 | `src/core/chats.ts`, `src/components/CompanionPanels.tsx` |  |
 | A108 | Regenerate, Edit and Copy | ✅ verified | 4/0 | `src/components/ChatPanel.tsx`, `src/core/companion.ts` |  |
-| A109 | Reminders and Timers (on device) | ✅ verified | 11/0 | `src/core/reminders.ts`, `src/components/CompanionPanels.tsx` |  |
+| A109 | Reminders and Timers (on device) | ✅ verified | 12/0 | `src/core/reminders.ts`, `src/components/CompanionPanels.tsx` |  |
 | A110 | Liveliness: Typing Attention, Ambient Behaviours, Daily Greeting | ✅ verified | 4/0 | `src/core/companion.ts`, `src/animation/builtinMotions.ts` |  |
 | A111 | Light Theme | ✅ verified | 2/0 | `src/theme.ts`, `src/components/styles.css` |  |
 | A112 | Lint and Automated Accessibility Audit | ✅ verified | 2/0 | `eslint.config.js`, `scripts/e2e.mjs` |  |
@@ -193,21 +210,53 @@ Generated 2026-10-26T15:24:49.800Z by `npm run report` from actual command resul
 | A116 | End-to-end User Journey (spec §23) | ✅ verified | 1/0 | `scripts/e2e.mjs` |  |
 | A117 | One Desktop App (NEXUS.exe) + in-app model download | ✅ verified | 2/0 | `desktop/main.cjs`, `src/components/OllamaDownload.tsx` |  |
 | A118 | Master-prompt Pass: Containment, Icons, Motions, Read-aloud | ✅ verified | 8/0 | `src/components/ErrorBoundary.tsx`, `src/components/Icon.tsx`, `src/animation/builtinMotions.ts` |  |
-| A119 | Robot-first Voice Experience: server TTS/STT, audio lip-sync, PAUSED/RECOVERING | ✅ verified | 27/0 | `src/components/RobotView.tsx`, `src/voice/serverVoice.ts`, `src/voice/router.ts`, `server/speech.ts` |  |
+| A119 | Robot-first Voice Experience: server TTS/STT, audio lip-sync, PAUSED/RECOVERING | ✅ verified | 30/0 | `src/components/RobotView.tsx`, `src/voice/serverVoice.ts`, `src/voice/router.ts`, `server/speech.ts` |  |
 | A120 | Google Gemini brain (official @google/genai SDK) + youthful browser-voice preset | ✅ verified | 3/0 | `server/providers/gemini.ts`, `server/config.ts`, `src/voice/tts.ts`, `src/components/SettingsPanel.tsx` |  |
-| A121 | ElevenLabs voice: /api/speech, account voice picker, no silent voice substitution | ✅ verified | 2/0 | `server/speech.ts`, `server/app.ts`, `src/voice/router.ts`, `src/components/SettingsPanel.tsx` |  |
+| A121 | ElevenLabs voice: /api/speech, account voice picker, no silent voice substitution | ✅ verified | 3/0 | `server/speech.ts`, `server/app.ts`, `src/voice/router.ts`, `src/components/SettingsPanel.tsx` |  |
 | A122 | Master-prompt pass: editable persona file, speech-safe text, typed robot events, speech volume, secret-safe memory | ✅ verified | 8/0 | `server/prompts/persona.ts`, `src/voice/speakable.ts`, `src/core/robotEvents.ts`, `src/security/validation.ts` |  |
 | A123 | Light mode: white and light-blue NEXUS robot, sky-blue site, one-click theme switch | ✅ verified | 6/0 | `src/character/tokens.ts`, `src/character/Robot.tsx`, `src/components/ThemeToggle.tsx`, `src/site/site.css` |  |
-| A124 | Hosted NEXUS: public mode, Render blueprint, CORS for the Pages site, daily quota budgets, wake-up notice | ✅ verified | 4/0 | `server/budget.ts`, `server/app.ts`, `render.yaml`, `src/webDemo.ts` |  |
+| A124 | Hosted NEXUS: public mode, Render blueprint, CORS for the Pages site, daily quota budgets, wake-up notice | ✅ verified | 24/0 | `server/budget.ts`, `server/app.ts`, `render.yaml`, `src/webDemo.ts` |  |
 | A125 | 3D NEXUS: rigged GLB model, three.js renderer driven by the same animation channels, 2D/3D switch | ✅ verified | 7/0 | `tools/nexus3d/build-model.mjs`, `public/models/nexus.glb`, `src/character3d/Robot3D.tsx`, `src/character3d/rig3d.ts` |  |
-| A126 | Website redesign: the real 3D NEXUS in the landing hero, state demo (idle…error), startup transition, About and Privacy | ✅ verified | 21/0 | `src/site/Landing.tsx`, `src/site/PreviewRobot.tsx`, `src/character3d/webgl.ts`, `src/boot.ts`, `src/site/Pages.tsx` |  |
-| A127 | 3D Motion Engine: state body language, bounded procedural primitives, springs + follow-through, priorities, interruption; 3D everywhere WebGL exists | ✅ verified | 16/0 | `src/character3d/motion3d.ts`, `src/character3d/Robot3D.tsx`, `src/core/characterRuntime.ts`, `src/site/site.css` |  |
-| A113 | Compact Prompt for Small Local Models | ✅ verified | 2/0 | `server/prompts/system.ts`, `server/brainService.ts` |  |
+| A126 | Website redesign: the real 3D NEXUS in the landing hero, state demo (idle…error), startup transition, About and Privacy | ✅ verified | 24/0 | `src/site/Landing.tsx`, `src/site/PreviewRobot.tsx`, `src/character3d/webgl.ts`, `src/boot.ts`, `src/site/Pages.tsx` |  |
+| A127 | 3D Motion Engine: state body language, bounded procedural primitives, springs + follow-through, priorities, interruption; 3D everywhere WebGL exists | ❌ failing | 15/1 | `src/character3d/motion3d.ts`, `src/character3d/Robot3D.tsx`, `src/core/characterRuntime.ts`, `src/site/site.css` |  |
+| A128 | MISSION NEXUS website: cinematic boot, landing (hero, robot viewer with view angles, capabilities with honest status, architecture, roadmap), route transitions, robot-page theme, 3D loading progress + retry | ✅ verified | 1/0 | `src/site/Landing.tsx`, `src/site/site.css`, `src/site/reveal.ts`, `src/boot.ts`, `src/character3d/Robot3D.tsx`, `src/components/app-theme.css` |  |
+| A113 | Compact Prompt for Small Local Models | ✅ verified | 3/0 | `server/prompts/system.ts`, `server/brainService.ts` |  |
+| A141 | Space interface: animated space environment (planets, rings, wireframes, asteroids, particles, stars, shooting stars, parallax), stage light, micro-interactions, space boot sequence | ✅ verified | 8/0 | `src/space/spaceScene.ts`, `src/space/SpaceField.tsx`, `src/space/space.css`, `index.html` | Canvas 2D illustration (not a physical simulation); the NEXUS robot model, materials and animations are unchanged. |
+| A142 | Live experience: truthful system status (server, AI, voice, interaction) with the NEXUS chain, audio-reactive voice scope from measured mic/voice levels, optional synthesized interface sounds, landing storytelling (voice step, HOLOBUILD + learning tiles), holographic HOLOBUILD frame | ✅ verified | 9/0 | `src/space/systemStatus.ts`, `src/space/SystemPanel.tsx`, `src/space/VoiceScope.tsx`, `src/voice/levels.ts`, `src/core/uiSounds.ts`, `src/site/Landing.tsx` | Browser voices expose no audio, so they get no waveform; with browser speech recognition the waveform comes from a separate microphone meter. |
+| A143 | Adaptive Colour Studio: two colours (48-colour library or custom HEX) generate a full site theme and recolour the robot — every brand colour re-mapped with lightness kept for contrast, live preview, smooth switch, saved with settings, one-click reset | ✅ verified | 18/0 | `src/theme/palette.ts`, `src/theme/colour.ts`, `src/theme/studio.ts`, `src/site/ColourStudio.tsx`, `src/theme/palette.css` |  |
+| A144 | Full-body 3D motion system: 29 clips (clap with palm contact, wave, nod, shake, shrug, point, thumbs up, speaking gestures, look around, excited, celebrate jump, confused, curious, disappointed, think, laugh, surprised, backflip, forward roll, two dances, jump, squat, one-leg balance, turn around, sit/stand), two-bone IK, a state + action controller (IDLE…DANCING) driven by the engine, AI/command triggers, Motion Lab preview | ✅ verified | 20/0 | `src/character3d/body/clips.ts`, `src/character3d/body/clip.ts`, `src/character3d/body/ik.ts`, `src/character3d/body/controller.ts`, `src/character3d/body/checks.ts`, `src/site/MotionLab.tsx` | Rigid parts on joints (no skin deformation); mitten hands, so pointing and thumbs up are whole-hand poses; the 2D robot shows simplified versions; stepping turns pivot on the planted foot. |
+
+### HOLOBUILD 3D workspace
+
+| ID | Asset | Status | Tests (pass/fail) | Implementation | Known limitation |
+|---|---|---|---|---|---|
+| A129 | HOLOBUILD model format + procedural templates (engine, clock, bridge, arm, motorcycle, heart, house, furniture, molecules, solar system, rocket, shapes) | ✅ verified | 5/0 | `shared/holo.ts`, `src/holobuild/templates.ts` | Procedural learning models built from basic shapes — simplified, not engineering or anatomical drawings. No paid text-to-mesh service is connected. |
+| A130 | HOLOBUILD natural-language editing: scale, stretch, move, rotate, material, colour, transparency, hide/isolate/remove, duplicate, x-ray, rename | ✅ verified | 5/0 | `shared/holoEdit.ts`, `shared/holo.ts`, `server/aiTasks.ts` | The offline parser understands common English phrasings; anything else needs a connected AI model. |
+| A131 | HOLOBUILD workspace: 3D viewport (orbit, zoom, pan, perspective/orthographic, wireframe, grid, axes, labels, dimensions, selection, exploded view), command bar, voice, docked robot | ✅ verified | 8/0 | `src/holobuild/HoloBuild.tsx`, `src/holobuild/HoloViewport.tsx`, `src/holobuild/scene.ts`, `src/holobuild/controller.ts`, `src/holobuild/holobuild.css` |  |
+| A132 | HOLOBUILD library + files: save (read back), rename, delete with confirmation, collections, reopen; GLB/GLTF export (re-validated) and safe import | ✅ verified | 6/0 | `src/holobuild/store.ts`, `src/holobuild/io.ts`, `src/storage/db.ts` |  |
+
+### Learning engine
+
+| ID | Asset | Status | Tests (pass/fail) | Implementation | Known limitation |
+|---|---|---|---|---|---|
+| A133 | Learning engine data: experiences (corrections, feedback, failures, repeated questions, knowledge gaps) with metadata, privacy limits and retention | ✅ verified | 3/0 | `src/learning/engine.ts`, `shared/learning.ts`, `src/components/ChatPanel.tsx` |  |
+| A134 | Research + verification: multi-source research, claim extraction, credibility and contradictions, verification states, cited knowledge base with retrieval | ✅ verified | 5/0 | `server/learn.ts`, `src/learning/engine.ts`, `shared/learning.ts` |  |
+| A135 | Workflow skills + controlled self-improvement: versions, deterministic tests, approval, rollback, audit log | ✅ verified | 2/0 | `src/learning/engine.ts`, `shared/learning.ts`, `server/learn.ts` |  |
+| A136 | Learning dashboard + background learning: inspect, correct, delete, approve/reject, pause/resume, limits, permissions; real metrics only | ✅ verified | 3/0 | `src/learning/LearningPage.tsx`, `src/learning/engine.ts` |  |
+
+### Robot interaction
+
+| ID | Asset | Status | Tests (pass/fail) | Implementation | Known limitation |
+|---|---|---|---|---|---|
+| A137 | Unified interaction states + activity indicators (building, researching), explaining / waiting / serious body language | ✅ verified | 1/0 | `src/core/companion.ts`, `src/character3d/motion3d.ts`, `src/expressions/presets.ts`, `src/components/App.tsx` |  |
+| A138 | Timestamp lip-sync: ElevenLabs character timing → mouth shapes, audio-level fallback for other voices | ✅ verified | 2/0 | `server/speech.ts`, `server/app.ts`, `src/voice/serverVoice.ts` |  |
+| A139 | Personality settings (humour, energy, curiosity, formality) — tone only, never safety or voice | ✅ verified | 1/0 | `shared/schema.ts`, `server/prompts/system.ts`, `src/memory/store.ts`, `src/components/SettingsPanel.tsx` |  |
+| A140 | Creator diagnostics: interaction state, activity, lip-sync source, learning queue — local NEXUS only | ✅ verified | 1/0 | `src/components/StatusPanel.tsx` |  |
 
 ## Laptop & desktop app
 
 - Laptop layouts (1024–1536 px wide, 640–800 px tall, including browser-bar heights such as 1366×657) are checked by the end-to-end suite (asset A90 rows above).
-- Desktop app smoke test (linux-x64): ✅ — `{"ok":true,"title":"NEXUS — robot workspace","nodeAccess":false,"ms":318,"url":"http://localhost:18787","provider":"demo","reused":false,"pages":["Robot","Home page","About","Privacy","Set up again (name, AI brain, theme)…"],"home":true,"back":true}`
+- Desktop app smoke test (linux-x64): ✅ — `{"ok":true,"title":"NEXUS — robot workspace","nodeAccess":false,"ms":387,"url":"http://localhost:18787","provider":"demo","reused":false,"pages":["Robot","Home page","About","Privacy","Set up again (name, AI brain, theme)…"],"home":true,"back":true}`
 - Not verifiable here: the Windows installer (`npm run dist:win`) and the `.bat` start scripts were not run on Windows by this report. Voice input is unavailable inside the desktop app (Electron ships no speech-to-text service); the app says so and voice works in Chrome/Edge.
 
 ## Configuration requirements

@@ -16,6 +16,19 @@ const num = (t: string): number | undefined => {
 };
 
 const COMMANDS: { re: RegExp; id: string; label: string }[] = [
+  { re: /\bback ?flips?\b|\bsomersault\b/, id: 'backflip', label: 'do a backflip' },
+  { re: /\bforward roll\b|\broll forward\b|\bdo a roll\b/, id: 'forward_roll', label: 'do a forward roll' },
+  { re: /\bside[- ]to[- ]side\b|\bsway\b/, id: 'dance_sway', label: 'dance side to side' },
+  { re: /\bdanc(e|ing)\b|\bboogie\b|\bgroove\b/, id: 'dance', label: 'dance' },
+  { re: /\bjump\b/, id: 'jump', label: 'jump' },
+  { re: /\bsquats?\b/, id: 'squat', label: 'squat' },
+  { re: /\bbalance\b|\bone leg\b/, id: 'balance', label: 'balance on one leg' },
+  { re: /\bturn (a)?round\b|\bspin\b/, id: 'turn_around', label: 'turn around' },
+  { re: /\bsit (down )?on the (floor|ground)\b/, id: 'sit', label: 'sit on the floor' },
+  { re: /\bthumbs? up\b/, id: 'thumbs_up', label: 'give a thumbs up' },
+  { re: /\blaugh\b/, id: 'laugh', label: 'laugh' },
+  { re: /\b(look|be|get|act) excited\b/, id: 'excited', label: 'get excited' },
+  { re: /\blook around\b/, id: 'look_around', label: 'look around' },
   { re: /\bwave\b|\bwaving\b/, id: 'wave', label: 'wave' },
   { re: /\bpoint\b/, id: 'point', label: 'point' },
   { re: /\braise (your |a )?hand\b/, id: 'raise_hand', label: 'raise my hand' },
@@ -27,7 +40,7 @@ const COMMANDS: { re: RegExp; id: string; label: string }[] = [
   { re: /\blook (up|back)\b|\bhead back\b/, id: 'head_back', label: 'tilt my head back' },
   { re: /\blook down\b|\bhead forward\b|\blean (your head )?forward\b/, id: 'head_forward', label: 'lean my head forward' },
   { re: /\bclap\b/, id: 'clap', label: 'clap' },
-  { re: /\bbounce\b|\bjump\b|\bhop\b/, id: 'bounce', label: 'bounce' },
+  { re: /\bbounce\b|\bhop\b/, id: 'bounce', label: 'bounce' },
   { re: /\bcelebrat|\bhooray\b|\bwoohoo\b/, id: 'celebrate', label: 'celebrate' },
   { re: /\bturn (to the |to your )?left\b/, id: 'turn_left', label: 'turn to my left' },
   { re: /\bturn (to the |to your )?right\b/, id: 'turn_right', label: 'turn to my right' },
@@ -36,7 +49,7 @@ const COMMANDS: { re: RegExp; id: string; label: string }[] = [
   { re: /\bgreet(ing)? (me )?(again|properly)?\b|\bsay hi\b/, id: 'greeting', label: 'greet you' },
 ];
 const POSE_CMDS: { re: RegExp; pose: Pose; label: string }[] = [
-  { re: /\bsit( down)?\b|\btake a seat\b/, pose: 'sitting', label: 'sit down' },
+  { re: /\bsit( down)?\b(?! (down )?on the (floor|ground))|\btake a seat\b/, pose: 'sitting', label: 'sit down' },
   { re: /\bstand( up)?\b|\bget up\b/, pose: 'standing', label: 'stand up' },
   { re: /\bcrouch\b|\bsquat\b/, pose: 'crouching', label: 'crouch' },
   { re: /\blean\b(?! (your head )?forward)/, pose: 'leaning', label: 'lean' },
@@ -132,10 +145,9 @@ export function demoBrain(req: ChatRequest, sources: Source[] = []): BrainRespon
     if (e && !NEG.test(c)) { expression = e[1]; said.push(`look ${e[1]}`); continue; }
     const cmd = COMMANDS.find((x) => x.re.test(c));
     if (!cmd) {
-      if (/\b(backflip|fly|cartwheel|pick up|grab|dance)\b/.test(c)) {
-        const what = /\b(backflip|fly|cartwheel|pick up|grab|dance)\b/.exec(c)![1];
-        if (what !== 'dance') actions.push({ type: 'unsupported', request: what, reason: 'my 2D rig has no physics, props or flips' });
-        else { actions.push({ type: 'skill', skillId: known.has('dance_1') ? 'dance_1' : 'bounce', timing: 'after_speech' }); said.push(known.has('dance_1') ? 'dance' : 'bounce (I have no dance yet — ask me to invent one!)'); }
+      if (/\b(fly|cartwheel|pick up|grab)\b/.test(c)) {
+        const what = /\b(fly|cartwheel|pick up|grab)\b/.exec(c)![1];
+        actions.push({ type: 'unsupported', request: what, reason: 'I have no props, and cartwheels and flying are not in my moves' });
       }
       continue;
     }
@@ -155,9 +167,14 @@ export function demoBrain(req: ChatRequest, sources: Source[] = []): BrainRespon
   if (/^(hi|hello|hey|yo|hiya|namaste|good (morning|afternoon|evening))\b/.test(t))
     return R({ reply: `Hi! I'm ${req.profile.robotName}. Right now I'm running on my demo brain, so I can move, emote, learn approved gestures and remember things you ask me to — real conversation needs a language model configured on the server.`, expression: 'happy', gesture: 'greeting' });
   if (/\b(bye|goodbye|see you|good night)\b/.test(t)) return R({ reply: 'Bye for now!', expression: 'happy', gesture: 'farewell' });
+  if (/\b(tell|know)\b.*\bjoke\b/.test(t)) {
+    const J = ['Why did the robot go on holiday? It needed to recharge its batteries.', 'I tried to write a joke about USB cables — it took me three tries to get it the right way round.', 'My favourite music? Heavy metal, obviously.'];
+    return R({ reply: J[hash(raw + req.messages.length) % J.length], expression: 'happy', actions: [{ type: 'skill', skillId: 'laugh', timing: 'after_speech' }] });
+  }
+  if (/\b(ha(ha)+|lol|lmao|that'?s (so )?funny)\b/.test(t)) return R({ reply: 'Ha! Glad that landed.', expression: 'happy', actions: [{ type: 'skill', skillId: 'laugh', timing: 'with_speech' }] });
   if (/\b(thanks|thank you|thx)\b/.test(t)) return R({ reply: "You're welcome!", expression: 'happy', actions: [{ type: 'skill', skillId: 'nod', timing: 'with_speech', repetitions: 1 }] });
   if (/what can you do|\bhelp\b|commands/.test(t))
-    return R({ reply: 'Demo mode: ask me to wave, point, nod, shrug, clap, bounce, celebrate, walk, turn, sit, crouch, lean, look happy/curious/confused…, and chain them with "then". Say "invent a new greeting" or "invent a new expression" to try skill learning, give feedback like "that was too fast", or say "remember that …". Configure an LLM for open conversation.', expression: 'happy', actions: [{ type: 'skill', skillId: 'open_arms', timing: 'with_speech' }] });
+    return R({ reply: 'Demo mode: ask me to wave, point, nod, shrug, clap, give a thumbs up, laugh, celebrate, jump, squat, dance, balance on one leg, turn around, sit on the floor, do a backflip or a forward roll, look happy/curious/confused…, and chain them with "then". Say "invent a new greeting" or "invent a new expression" to try skill learning, give feedback like "that was too fast", or say "remember that …". Configure an LLM for open conversation.', expression: 'happy', actions: [{ type: 'skill', skillId: 'open_arms', timing: 'with_speech' }] });
   if (/what('s| is) your name|\byour name\??$/.test(t))
     return R({ reply: `My name is ${req.profile.robotName}.${req.profile.robotName === 'NEXUS' ? ' You can give me a different name with the pencil next to my name.' : ''}`, expression: 'happy', actions: [{ type: 'skill', skillId: 'nod', timing: 'with_speech', repetitions: 1 }] });
   if (/\b(are you|is this) (an? )?(ai|llm|real|smart|chatgpt|gpt)\b|\bwho are you\b/.test(t))

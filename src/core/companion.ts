@@ -7,6 +7,8 @@
  * Every turn has a token: a cancelled or superseded turn can never overwrite a newer one (Asset 46).
  * Success reactions only follow verified results (Asset 36); failures get an explanation + retry (35, 47).
  */
+import { UiSounds } from './uiSounds';
+import { MicMeter } from '../voice/levels';
 import { introduction, validateRobotName } from '../../shared/identity';
 import { BrainResponseSchema, type BrainResponse, type ExpressionPreset, type ServerCapabilities, type Pose } from '../../shared/schema';
 import type { AnimationEngine } from '../animation/engine';
@@ -34,8 +36,10 @@ import { sanitizeUserText } from '../security/validation';
 import { SkillSandbox } from '../skills/sandbox';
 import type { ChatStore } from './chats';
 import { applyTheme } from '../theme';
+import { applyPalette } from '../theme/studio';
 import { describeDue, parseReminder, type Reminder, type ReminderStore } from './reminders';
-import type { ResponseMeta } from '../../shared/schema';
+import type { ChatContextInput, ResponseMeta } from '../../shared/schema';
+type ChatContext = ChatContextInput;
 
 export interface Snapshot {
   state: CompanionState; messages: UIMessage[]; caps: ServerCapabilities | null; capabilities: Capability[];
@@ -43,11 +47,23 @@ export interface Snapshot {
   /** what we actually know about the AI connection — from real requests and connection tests, never from saved config alone */
   connection: { state: 'untested' | 'ok' | 'demo' | 'failed'; at: number | null; detail: string };
   preview: { id: string; version: number; kind: string; name: string } | null; mic: MicState; busy: boolean;
+  /** real work NEXUS is doing outside a chat reply (HOLOBUILD generation, research) — shown by the robot and the UI */
+  activity: Activity | null;
+  /** the last voice-service failure (cleared when server speech plays again) — shown in the status panel */
+  voiceIssue: { message: string; at: number } | null;
+  /** when server speech last really started playing in this session */
+  voiceOkAt: number | null;
 }
+export type ActivityKind = 'building' | 'editing' | 'researching' | 'reflecting';
+export interface Activity { kind: ActivityKind; label: string; since: number }
 export interface CompanionDeps {
   runtime: CharacterRuntime; registry: SkillRegistry; memory: MemoryStore; learning: LearningSystem; api: ApiClient;
   tts?: SpeechOut; stt?: SpeechIn; persistent: boolean; restAfterMs?: number; silentMsPerChar?: number;
   chats?: ChatStore; reminders?: ReminderStore;
+  /** learned knowledge relevant to a message (learning engine; empty when disabled) */
+  knowledgeFor?: (text: string) => { claim: string; status: 'verified' | 'pending' | 'conflicting' | 'outdated'; sources: string[] }[];
+  /** told after every finished or failed exchange (the learning engine records real experiences from it) */
+  onExchange?: (x: { msgId: string; user: string; reply: string; uncertainty?: string | null; failed?: string | null; previousReply?: string | null }) => void;
 }
 
 /** Meta for replies produced on this device without any AI (reminders, greetings). */
@@ -63,6 +79,8 @@ export class Companion {
   readonly notifications: Notifications;
   readonly runner: SkillRunner;
   readonly sandbox = new SkillSandbox();
+  /** optional interface sounds (Settings → Interface sounds; off by default) */
+  readonly ui = new UiSounds(() => this.settings);
   readonly tts: SpeechOut; readonly stt: SpeechIn;
   /** set when the app chose engines itself (not injected by a test) */
   readonly voiceOut: VoiceOutputRouter | null = null; readonly voiceIn: VoiceInputRouter | null = null;
@@ -81,16 +99,16 @@ export class Companion {
   constructor(private d: CompanionDeps) {
     this.events.attach(this.sm);
     this.engine = d.runtime.engine; this.expressions = d.runtime.expressions;
-    if (d.tts) this.tts = d.tts; else { const r = new VoiceOutputRouter(); r.onNotice = (m) => this.notifications.push('error', m, { react: false }); this.voiceOut = r; this.tts = r; }
+    if (d.tts) this.tts = d.tts; else { const r = new VoiceOutputRouter(); r.onNotice = (m) => { this.notifications.push('error', m, { react: false }); this.set({ voiceIssue: { message: m.slice(0, 200), at: Date.now() } }); }; this.voiceOut = r; this.tts = r; }
     if (d.stt) this.stt = d.stt; else { const r = new VoiceInputRouter(); this.voiceIn = r; this.stt = r; }
     this.runner = new SkillRunner(this.engine, d.registry);
     this.notifications = new Notifications(() => this.settings, (kind) => { if (kind !== 'error') void this.react('notify'); });
-    this.snap = { state: 'idle', messages: [], caps: null, capabilities: [], listening: false, interim: '', draft: null, speaking: false, error: null, lastSkillId: null, preview: null, mic: 'unknown', busy: false, connection: { state: 'untested', at: null, detail: 'No request yet' } };
+    this.snap = { state: 'idle', messages: [], caps: null, capabilities: [], listening: false, interim: '', draft: null, speaking: false, error: null, lastSkillId: null, preview: null, mic: 'unknown', busy: false, activity: null, voiceIssue: null, voiceOkAt: null, connection: { state: 'untested', at: null, detail: 'No request yet' } };
     this.sm.on((s, prev) => this.onState(s, prev));
     this.tts.hooks = {
-      onStart: () => { this.engine.setSpeaking(true); if (this.sm.state === 'responding' || this.sm.state === 'processing') this.sm.go('speaking'); this.set({ speaking: true }); },
+      onStart: () => { if (this.voiceOut?.engineName === 'server') this.set({ voiceIssue: null, voiceOkAt: Date.now() }); this.engine.setSpeaking(true); if (this.sm.state === 'responding' || this.sm.state === 'processing') this.sm.go('speaking'); this.set({ speaking: true }); },
       onWord: (w) => { const v = visemeFor(w); this.engine.speechPulse(v.open, v.round); },
-      onLevel: (l) => { if (this.engine.isSpeaking()) this.engine.speechLevel(l); },
+      onLevel: (l, sh) => { if (this.engine.isSpeaking()) this.engine.speechLevel(l, sh); },
       onIdle: () => { this.engine.setSpeaking(false); this.set({ speaking: false }); const f = this.speechDone; this.speechDone = null; f?.(); },
     };
     this.engine.on('recovered', (e) => this.diagnostics.log({ type: 'skill', code: 'watchdog_recovery', detail: `${e.skillId}: ${e.reason}` }));
@@ -270,7 +288,7 @@ export class Companion {
     this.engine.idleScale = { off: 0, calm: 0.5, normal: 1, lively: 1.6 }[s.idleLevel];
     this.engine.speechMouth = s.speakingMouth;
     this.expressions.setBaseline(s.defaultExpression);
-    applyTheme(s.theme);
+    applyTheme(s.theme); applyPalette(s.palette, { animate: true });
     this.expressions.allowPlayful = s.playfulReactions && !s.quietMode;
     this.tts.rate = s.speechRate; this.tts.volume = s.speechVolume; this.tts.voiceURI = s.voiceURI; this.tts.character = s.voiceCharacter; if (this.voiceOut) this.voiceOut.allowFallback = s.voiceFallback; this.voiceOut?.configure(!!this.snap.caps?.speech?.tts.configured, s.voiceEngine); this.voiceIn?.configure(!!this.snap.caps?.speech?.stt.configured, s.voiceEngine);
     this.diagnostics.includeContent = s.diagnosticsIncludeContent;
@@ -314,13 +332,32 @@ export class Companion {
     switch (s) {
       case 'listening': return 'listening';
       case 'processing': return 'thinking';
-      case 'speaking': return 'speaking';
+      case 'speaking': case 'responding': {
+        // the reply's own expression (chosen with the reply) colours the body language while it is delivered
+        const e = this.expressions.current();
+        if (e === 'excited' || e === 'success') return 'excited';
+        if (e === 'concerned' || e === 'sympathetic' || e === 'serious') return 'concerned';
+        // a longer explanation gets the open, gesturing "explaining" body language
+        const last = this.snap.messages.at(-1);
+        if (last?.role === 'assistant' && last.text.length > 280) return 'explaining';
+        return s === 'speaking' ? 'speaking' : 'idle';
+      }
       case 'resting': return 'resting';
       case 'interrupted': return 'interrupted';
       case 'error': return 'error';
-      case 'acting': case 'greeting': return 'acting';
-      default: return 'idle';
+      case 'greeting': return 'greeting';
+      case 'acting': return 'acting';
+      default: return this.awaitingAnswerUntil > Date.now() ? 'waiting' : 'idle';
     }
+  }
+  /** after a reply that ends with a question, the robot waits attentively for the answer (cleared by any input) */
+  private awaitingAnswerUntil = 0;
+  private awaitTimer: ReturnType<typeof setTimeout> | null = null;
+  private setAwaiting(on: boolean) {
+    if (this.awaitTimer) { clearTimeout(this.awaitTimer); this.awaitTimer = null; }
+    this.awaitingAnswerUntil = on ? Date.now() + 12000 : 0;
+    if (on) this.awaitTimer = setTimeout(() => { this.awaitingAnswerUntil = 0; if (this.d.runtime.motion === 'waiting') this.d.runtime.setMotion(this.motionFor(this.sm.state)); }, 12000);
+    if (this.sm.state === 'idle') this.d.runtime.setMotion(this.motionFor('idle'));
   }
   private armRest() {
     if (this.restTimer) clearTimeout(this.restTimer);
@@ -334,6 +371,7 @@ export class Companion {
   /** While you type, the robot looks at the chat with an attentive face (and leans in once per message);
    *  when what you are typing is a question (ends with "?"), the face turns curious. */
   noteTyping(active: boolean, text = '') {
+    if (active && this.awaitingAnswerUntil) this.setAwaiting(false);
     if (this.typingTimer) clearTimeout(this.typingTimer);
     const idleish = this.sm.state === 'idle' || this.sm.state === 'resting';
     if (!active || !idleish) { if (this.d.runtime.motion === 'curious') this.d.runtime.setMotion(this.motionFor(this.sm.state)); this.expressions.release('attention'); if (!active) this.typingSince = 0; if (this.gazeOnChat) { this.engine.lookAt(null); this.gazeOnChat = false; } return; }
@@ -392,8 +430,41 @@ export class Companion {
     this.expressions.set('reaction', 'success', 1, 1.6, 2);
     if (this.successFlash) clearTimeout(this.successFlash);
     this.d.runtime.setIndicator('success');
-    this.successFlash = setTimeout(() => { this.successFlash = null; this.d.runtime.setIndicator(this.indicatorFor(this.sm.state)); }, 1600);
+    this.d.runtime.setMotion('excited');                                  // a confirmed success: a short, happy bounce (3D)
+    this.successFlash = setTimeout(() => { this.successFlash = null; this.d.runtime.setIndicator(this.indicatorFor(this.sm.state)); if (this.d.runtime.motion === 'excited') this.d.runtime.setMotion(this.motionFor(this.sm.state)); }, 1600);
     await this.react('celebrate');
+  }
+
+  /* ---------------- activities (HOLOBUILD, learning) ---------------- */
+  private activityToken = 0;
+  /**
+   * Marks real work in progress: the robot thinks (face + body) and the UI shows what it is doing. Returns `end`, which
+   * must be called with the real outcome — a happy reaction only for 'done', confusion for 'failed'.
+   * Never started for work that is not actually happening.
+   */
+  beginActivity(kind: ActivityKind, label: string): (outcome: 'done' | 'failed' | 'cancelled') => void {
+    const tok = ++this.activityToken; this.wake();
+    this.set({ activity: { kind, label: label.slice(0, 120), since: Date.now() } });
+    const quiet = this.snap.busy || this.sm.state !== 'idle';
+    if (!quiet) { this.expressions.set('system', 'thinking', 0.9, null, 2); this.d.runtime.setMotion('thinking'); if (!this.successFlash) this.d.runtime.setIndicator('processing'); }
+    let ended = false;
+    return (outcome) => {
+      if (ended) return; ended = true;
+      if (tok !== this.activityToken) return;          // a newer activity owns the robot now
+      this.set({ activity: null });
+      const idle = this.sm.state === 'idle' && !this.snap.busy;
+      if (!idle) return;
+      this.expressions.release('system');
+      if (!this.successFlash) this.d.runtime.setIndicator(this.indicatorFor(this.sm.state));
+      if (outcome === 'done' && !this.settings.quietMode) { this.expressions.set('reaction', 'happy', 0.85, 1.6, 1); this.d.runtime.setMotion('excited'); setTimeout(() => { if (this.d.runtime.motion === 'excited' && this.sm.state === 'idle') this.d.runtime.setMotion('idle'); }, 1400); }
+      else if (outcome === 'failed') { this.expressions.set('reaction', 'confused', 0.9, 2.2, 1); this.d.runtime.setMotion('confused'); setTimeout(() => { if (this.d.runtime.motion === 'confused' && this.sm.state === 'idle') this.d.runtime.setMotion('idle'); }, 2000); }
+      else this.d.runtime.setMotion(this.motionFor(this.sm.state));
+    };
+  }
+  /** A short on-device line (not AI-generated) added to the conversation and spoken if voice is on. */
+  announce(text: string, o: { speak?: boolean } = {}) {
+    this.push({ role: 'assistant', text, status: 'complete', meta: ON_DEVICE_META, notes: ['Written by NEXUS on this device (not an AI reply).'] });
+    if ((o.speak ?? true) && this.settings.voiceOutput && this.tts.supported && !this.snap.busy) this.tts.enqueue(text, 'warm');
   }
 
   /* ---------------- interruption ---------------- */
@@ -436,14 +507,17 @@ export class Companion {
     await this.send(u.text, { retryOf: a!.id, offlineDemo: true });
   }
 
-  async send(raw: string, o: { voice?: boolean; retryOf?: string; offlineDemo?: boolean } = {}): Promise<void> {
+  async send(raw: string, o: { voice?: boolean; retryOf?: string; offlineDemo?: boolean; context?: ChatContext } = {}): Promise<void> {
     const text = sanitizeUserText(raw);
     if (!text) return;
     const now = Date.now();
     if (text === this.lastSent.text && now - this.lastSent.at < 1200 && !o.retryOf) return; // duplicate guard
     this.lastSent = { text, at: now };
+    this.setAwaiting(false);
     this.noteTyping(false);
     this.wake();
+    // a page may take over some messages (e.g. "build a 3D model of …" opens HOLOBUILD)
+    if (!o.retryOf && !o.offlineDemo && this.intercept?.(text)) return;
     // reminders are handled on device and must not cancel a reply that is still streaming
     if (this.d.reminders && !o.retryOf) {
       const r = parseReminder(text);
@@ -461,6 +535,10 @@ export class Companion {
     const ctl = new AbortController(); this.reqAbort = ctl;
     const s = this.settings;
     const research = s.research && !!this.snap.caps?.research.configured;
+    const prevReply = [...this.snap.messages].reverse().find((m) => m.role === 'assistant' && m.id !== asst.id && m.status === 'complete')?.text ?? null;
+    let knowledge: NonNullable<ReturnType<NonNullable<CompanionDeps['knowledgeFor']>>> = [];
+    try { knowledge = this.d.knowledgeFor?.(text) ?? []; } catch { knowledge = []; }
+    const context = o.context || knowledge.length ? { ...(o.context ?? {}), ...(knowledge.length ? { knowledge } : {}) } : null;
     const t0 = performance.now();
     let streamed = '', ttsBuf = '', firstDelta = true, headApplied = false;
     let mouthTimer: ReturnType<typeof setInterval> | null = null;
@@ -471,8 +549,8 @@ export class Companion {
         messages: buildContext(this.snap.messages.filter((m) => m.id !== asst.id), s.historyLimit),
         skills: this.d.registry.catalog(), expressions: this.expressions.ids().filter((x) => x !== '__preview'),
         memory: this.d.memory.contextLines(text), preferences: this.prefs(),
-        profile: { responseStyle: s.responseStyle, language: s.language, robotName: s.robotName }, lastSkillId: this.runner.lastSkillId,
-        research, stream: s.streaming,
+        profile: { responseStyle: s.responseStyle, language: s.language, robotName: s.robotName, personality: s.personality }, lastSkillId: this.runner.lastSkillId,
+        research, stream: s.streaming, ...(context ? { context } : {}),
       }, ctl.signal, {
         onStatus: (st) => { if (token === this.token) this.patch(asst.id, { stage: st }); },
         onSources: (src) => { if (token === this.token) this.patch(asst.id, { sources: src }); },
@@ -486,7 +564,9 @@ export class Companion {
             firstDelta = false; this.engine.cancelTag('waiting'); this.expressions.release('system'); this.go('responding');
             if (!voiceOn) { this.engine.setSpeaking(true); mouthTimer = setInterval(() => this.engine.speechPulse(0.6), 180); } // approximate mouth while text streams
           }
+          const wasShort = streamed.length <= 280;
           streamed += t;
+          if (wasShort && streamed.length > 280) queueMicrotask(() => { if (token === this.token && (this.sm.state === 'responding' || this.sm.state === 'speaking')) this.d.runtime.setMotion(this.motionFor(this.sm.state)); });
           this.patch(asst.id, { text: streamed, status: 'streaming', stage: 'streaming' });
           if (voiceOn) { ttsBuf += t; const [sent, rest] = takeSentences(ttsBuf); ttsBuf = rest; for (const x of sent) this.tts.enqueue(x, 'warm'); }
         },
@@ -505,10 +585,13 @@ export class Companion {
       if (result.meta.droppedFields.length) notes.push(`Ignored invalid fields from the model: ${[...new Set(result.meta.droppedFields)].join(', ')}.`);
       if (research && result.meta.research.error) notes.push(result.meta.research.error);
       if (s.research && !this.snap.caps?.research.configured) notes.push('Research is on, but no research provider is configured — answered without live sources.');
+      if (knowledge.length && result.meta.isLLM) notes.push(`Sent ${knowledge.length} note(s) from NEXUS's knowledge base with this message (${Object.entries(knowledge.reduce<Record<string, number>>((acc, k) => { acc[k.status] = (acc[k.status] ?? 0) + 1; return acc; }, {})).map(([k, n]) => `${n} ${k}`).join(', ')}).`);
       this.patch(asst.id, { text: resp.reply, status: 'complete', stage: undefined, meta: result.meta, response: resp, notes, changes: [{ scope: 'conversation', text: 'This reply is part of the conversation only.' }] });
       if (!headApplied) this.applyExpression(resp.expression, resp.emotionIntensity);
       if (resp.pose !== 'neutral' || this.engine.getPose() !== 'neutral') this.engine.setPose(resp.pose as Pose);
       if (typeof document !== 'undefined' && document.hidden) this.notifications.push('response', `${this.robotName} replied.`, { react: false, desktop: true });
+      try { if (result.meta.isLLM) this.d.onExchange?.({ msgId: asst.id, user: text, reply: resp.reply, uncertainty: resp.uncertainty, previousReply: prevReply }); } catch { /* learning is best-effort */ }
+      this.setAwaiting(/\?\s*$/.test(resp.reply.trim()));
       await this.sideEffects(resp, text, asst.id, token);
       if (token !== this.token) return;
       await this.performPlan(resp, token, asst.id, voiceOn);
@@ -517,6 +600,7 @@ export class Companion {
       if (token !== this.token) return;
       const err = e instanceof ApiError ? e : new ApiError((e as Error).message, 'internal', false);
       if (err.code === 'cancelled') { this.patch(asst.id, { status: 'cancelled', stage: undefined }); return; }
+      try { this.d.onExchange?.({ msgId: asst.id, user: text, reply: '', failed: `${err.code}: ${err.message}`.slice(0, 200) }); } catch { /* best-effort */ }
       this.fail(asst.id, err, streamed);
     }
   }
@@ -646,27 +730,47 @@ export class Companion {
   }
 
   /* ---------------- voice ---------------- */
+  /** Messages the app routes elsewhere before they reach the AI (returns true when handled). */
+  intercept: ((text: string) => boolean) | null = null;
+  /** A page that owns voice commands (HOLOBUILD) handles final transcripts first; returns true when it handled one. */
+  transcriptHandler: ((text: string) => boolean) | null = null;
+  /** microphone meter for browser speech recognition (which exposes no audio); server recording meters itself */
+  private micMeter: MicMeter | null = null;
   startListening() {
     if (!this.stt.supported) { this.notifications.push('info', this.voiceIn?.isDesktop ? 'Voice input needs a transcription service in the desktop app (Settings → Voice), or type instead.' : 'Voice input is not supported in this browser — please type instead.', { react: false }); return; }
     this.wake();
+    this.setAwaiting(false);
     this.interrupt('listening');
     this.go('listening');
     this.set({ listening: true, interim: '', draft: null });
+    if ((this.stt.kind ?? '') !== 'server') { this.micMeter ??= new MicMeter(); this.micMeter.start(); }
+    this.ui.play('listen');
     this.stt.start({
       onInterim: (t) => this.set({ interim: t }),
-      onTranscribing: () => { this.set({ listening: false }); if (this.sm.state === 'listening') this.go('processing'); },
+      onTranscribing: () => { this.micMeter?.stop(); this.set({ listening: false }); if (this.sm.state === 'listening') this.go('processing'); },
       onFinal: (t) => {
         this.diagnostics.log({ type: 'voice', code: 'final' });
-        if (VOICE_STOP.test(t.trim())) { this.cancel(); this.notifications.push('info', 'Stopped (voice command).', { react: false }); return; } // Asset 84
-        if (this.settings.reviewTranscript) { this.set({ draft: t, interim: '' }); if (this.sm.state === 'listening' || this.sm.state === 'processing') this.go('idle'); }
-        else void this.send(t, { voice: true });
+        if (VOICE_STOP.test(t.trim())) { this.cancel(); this.notifications.push('info', 'Stopped (voice command).', { react: false }); this.settleAfterVoice(); return; } // Asset 84
+        if (this.settings.reviewTranscript) { this.set({ draft: t, interim: '' }); this.settleAfterVoice(); }
+        else if (this.transcriptHandler?.(t)) this.settleAfterVoice();          // e.g. a HOLOBUILD command
+        else { void this.send(t, { voice: true }); this.settleAfterVoice(); }
       },
-      onError: (m, code) => { this.diagnostics.log({ type: 'voice', code }); this.set({ listening: false, interim: '' }); if (this.sm.state === 'listening' || (this.sm.state === 'processing' && !this.snap.busy)) this.go('idle'); if (code === 'no-speech') this.expressions.set('reaction', 'confused', 0.8, 1.8); this.notifications.push(code === 'no-speech' ? 'info' : 'error', m, { react: false, essential: code === 'not-allowed' }); if (code === 'not-allowed') this.set({ mic: 'denied' }); },
-      onState: (on) => { this.set({ listening: on }); if (on) this.set({ mic: 'granted' }); if (!on && this.sm.state === 'listening') this.go('idle'); },
+      onError: (m, code) => { this.micMeter?.stop(); this.diagnostics.log({ type: 'voice', code }); this.set({ listening: false, interim: '' }); if (this.sm.state === 'listening' || (this.sm.state === 'processing' && !this.snap.busy)) this.go('idle'); if (code === 'no-speech') this.expressions.set('reaction', 'confused', 0.8, 1.8); this.notifications.push(code === 'no-speech' ? 'info' : 'error', m, { react: false, essential: code === 'not-allowed' }); if (code === 'not-allowed') this.set({ mic: 'denied' }); },
+      onState: (on) => { this.set({ listening: on }); if (on) this.set({ mic: 'granted' }); else { this.micMeter?.stop(); this.ui.play('listenEnd'); } if (!on && this.sm.state === 'listening') this.go('idle'); },
     });
   }
+  /**
+   * After a transcript was handled: if no reply was started (a stop command, a reminder handled on this device, a
+   * repeated phrase, or text kept for review), leave the "listening"/"transcribing" state instead of staying stuck in
+   * it. send() starts a reply synchronously (busy = true), so this check never interrupts a real request.
+   */
+  private settleAfterVoice() {
+    if (this.snap.busy) return;
+    if (this.sm.state === 'listening' || this.sm.state === 'processing') this.go('idle');
+    this.set({ listening: false, interim: '' });
+  }
   stopListening() { this.stt.stop(); }
-  cancelListening() { this.stt.abort(); this.set({ listening: false, interim: '' }); if (this.sm.state === 'listening') this.go('idle'); }
+  cancelListening() { this.micMeter?.stop(); this.stt.abort(); this.set({ listening: false, interim: '' }); if (this.sm.state === 'listening') this.go('idle'); }
   clearDraft() { this.set({ draft: null }); }
   /** PAUSED state (spec §7): holds the reply mid-sentence; the mouth closes while paused. */
   pauseSpeech(): boolean {

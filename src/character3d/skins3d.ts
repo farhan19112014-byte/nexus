@@ -4,6 +4,8 @@
  * light = the light-theme NEXUS (white shell, light-blue limbs, pale glass screen with blue eyes) — matches LIGHT_SKIN.
  */
 import { COLORS, DARK_SKIN, LIGHT_SKIN } from '../character/tokens';
+import { themeSkin } from '../theme/robotSkin';
+import type { Palette } from '../theme/palette';
 
 interface Skin3D { materials: Record<string, { color: string; emissive?: string }>; /** emissive multipliers per material (light screens need stronger LEDs) */ glow: Record<string, number>; core: string; indicator: string; brow: string; floor: string; exposure: number }
 
@@ -12,12 +14,13 @@ export const SKIN_3D: Record<'dark' | 'light', Skin3D> = {
     materials: {
       NX_Shell: { color: COLORS.graphiteLight }, NX_Limb: { color: COLORS.graphite }, NX_Joint: { color: DARK_SKIN.cylDarkShade }, NX_Bezel: { color: DARK_SKIN.socket },
       NX_Screen: { color: '#07101f' }, NX_ChestPanel: { color: COLORS.deepBlack }, NX_Boot: { color: '#232c3d' }, NX_Lid: { color: '#081120' },
-      NX_Eye: { color: '#22c6f0', emissive: '#22c6f0' }, NX_Mouth: { color: '#22c6f0', emissive: '#22c6f0' }, NX_Brow: { color: COLORS.paleBlue, emissive: COLORS.paleBlue },
+      // face LEDs: a near-black base + cyan emission, drawn without tone mapping, so the screen glows clean cyan (never washed to white)
+      NX_Eye: { color: '#03161d', emissive: '#38D9FF' }, NX_Mouth: { color: '#03161d', emissive: '#38D9FF' }, NX_Brow: { color: '#06141c', emissive: COLORS.paleBlue },
       NX_Pupil: { color: COLORS.primaryBlue, emissive: '#0a2a80' }, NX_Cheek: { color: COLORS.paleBlue, emissive: COLORS.paleBlue },
       NX_LED_Blue: { color: COLORS.electricBlue, emissive: COLORS.electricBlue }, NX_Trim: { color: COLORS.electricBlue, emissive: COLORS.electricBlue }, NX_Accent: { color: COLORS.primaryBlue, emissive: COLORS.primaryBlue },
       NX_Antenna: { color: COLORS.cyan, emissive: COLORS.cyan },
     },
-    glow: {},
+    glow: { NX_Eye: 1.6, NX_Mouth: 1.2, NX_Brow: 0.9 },
     core: COLORS.cyan, indicator: COLORS.electricBlue, brow: COLORS.paleBlue, floor: COLORS.primaryBlue, exposure: 1,
   },
   light: {
@@ -33,3 +36,12 @@ export const SKIN_3D: Record<'dark' | 'light', Skin3D> = {
     core: LIGHT_SKIN.ledMid, indicator: LIGHT_SKIN.electricBlue, brow: LIGHT_SKIN.brow, floor: LIGHT_SKIN.floor, exposure: 0.8,
   },
 };
+
+/** the 3D skin in the applied Colour Studio theme (unchanged without one) */
+const cache = new Map<string, Skin3D>();
+export function skin3d(skin: 'dark' | 'light', p: Palette | null): Skin3D {
+  if (!p) return SKIN_3D[skin];
+  const key = `${skin}|${p.a}|${p.b}`;
+  let v = cache.get(key); if (!v) { v = { ...themeSkin(SKIN_3D[skin], p), glow: SKIN_3D[skin].glow, exposure: SKIN_3D[skin].exposure }; cache.set(key, v); }
+  return v;
+}

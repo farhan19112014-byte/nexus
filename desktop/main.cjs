@@ -21,7 +21,9 @@ let server = null;
 let win = null;
 let origin = '';
 
-if (!app.requestSingleInstanceLock()) app.quit();
+// a second launch only focuses the window that is already open (it must not start a second server or window)
+const primary = app.requestSingleInstanceLock();
+if (!primary) app.quit();
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
 
 async function startBackend() {
@@ -88,6 +90,7 @@ const menu = Menu.buildFromTemplate([
 ]);
 
 app.whenReady().then(async () => {
+  if (!primary) return;
   Menu.setApplicationMenu(menu);
   let url;
   try { url = await startBackend(); } catch (e) {

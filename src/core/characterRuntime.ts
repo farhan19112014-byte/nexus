@@ -7,6 +7,23 @@ import { ExpressionController } from '../expressions/expressionController';
 import type { RigHandle, Indicator } from '../character/Robot';
 import type { Channel } from '../../shared/channels';
 import type { MotionState } from '../character3d/motion3d';
+import { BodyController, CLIP_FOR_SKILL } from '../character3d/body/controller';
+import type { BodyState } from '../character3d/body/clips';
+
+/** NEXUS's interaction state → the full-body state loop (the expression adds HAPPY / SURPRISED while otherwise idle) */
+export function bodyStateFor(m: MotionState, expression: string | null): BodyState {
+  switch (m) {
+    case 'listening': case 'waiting': return 'LISTENING';
+    case 'thinking': return 'THINKING';
+    case 'speaking': case 'explaining': return 'SPEAKING';
+    case 'curious': return 'CURIOUS';
+    case 'excited': return 'EXCITED';
+    case 'confused': return 'CONFUSED';
+    case 'greeting': return 'HAPPY';
+    case 'idle': return expression === 'happy' || expression === 'excited' ? 'HAPPY' : expression === 'surprised' ? 'SURPRISED' : 'IDLE';
+    default: return 'IDLE';
+  }
+}
 
 export class CharacterRuntime {
   private rigs = new Set<RigHandle>();
@@ -19,9 +36,17 @@ export class CharacterRuntime {
   private lastIdle: string | null = null;
   onFrameError: ((e: unknown) => void) | null = null;
 
+  /** the 3D robot's full-body animation controller (states + explicit actions); the 2D rig ignores its output */
+  readonly body = new BodyController();
   constructor(readonly engine: AnimationEngine, readonly expressions: ExpressionController) {
     engine.setFaceSource(expressions);
-    engine.on('start', () => this.kick()); // a new action never waits for a slow (power-saving) frame
+    engine.on('start', (e) => {
+      this.kick(); // a new action never waits for a slow (power-saving) frame
+      // the engine owns arbitration (priorities, queue, conflicts): the body follows its actions, so explicit commands
+      // play, queue or interrupt exactly as the engine decides — never at random
+      const clip = CLIP_FOR_SKILL[e.skillId]; if (clip) this.body.play(clip, { engineId: e.id, speed: e.speed });
+    });
+    engine.on('end', (e) => { if (e.result === 'completed') this.body.release(e.id); else this.body.stop(e.id); });
   }
   attach(r: RigHandle) { this.rigs.add(r); r.setIndicator(this.indicator); r.setMotion?.(this.motion, this.engine.reducedMotion); r.apply(this.engine.values); return () => { this.rigs.delete(r); }; }
   setIndicator(i: Indicator) { this.indicator = i; this.rigs.forEach((r) => r.setIndicator(i)); }
@@ -33,11 +58,17 @@ export class CharacterRuntime {
   is3d = false;
   set3d(on: boolean) { this.is3d = on; this.engine.bodyIdle = !on; this.motionKey = ''; this.rigs.forEach((r) => r.setMotion?.(this.motion, this.engine.reducedMotion)); }
 
+  /** forces a body state (the Motion Lab's state buttons); null = follow the interaction state as usual */
+  bodyState: BodyState | null = null;
+
   step(dt: number): Record<Channel, number> {
     this.expressions.update(dt);
     this.engine.blinkRate = this.expressions.blinkRate();
     const v = this.engine.update(dt);
-    for (const r of this.rigs) r.apply(v);
+    this.body.reduced = this.engine.reducedMotion;
+    this.body.setState(this.bodyState ?? bodyStateFor(this.motion, this.expressions.current()));
+    const b = this.body.update(dt);
+    for (const r of this.rigs) { r.setBody?.(b); r.apply(v); }
     this.frames++;
     return v;
   }
@@ -60,7 +91,7 @@ export class CharacterRuntime {
       this.last = now;
       const ft = performance.now() - t0;
       this.frameTimes.push(ft); if (this.frameTimes.length > 120) this.frameTimes.shift();
-      const calm = this.powerSaving && this.engine.isCalm() && this.expressions.settled() && ![...this.rigs].some((r) => r.busy?.());
+      const calm = this.powerSaving && this.engine.isCalm() && this.expressions.settled() && !this.body.busy() && ![...this.rigs].some((r) => r.busy?.());
       if (calm) this.timer = setTimeout(() => { this.raf = requestAnimationFrame(loop); }, this.resting ? 120 : 45);
       else this.raf = requestAnimationFrame(loop);
     };

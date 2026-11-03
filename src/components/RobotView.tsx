@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import Stage from './Stage';
 import { Message } from './ChatPanel';
 import { Icon } from './Icon';
+import { VoiceScope } from '../space/VoiceScope';
 import { companion, memory } from '../core/runtime';
 import { useSnapshot, useStore } from './hooks';
 
@@ -38,7 +39,10 @@ export default function RobotView({ onOpenConversation }: { onOpenConversation: 
   return (
     <div className="robot-view" data-testid="robot-view">
       <Stage compact />
+      <p className="maker-plate" data-testid="maker-plate"><span aria-hidden>◆</span> Made by Farhan</p>
       <div className="captions" aria-live="polite" data-testid="captions">
+        {snap.listening && <VoiceScope source="mic" label="Your voice" />}
+        {!snap.listening && snap.speaking && <VoiceScope source="voice" label={`${s.robotName} is speaking`} />}
         {snap.listening && <p className="cap-interim" role="status"><Icon name="mic" /> {snap.interim || 'Listening…'}</p>}
         {!snap.listening && lastUser && <p className="cap-user"><span className="sr-only">You said: </span>{lastUser.text}</p>}
         {showAsst && <div className="cap-reply"><Message m={showAsst} lastAssistant={!snap.busy} /></div>}

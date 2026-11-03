@@ -2,6 +2,8 @@
  * Theme: 'dark' (default), 'light', or 'system' (follows the OS). The saved setting is the source of truth;
  * a copy is cached in localStorage only so the first paint uses the right theme (no flash) before IndexedDB loads.
  */
+import { initPalette } from './theme/studio';
+
 export type ThemePref = 'dark' | 'light' | 'system';
 const KEY = 'nexus-theme';
 const mq = () => (typeof matchMedia === 'function' ? matchMedia('(prefers-color-scheme: light)') : null);
@@ -14,7 +16,7 @@ export function applyTheme(p: ThemePref) {
   if (typeof document === 'undefined') return;
   const t = resolveTheme(p);
   document.documentElement.dataset.theme = t;
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'light' ? '#F8FAFC' : '#0B1733');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t === 'light' ? '#F4F8FF' : '#07111F');
   try { localStorage.setItem(KEY, p); } catch { /* storage blocked: fine, the setting itself is saved elsewhere */ }
 }
 export function cachedTheme(): ThemePref {
@@ -24,5 +26,6 @@ export function cachedTheme(): ThemePref {
 /** Call once at startup: applies the cached theme and follows OS changes while "system" is chosen. */
 export function initTheme() {
   applyTheme(cachedTheme());
+  initPalette();
   mq()?.addEventListener('change', () => { if (current === 'system') applyTheme('system'); });
 }

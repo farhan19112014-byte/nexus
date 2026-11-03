@@ -1,7 +1,7 @@
 /** Assets 85/86 — conversation: history with status & timestamps, streaming, retry, cancel, sources, consent prompts, proposals, disclosures. */
 import { Icon } from './Icon';
 import { useEffect, useRef, useState } from 'react';
-import { companion, memory, registry } from '../core/runtime';
+import { companion, learner, memory, registry } from '../core/runtime';
 import { fmtTime, useSnapshot, useStore } from './hooks';
 import type { UIMessage } from '../ai/context';
 import { Markdown } from './Markdown';
@@ -28,6 +28,15 @@ function Proposal({ m }: { m: UIMessage }) {
       {v.status === 'approved' && <button onClick={() => void companion.playSkill(l.skillId!)}><Icon name="play" /> Play</button>}
     </div>
   );
+}
+
+/** Helpful / Not helpful: recorded as an experience for the learning engine (only the rating and a short topic). */
+function Feedback({ m }: { m: UIMessage }) {
+  const [given, setGiven] = useState<boolean | null>(null);
+  const q = companion.getSnapshot().messages.find((x) => x.id === m.replyTo)?.text ?? '';
+  const give = (up: boolean) => { if (given !== null) return; setGiven(up); void learner.feedback(m.id, up, q); };
+  if (given !== null) return <span className="fresh" role="status">thanks — noted as {given ? 'helpful' : 'not helpful'}</span>;
+  return <span className="feedback-btns"><button className="link" onClick={() => give(true)} aria-label="Helpful" title="Helpful"><Icon name="thumbUp" /></button><button className="link" onClick={() => give(false)} aria-label="Not helpful" title="Not helpful"><Icon name="thumbDown" /></button></span>;
 }
 
 export function Message({ m, lastUser, lastAssistant, onEdit }: { m: UIMessage; lastUser?: boolean; lastAssistant?: boolean; onEdit?: () => void }) {
@@ -57,6 +66,7 @@ export function Message({ m, lastUser, lastAssistant, onEdit }: { m: UIMessage; 
         {lastUser && onEdit && <button className="link" onClick={onEdit} aria-label="Edit your last message"><Icon name="pen" /> edit</button>}
         {m.role === 'assistant' && m.status === 'complete' && meta?.provider !== 'on-device' && <span className="fresh">{m.sources?.length ? `Uses ${m.sources.length} source(s) retrieved ${fmtTime(Date.parse(m.sources[0].retrievedAt))}` : 'Model background knowledge (not live-verified)'}</span>}
         {r && r.uncertainty !== 'low' && <span className="warn-t">uncertainty: {r.uncertainty}</span>}
+        {m.role === 'assistant' && m.status === 'complete' && meta?.isLLM && <Feedback m={m} />}
       </div>
       {m.error && (
         <div className="card error" role="alert">

@@ -1,0 +1,29 @@
+/* ---- workspace additions (header identity, rename dialog) ---- */
+.top .brand { display: inline-flex; align-items: center; gap: 8px; color: var(--c-text); text-decoration: none; font-family: var(--font-display); }
+.robot-id { display: inline-flex; align-items: center; gap: 4px; padding-left: 12px; border-left: 1px solid var(--c-panel2); min-width: 0; }
+.robot-name { font-weight: 700; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.icon-btn { min-height: 30px; min-width: 30px; padding: 0 6px; background: transparent; border-color: transparent; color: var(--c-muted); }
+.icon-btn:hover { color: var(--c-cyan); }
+.modal { width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; background: var(--c-panel); color: var(--c-text); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: var(--s-5); box-shadow: 0 24px 60px rgba(0, 0, 0, .6); }
+.modal::backdrop { background: var(--backdrop); }
+.modal h2 { margin: 0 0 var(--s-2); font-family: var(--font-display); font-size: 1.3rem; }
+.modal input[aria-invalid="true"] { border-color: var(--c-bad); }
+.name-preview { display: flex; flex-direction: column; gap: 2px; margin: var(--s-3) 0; padding: var(--s-3); border-radius: 10px; background: var(--bg); border: 1px solid var(--line); }
+.preview-greeting { font-size: 1.05em; overflow-wrap: anywhere; }
+.modal-actions { margin-top: var(--s-4); gap: var(--s-2); }
+.identity-card .identity-name { font-size: 1.15em; font-weight: 700; overflow-wrap: anywhere; }
+.confirm p { margin: 0 0 8px; }
+
+
+/* setup wizard */
+.modal.setup { width: min(560px, calc(100vw - 32px)); }
+.setup-steps { display: flex; gap: 6px; list-style: none; padding: 0; margin: 0 0 var(--s-4); }
+.setup-steps li { flex: 1; text-align: center; font-size: .8em; padding: 4px 0; border-radius: 999px; border: 1px solid var(--c-panel2); color: var(--c-muted); }
+.setup-steps li.on { border-color: var(--c-primary); color: var(--c-text); font-weight: 700; } .setup-steps li.done { color: var(--c-ok); border-color: var(--c-ok-line); }
+.brain-options { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.brain { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--c-panel2); background: var(--c-bg); cursor: pointer; }
+.brain.on { border-color: var(--c-primary); box-shadow: 0 0 0 1px var(--c-primary) inset; } .brain input { margin-top: 4px; }
+.brain-detail { margin: -2px 0 4px 30px; }
+.brain-detail code { font-family: var(--font-mono); font-size: .9em; }
+
+@media (max-width: 760px) { .robot-id { padding-left: 8px; } .robot-name { max-width: 12ch; } }

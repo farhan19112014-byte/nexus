@@ -116,6 +116,28 @@ export class ApiClient {
     return { response, offline: true, meta: { provider: 'local-demo', model: null, isLLM: false, latencyMs: 0, streamed: false, repaired: false, droppedFields: note ? [] : [], degraded: false, historySent: 0, promptVersion: 'local', research: { used: false, provider: null, count: 0, error: req.research ? 'API server offline — research unavailable' : undefined } } };
   }
 
+  /**
+   * Structured AI task on the server (HOLOBUILD design/edit, research, reflection, skill runs). The answer is returned
+   * as unknown JSON — callers validate it again before use. Throws ApiError with an honest reason (demo mode, offline, budget).
+   */
+  async task(path: string, body: unknown, signal?: AbortSignal, timeoutMs = 90000): Promise<unknown> {
+    if (this.webDemo) throw noServer();
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort('timeout'), timeoutMs);
+    const onAbort = () => ctl.abort('cancelled'); signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      let r: Response;
+      try { r = await fetch(`${this.base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal }); }
+      catch {
+        if (ctl.signal.aborted) throw ctl.signal.reason === 'timeout' ? new ApiError('The request timed out.', 'timeout', true) : new ApiError('Cancelled', 'cancelled');
+        this.offline = true; throw new ApiError('Can’t reach the NEXUS server.', 'offline', true);
+      }
+      if (!(r.headers.get('content-type') ?? '').includes('json')) { this.offline = true; throw new ApiError('There is no NEXUS server at this address.', 'offline', true); }
+      const j = await r.json().catch(() => null) as { error?: string; code?: ErrorCode; retryable?: boolean } | null;
+      if (!r.ok) throw new ApiError(j?.error ?? `Server error ${r.status}`, j?.code ?? 'provider', j?.retryable ?? r.status >= 500);
+      return j;
+    } finally { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
+  }
+
   async summarize(messages: ChatMessage[]): Promise<string | null> {
     if (this.offline || this.webDemo) return null;
     try {
@@ -160,5 +182,12 @@ export class ApiClient {
     } catch { if (signal?.aborted) return { ok: false, message: 'Download cancelled.' }; }
     return result ?? { ok: false, message: signal?.aborted ? 'Download cancelled.' : 'The download ended without a result.' };
   }
-  async testConnection() { if (this.webDemo) return { ok: false, message: noServer().message }; const r = await fetch(`${this.base}/api/config/test`, { method: 'POST' }); return r.json() as Promise<{ ok: boolean; message: string; latencyMs?: number }>; }
+  async testConnection(): Promise<{ ok: boolean; message: string; latencyMs?: number }> {
+    if (this.webDemo) return { ok: false, message: noServer().message };
+    const r = await fetch(`${this.base}/api/config/test`, { method: 'POST' });
+    const j = await r.json().catch(() => null) as { ok?: unknown; message?: unknown; error?: unknown; latencyMs?: number } | null;
+    // a refusal (public server, rate limit) is a failed test with the server's reason, never "undefined"
+    if (!r.ok || !j || typeof j.ok !== 'boolean') return { ok: false, message: String(j?.error ?? j?.message ?? `The connection test is not available (HTTP ${r.status}).`) };
+    return { ok: j.ok, message: String(j.message ?? ''), latencyMs: j.latencyMs };
+  }
 }

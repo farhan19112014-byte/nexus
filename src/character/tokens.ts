@@ -3,6 +3,7 @@
  * The single source of truth for NEXUS colors, strokes, radii and glow.
  * UI CSS variables are generated from these tokens at startup (see applyCssTokens).
  */
+import { classify } from '../theme/palette';
 export const COLORS = {
   deepBlack: '#07090d',
   black: '#0d1118',
@@ -25,9 +26,10 @@ export const COLORS = {
  * shell colors above; the interface uses only these, exposed as --nexus-* CSS variables.
  */
 export const PALETTE = {
-  blue: '#2563EB', electric: '#3B82F6', cyan: '#38BDF8',
-  darkBlue: '#0B1733', navy: '#101B35', black: '#080B12', white: '#F8FAFC',
-  grey100: '#E2E8F0', grey300: '#CBD5E1', grey500: '#64748B', grey700: '#334155', grey900: '#111827',
+  // Mission NEXUS palette: midnight navy #07111F · near-black #05080D · graphite #171D27 · steel #778394 · cool white #F4F8FF · cyan #38D9FF · deep blue #1268F5
+  blue: '#1268F5', electric: '#3B8BFF', cyan: '#38D9FF',
+  darkBlue: '#07111F', navy: '#0D1828', black: '#05080D', white: '#F4F8FF',
+  grey100: '#E3E9F2', grey300: '#C3CCD8', grey500: '#778394', grey700: '#2E3846', grey900: '#171D27',
   // status colors (always paired with text, never the only signal)
   warning: '#FBBF24', danger: '#F87171', success: '#34D399',
 } as const;
@@ -95,7 +97,8 @@ export function applyCssTokens(root: HTMLElement = document.documentElement) {
     '--nexus-grey-700': P.grey700, '--nexus-grey-900': P.grey900,
     // theme-dependent tokens (--c-*, --bg, --fg …) live in styles.css so the light theme can override them
   };
-  for (const [k, v] of Object.entries(map)) root.style.setProperty(k, v);
+  // brand colours go through their Colour Studio channel (--k-<hex>), so a custom theme re-maps them; status colours stay literal
+  for (const [k, v] of Object.entries(map)) root.style.setProperty(k, classify(v) ? `rgb(var(--k-${v.slice(1).toLowerCase()}))` : v);
 }
 
 /**

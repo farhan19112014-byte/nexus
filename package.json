@@ -25,7 +25,9 @@
     "dist:linux": "npm run build && electron-builder --linux AppImage --publish never",
     "icons": "node scripts/make-icons.mjs",
     "lint": "eslint . --max-warnings=0",
-    "dist:win:installer": "npm run build && electron-builder --win nsis --x64 --publish never"
+    "dist:win:installer": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "verify:live": "node --import tsx tools/verify-live.mjs",
+    "build:single": "node tools/build-single.mjs"
   },
   "dependencies": {
     "@google/genai": "2.27.0",
@@ -45,14 +47,14 @@
     "@vitejs/plugin-react": "^5.2.0",
     "axe-core": "^4.14.0",
     "concurrently": "^10.0.6",
-    "electron": "^44.7.2",
+    "electron": "^44.10.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
     "fake-indexeddb": "^6.2.6",
     "globals": "^15.15.0",
-    "happy-dom": "^20.14.6",
+    "happy-dom": "^21.0.4",
     "playwright-core": "1.64",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -60,7 +62,7 @@
     "typescript": "5.9",
     "typescript-eslint": "^8.71.2",
     "vite": "^7.3.7",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   },
   "description": "NEXUS — a cute 2D AI robot companion in one desktop app",
   "author": "NEXUS project",
