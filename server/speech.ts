@@ -10,11 +10,11 @@
  */
 import { z } from 'zod';
 
-export interface TtsConfig { provider: 'none' | 'openai' | 'gemini' | 'elevenlabs'; baseUrl: string; apiKey: string; model: string; voice: string; format: 'mp3' | 'wav' | 'opus'; /** Gemini only: delivery style, e.g. "cheerful and cute" */ style: string }
+export interface TtsConfig { provider: 'none' | 'openai' | 'gemini' | 'elevenlabs' | 'clone'; baseUrl: string; apiKey: string; model: string; voice: string; format: 'mp3' | 'wav' | 'opus'; /** Gemini only: delivery style, e.g. "cheerful and cute" */ style: string }
 export interface SttConfig { provider: 'none' | 'openai'; baseUrl: string; apiKey: string; model: string; language: string }
 /** ElevenLabs values from the environment, used whenever ElevenLabs is (or becomes) the voice service */
 export interface ElevenEnv { apiKey: string; voice: string; model: string; baseUrl: string }
-export interface SpeechConfig { tts: TtsConfig; stt: SttConfig; eleven: ElevenEnv }
+export interface SpeechConfig { tts: TtsConfig; stt: SttConfig; eleven: ElevenEnv; /** shared secret the voice-clone notebook uses to register its (changing) link: VOICE_CLONE_KEY */ cloneKey: string }
 
 /**
  * ElevenLabs voice configuration — the one place for model and delivery settings.
@@ -44,19 +44,22 @@ export function readSpeechConfig(env: NodeJS.ProcessEnv): SpeechConfig {
   // without TTS_PROVIDER, an ElevenLabs key selects ElevenLabs
   const tp = (env.TTS_PROVIDER || (eleven.apiKey ? 'elevenlabs' : 'none')).toLowerCase();
   const gem = tp === 'gemini';
-  const tts: TtsConfig = tp === 'elevenlabs'
+  const tts: TtsConfig = tp === 'clone'
+    // your own cloned voice: the Gradio app from the NEXUS voice-clone Colab notebook (URL + access code stay on the server)
+    ? { provider: 'clone', baseUrl: strip(env.VOICE_CLONE_URL ?? ''), apiKey: env.VOICE_CLONE_CODE ?? '', model: 'chatterbox', voice: 'your voice', format: 'wav', style: '' }
+    : tp === 'elevenlabs'
     ? { provider: 'elevenlabs', baseUrl: eleven.baseUrl, apiKey: eleven.apiKey, model: eleven.model, voice: eleven.voice, format: 'mp3', style: '' }
     : gem
     ? { provider: 'gemini', baseUrl: strip(env.TTS_BASE_URL || GEMINI_API_BASE), apiKey: env.TTS_API_KEY || env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '', model: env.TTS_MODEL || GEMINI_TTS_DEFAULTS.model, voice: env.TTS_VOICE || GEMINI_TTS_DEFAULTS.voice, format: 'wav', style: env.TTS_STYLE ?? GEMINI_TTS_DEFAULTS.style }
     : { provider: tp === 'openai' ? 'openai' : 'none', baseUrl: ttsBase, apiKey: keyFor(env.TTS_API_KEY, ttsBase), model: env.TTS_MODEL ?? '', voice: env.TTS_VOICE ?? '', format: (['mp3', 'wav', 'opus'].includes(fmt) ? fmt : 'mp3') as TtsConfig['format'], style: env.TTS_STYLE ?? '' };
   return {
-    eleven, tts,
+    eleven, tts, cloneKey: (env.VOICE_CLONE_KEY ?? '').trim(),
     stt: { provider: (env.STT_PROVIDER ?? 'none').toLowerCase() === 'openai' ? 'openai' : 'none', baseUrl: sttBase, apiKey: keyFor(env.STT_API_KEY, sttBase), model: env.STT_MODEL ?? '', language: env.STT_LANGUAGE ?? '' },
   };
 }
 
 export const SpeechRuntimeSchema = z.object({
-  ttsProvider: z.enum(['none', 'openai', 'gemini', 'elevenlabs']).optional(), ttsBaseUrl: z.string().url().max(300).optional(), ttsModel: z.string().max(120).optional(), ttsVoice: z.string().max(120).regex(/^[\w.:-]*$/, 'letters, digits, . _ : - only').optional(), ttsApiKey: z.string().max(400).optional(), ttsStyle: z.string().max(200).optional(),
+  ttsProvider: z.enum(['none', 'openai', 'gemini', 'elevenlabs', 'clone']).optional(), ttsBaseUrl: z.string().url().max(300).optional(), ttsModel: z.string().max(120).optional(), ttsVoice: z.string().max(120).regex(/^[\w.:-]*$/, 'letters, digits, . _ : - only').optional(), ttsApiKey: z.string().max(400).optional(), ttsStyle: z.string().max(200).optional(),
   sttProvider: z.enum(['none', 'openai']).optional(), sttBaseUrl: z.string().url().max(300).optional(), sttModel: z.string().max(120).optional(), sttApiKey: z.string().max(400).optional(), sttLanguage: z.string().max(12).optional(),
 }).strict();
 export type SpeechRuntime = z.infer<typeof SpeechRuntimeSchema>;
@@ -80,6 +83,11 @@ export function ttsStatus(c: TtsConfig): { configured: boolean; note: string } {
     if (!c.apiKey) return { configured: false, note: 'ElevenLabs voice needs an API key: set ELEVENLABS_API_KEY in .env (or the key field in Settings → Voice).' };
     if (!c.voice) return { configured: false, note: 'ElevenLabs voice needs a voice: set ELEVENLABS_VOICE_ID, or choose one in Settings → Voice → Speech services.' };
     return { configured: true, note: `ElevenLabs · ${c.model} · voice ${c.voice}` };
+  }
+  if (c.provider === 'clone') {
+    if (!/^https:\/\/[^\s/]+/.test(c.baseUrl)) return { configured: false, note: 'Your cloned voice is waiting for the voice-clone Colab notebook: run it (it connects itself with VOICE_CLONE_KEY), or set VOICE_CLONE_URL.' };
+    if (!c.apiKey) return { configured: false, note: 'Your cloned voice needs VOICE_CLONE_CODE: the access code the Colab notebook printed.' };
+    return { configured: true, note: 'Your own voice (Chatterbox on Google Colab)' };
   }
   if (c.provider === 'gemini') {
     if (!c.apiKey) return { configured: false, note: 'Gemini voice needs a Gemini API key (GEMINI_API_KEY, or the key field in Settings).' };
@@ -226,6 +234,7 @@ export async function synthesize(c: TtsConfig, text: string, signal: AbortSignal
   const st = ttsStatus(c); if (!st.configured) throw new SpeechError(st.note, 503, 'not_configured');
   if (c.provider === 'elevenlabs') return synthesizeEleven(c, text, signal);
   if (c.provider === 'gemini') return synthesizeGemini(c, text, signal);
+  if (c.provider === 'clone') return synthesizeClone(c, text, signal);
   let r: Response;
   try {
     r = await fetch(`${c.baseUrl}/audio/speech`, { method: 'POST', signal, headers: { 'content-type': 'application/json', ...(c.apiKey ? { authorization: `Bearer ${c.apiKey}` } : {}) }, body: JSON.stringify({ model: c.model, voice: c.voice, input: text, response_format: c.format }) });
@@ -252,4 +261,53 @@ export async function transcribe(c: SttConfig, audio: Buffer, mime: string, sign
   const j = (await r.json().catch(() => null)) as { text?: unknown } | null;
   if (!j || typeof j.text !== 'string') throw new SpeechError('The transcription service returned an unexpected answer.', 502, 'malformed');
   return j.text.trim().slice(0, 2000);
+}
+
+
+/**
+ * Your own voice: the Gradio app started by the NEXUS voice-clone Colab notebook (Chatterbox). Gradio's HTTP API is
+ * two steps — POST /gradio_api/call/speak {data:[text, code]} → {event_id}; GET …/speak/{event_id} streams server-sent
+ * events ending in "event: complete" with the output file ({url, path}). Older Gradio apps serve the same API without
+ * the /gradio_api prefix. The access code is checked by the notebook; it and the link live only in the server's env.
+ */
+export async function synthesizeClone(c: TtsConfig, text: string, signal: AbortSignal): Promise<{ audio: Buffer; mime: string }> {
+  const base = c.baseUrl.replace(/\/+$/, '');
+  const net = (e: unknown) => { if (signal.aborted) return new SpeechError('cancelled', 499, 'cancelled'); return new SpeechError(`Could not reach your voice server (is the Colab notebook still running?): ${(e as Error).message}`, 502, 'network'); };
+  let prefix = '/gradio_api'; let r: Response;
+  const post = (p: string) => fetch(`${base}${p}/call/speak`, { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ data: [text, c.apiKey] }) });
+  try { r = await post(prefix); if (r.status === 404) { prefix = ''; r = await post(prefix); } } catch (e) { throw net(e); }
+  if (r.status === 404) throw new SpeechError('Your voice server has no "speak" API — run the latest voice-clone notebook (Cell 5).', 502, 'provider_error');
+  if (!r.ok) throw new SpeechError(`Your voice server answered HTTP ${r.status}${r.status === 502 || r.status === 503 ? ' — the Colab notebook may have stopped' : ''}.`, 502, 'provider_error');
+  const { event_id: id } = await r.json().catch(() => ({})) as { event_id?: string };
+  if (!id) throw new SpeechError('Your voice server did not start the request.', 502, 'malformed');
+  let sse = '';
+  try { const g = await fetch(`${base}${prefix}/call/speak/${encodeURIComponent(id)}`, { signal }); if (!g.ok) throw new Error(`HTTP ${g.status}`); sse = await g.text(); } catch (e) { throw net(e); }
+  const ev = parseSse(sse); const done = ev.find((x) => x.event === 'complete'); const err = ev.find((x) => x.event === 'error');
+  if (!done) {
+    const msg = err?.data && err.data !== 'null' ? String(err.data).replace(/^"|"$/g, '').slice(0, 200) : '';
+    throw new SpeechError(/access code/i.test(msg) ? 'Your voice server rejected the access code — copy VOICE_CLONE_CODE again from the notebook.' : msg ? `Your voice server could not speak that: ${msg}.` : 'Your voice server refused the request — check VOICE_CLONE_CODE (copy it again from Cell 5), or look at the notebook\'s output for an error.', 502, /access code/i.test(msg) || !msg ? 'auth' : 'provider_error');
+  }
+  const file = ((): { url?: string; path?: string } | null => { try { const d = JSON.parse(done.data) as unknown[]; return d[0] && typeof d[0] === 'object' ? d[0] as { url?: string; path?: string } : null; } catch { return null; } })();
+  const fileUrl = file?.url && /^https?:\/\//.test(file.url) ? file.url : file?.path ? `${base}${prefix}/file=${file.path}` : null;
+  // only fetch the audio from the configured voice server itself
+  if (!fileUrl || new URL(fileUrl).host !== new URL(base).host) throw new SpeechError('Your voice server returned no audio file.', 502, 'malformed');
+  let a: Response; try { a = await fetch(fileUrl, { signal }); } catch (e) { throw net(e); }
+  if (!a.ok) throw new SpeechError(`Your voice server's audio file answered HTTP ${a.status}.`, 502, 'provider_error');
+  const audio = Buffer.from(await a.arrayBuffer());
+  if (audio.length < 64) throw new SpeechError('Your voice server returned empty audio.', 502, 'malformed');
+  const ct = a.headers.get('content-type') ?? '';
+  return { audio, mime: /^audio\//.test(ct) ? ct.split(';')[0] : 'audio/wav' };
+}
+/** server-sent events → [{event, data}] */
+export function parseSse(s: string): { event: string; data: string }[] {
+  return s.split(/\r?\n\r?\n/).map((block) => {
+    let event = 'message'; const data: string[] = [];
+    for (const line of block.split(/\r?\n/)) { if (line.startsWith('event:')) event = line.slice(6).trim(); else if (line.startsWith('data:')) data.push(line.slice(5).trimStart()); }
+    return { event, data: data.join('\n') };
+  }).filter((x) => x.data || x.event !== 'message');
+}
+
+/** a link the notebook may register: Gradio share links (and Hugging Face Spaces) only — never an arbitrary host */
+export function cloneUrlAllowed(u: string): boolean {
+  try { const x = new URL(u); return x.protocol === 'https:' && !x.username && !x.password && (/\.gradio\.live$/.test(x.hostname) || /\.hf\.space$/.test(x.hostname)); } catch { return false; }
 }

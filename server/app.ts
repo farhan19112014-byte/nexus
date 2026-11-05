@@ -10,7 +10,7 @@
  *   GET  /api/speech/voices   ElevenLabs voices on the account (loopback only)
  * Logs contain method, path, status and duration only — never message content or secrets.
  */
-import { listElevenVoices, SpeechError, sttStatus, synthesize, synthesizeElevenTimed, transcribe, ttsStatus, type Alignment } from './speech';
+import { cloneUrlAllowed, listElevenVoices, SpeechError, sttStatus, synthesize, synthesizeElevenTimed, transcribe, ttsStatus, type Alignment } from './speech';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { existsSync, readFileSync } from 'node:fs';
 import { baseSecurityHeaders, buildCsp, inlineScriptHashes } from './security';
@@ -26,7 +26,7 @@ import { DemoProvider } from './providers/demo';
 import { makeResearch, type ResearchProvider } from './research';
 import { PROMPT_VERSION } from './prompts/system';
 import { DailyBudget, makeCounterStore, visitorOf, type CounterStore, type Denied, type MeterName } from './budget';
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { findImage } from '../shared/imageSearch';
 import type { ImageResult } from '../shared/visual';
 import { z } from 'zod';
@@ -317,6 +317,22 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     for (const key of audioCache.keys()) { if (audioCache.size <= AUDIO_CACHE_MAX && bytes <= AUDIO_CACHE_BYTES) break; bytes -= audioCache.get(key)!.audio.length; audioCache.delete(key); }
   };
   /** POST /api/speech (and the older /api/tts): { text } → audio from the configured voice service. No other voice is substituted on failure. */
+  // your own voice: the voice-clone Colab notebook registers its current public link + access code here (every minute
+  // while it runs), authenticated by VOICE_CLONE_KEY — so the changing Colab link never has to be copied into Render
+  const cloneSeen = { at: 0 };
+  app.post('/api/voice-clone/register', rateLimiter(20), (req, res) => {
+    const key = cfg.speech.cloneKey; const given = typeof req.headers['x-nexus-voice-key'] === 'string' ? req.headers['x-nexus-voice-key'] : '';
+    const ok = key.length >= 16 && given.length === key.length && timingSafeEqual(Buffer.from(given), Buffer.from(key));
+    if (!ok) { res.status(401).json({ error: 'Wrong or missing voice key (VOICE_CLONE_KEY on the server, NEXUS_VOICE_KEY in the notebook).', code: 'unauthorized' }); return; }
+    if (cfg.speech.tts.provider !== 'clone') { res.status(409).json({ error: 'The server is not set to your own voice: set TTS_PROVIDER=clone in Render.', code: 'not_clone' }); return; }
+    const url = typeof req.body?.url === 'string' ? req.body.url.trim().replace(/\/+$/, '') : ''; const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+    if (!cloneUrlAllowed(url) || code.length < 8 || code.length > 200) { res.status(400).json({ error: 'Send the notebook\'s https://….gradio.live link and its access code.', code: 'invalid_request' }); return; }
+    const changed = url !== cfg.speech.tts.baseUrl || code !== cfg.speech.tts.apiKey;
+    cfg.speech.tts.baseUrl = url; cfg.speech.tts.apiKey = code; cloneSeen.at = Date.now();
+    if (changed) opts.log?.(`[voice] your own voice connected: ${new URL(url).hostname}`);
+    res.json({ ok: true, changed });
+  });
+
   app.post(['/api/speech', '/api/tts'], speechLimit, async (req, res) => {
     const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
     if (!text || text.length > 1200) { res.status(400).json({ error: 'Text must be 1–1200 characters', code: 'invalid_request' }); return; }
@@ -333,7 +349,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     // spoken characters are reserved BEFORE the provider is called (parallel requests cannot share the same allowance)
     const ticket = await take(res, 'speech', req.ip, [...text].length); if (!ticket) return;
     const ctl = new AbortController(); res.on('close', () => { if (!res.writableFinished) ctl.abort('client'); });
-    const t = setTimeout(() => ctl.abort('timeout'), opts.speechTimeoutMs ?? 30000);
+    const t = setTimeout(() => ctl.abort('timeout'), opts.speechTimeoutMs ?? (cfg.speech.tts.provider === 'clone' ? 90000 : 30000));   // a free Colab GPU is slower than a speech API
     try {
       const out = timed ? await synthesizeElevenTimed(cfg.speech.tts, text, ctl.signal) : { ...(await synthesize(cfg.speech.tts, text, ctl.signal)), alignment: null };
       cachePut(key, out.audio, out.mime, out.alignment);

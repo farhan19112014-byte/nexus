@@ -213,7 +213,7 @@ try {
   await page.getByRole('tab', { name: 'Status' }).click();
   // the asset table is filled from /asset-registry.json once the panel opens
   await page.waitForFunction(() => document.querySelectorAll('.assets tbody tr').length > 0, null, { timeout: 10000 }).catch(() => {});
-  check('[A10] [A49] status panel lists capabilities and all 145 assets', (await page.locator('.assets tbody tr').count()) === 145 && (await page.locator('.caps li').count()) >= 8);
+  check('[A10] [A49] status panel lists capabilities and all 146 assets', (await page.locator('.assets tbody tr').count()) === 146 && (await page.locator('.caps li').count()) >= 8);
   {
     const diag = page.locator('[data-testid=creator-diagnostics]'); const local = await diag.count() === 1;
     if (local) await diag.locator('summary').click();

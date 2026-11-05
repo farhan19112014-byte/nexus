@@ -146,7 +146,7 @@ function SpeechServicePanelInner() {
       <div><b>Speech services (optional)</b> — a speech service gives NEXUS a generated voice whose mouth follows the real audio, and voice input that also works in the desktop app. ElevenLabs, Google Gemini or any OpenAI-compatible audio API works.</div>
       <div className="small" role="status">Voice: {snap.caps?.speech?.tts.configured ? '✓ ' : '— '}{pub.tts.note}<br />Voice input: {snap.caps?.speech?.stt.configured ? '✓ ' : '— '}{pub.stt.note}</div>
       <fieldset className="field"><legend>Spoken replies (text-to-speech)</legend>
-        <label className="field">Service<select {...F('ttsProvider')}><option value="none">Off — use this computer's voices</option><option value="elevenlabs">ElevenLabs voice</option><option value="gemini">Google Gemini voice</option><option value="openai">OpenAI-compatible speech API</option></select></label>
+        <label className="field">Service<select {...F('ttsProvider')}><option value="none">Off — use this computer's voices</option><option value="elevenlabs">ElevenLabs voice</option><option value="gemini">Google Gemini voice</option><option value="openai">OpenAI-compatible speech API</option><option value="clone">My own cloned voice (Colab notebook)</option></select></label>
         {f.ttsProvider === 'elevenlabs' && <ElevenFields f={f} setF={setF} allowed={allowed} keySet={pub.tts.provider === 'elevenlabs' && pub.tts.apiKey.set} keyHint={pub.tts.apiKey.hint} saved={pub.tts.provider === 'elevenlabs'} />}
         {f.ttsProvider === 'gemini' && pub.tts.provider === 'gemini' && <>
           <label className="field">Gemini voice<select {...F('ttsVoice')}>{Object.entries(GEMINI_VOICES).map(([n, d]) => <option key={n} value={n}>{n} — {d.toLowerCase()}</option>)}</select></label>
@@ -155,6 +155,11 @@ function SpeechServicePanelInner() {
           <label className="field">API key {pub.tts.apiKey.set ? <span className="muted">(set {pub.tts.apiKey.hint} — leave blank to keep)</span> : <span className="muted">(blank uses the Gemini key from Settings → Model)</span>}<input type="password" autoComplete="off" {...F('ttsApiKey')} /></label>
         </>}
         {f.ttsProvider === 'gemini' && pub.tts.provider !== 'gemini' && <div className="muted small">Press Save to switch to the Gemini voice: it starts as “Leda” (youthful) with a cheerful, cute style, and uses your Gemini key from Settings → Model.</div>}
+        {f.ttsProvider === 'clone' && <>
+          <label className="field">Public link from the notebook<input {...F('ttsBaseUrl')} placeholder="https://xxxx.gradio.live" /></label>
+          <label className="field">Access code {pub.tts.apiKey.set && pub.tts.provider === 'clone' ? <span className="muted">(set — leave blank to keep)</span> : <span className="muted">(printed by Cell 5 of the notebook)</span>}<input type="password" autoComplete="off" {...F('ttsApiKey')} /></label>
+          <div className="muted small">Runs your voice on Google Colab's free GPU. The link changes every time you start the notebook and stops when Colab shuts down — then NEXUS reports the voice as unavailable.</div>
+        </>}
         {f.ttsProvider === 'openai' && <>
           <label className="field">Base URL<input {...F('ttsBaseUrl')} placeholder="https://api.openai.com/v1 or a local speech server" /></label>
           <label className="field">Speech model<input {...F('ttsModel')} placeholder="a speech model id from your provider" /></label>
