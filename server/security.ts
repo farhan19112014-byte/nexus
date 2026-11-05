@@ -33,7 +33,7 @@ export function buildCsp(o: CspOptions): string {
     ['script-src', ["'self'", ...(o.inlineScripts ?? [])]],
     ['style-src', ["'self'", "'unsafe-inline'"]],
     // reference images shown by the visual presenter come only from Wikimedia Commons' image host
-    ['img-src', ["'self'", 'data:', 'blob:', 'https://upload.wikimedia.org']],
+    ['img-src', ["'self'", 'data:', 'blob:', 'https://upload.wikimedia.org', 'https://thumb.wikimedia.org']],
     ['font-src', ["'self'", 'data:']],
     ['media-src', ["'self'", 'blob:', 'data:', ...(o.publicMode ? [] : ['https:'])]],
     ['connect-src', connect],

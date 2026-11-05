@@ -596,6 +596,8 @@ export class Companion {
       if (knowledge.length && result.meta.isLLM) notes.push(`Sent ${knowledge.length} note(s) from NEXUS's knowledge base with this message (${Object.entries(knowledge.reduce<Record<string, number>>((acc, k) => { acc[k.status] = (acc[k.status] ?? 0) + 1; return acc; }, {})).map(([k, n]) => `${n} ${k}`).join(', ')}).`);
       this.patch(asst.id, { text: resp.reply, status: 'complete', stage: undefined, meta: result.meta, response: resp, notes, changes: [{ scope: 'conversation', text: 'This reply is part of the conversation only.' }] });
       if (!headApplied) { this.applyExpression(resp.expression, resp.emotionIntensity); this.presentVisual(resp.visual ?? null, asst.id, token); }
+      // the visual arrived after the head (in the reply's closing metadata): show it now
+      else if (resp.visual && this.snap.visual?.msgId !== asst.id) this.presentVisual(resp.visual, asst.id, token);
       if (resp.pose !== 'neutral' || this.engine.getPose() !== 'neutral') this.engine.setPose(resp.pose as Pose);
       if (typeof document !== 'undefined' && document.hidden) this.notifications.push('response', `${this.robotName} replied.`, { react: false, desktop: true });
       try { if (result.meta.isLLM) this.d.onExchange?.({ msgId: asst.id, user: text, reply: resp.reply, uncertainty: resp.uncertainty, previousReply: prevReply }); } catch { /* learning is best-effort */ }

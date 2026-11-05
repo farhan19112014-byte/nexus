@@ -7,7 +7,7 @@ import { CHANNELS, CHANNEL_NAMES, FACE_CHANNELS } from '../../shared/channels';
 import { PRODUCT_NAME, creatorLine } from '../../shared/identity';
 import { persona as editablePersona } from './persona';
 
-export const PROMPT_VERSION = 'nexus-presenter-2026.11.05-1';
+export const PROMPT_VERSION = 'nexus-presenter-2026.11.06-1';
 
 /** The persona is rebuilt for every request so a rename takes effect immediately (no stale copies of the old name). */
 function persona(req: ChatRequest) {
@@ -66,7 +66,8 @@ export const VISUAL_GUIDE = `VISUAL (optional, in HEAD as "visual"): while you E
     {"type":"forces","title","body":{"label"},"attractor"?:{"label"},"forces":[{"label","direction":"up"|"down"|"left"|"right"|"toward"|"away","strength":0.2..1}] ≤4}   — gravity, friction, lift
     {"type":"hierarchy","title","root","children":[{"label","children":[labels ≤4]}] ≤6}
     {"type":"bars","title","unit","items":[{"label","value"}] 2..8}   — approximate values only; say so in the caption
-  Your words should refer to the visual naturally ("as you can see on the right…"); the app shows it on your right and you point to it. Only facts you are confident about go into a diagram.`;
+  Put the visual object IN THE HEAD LINE (first line), as compact one-line JSON. Your words should refer to it naturally ("as you can see on the right…"); the app shows it on your right and you point to it. NEVER mention a picture, diagram or "on the right" unless you included a visual. Only facts you are confident about go into a diagram.
+  Example HEAD: HEAD {"expression":"interested","emotionIntensity":0.7,"gesture":"explain","pose":"neutral","speakingStyle":"warm","visual":{"kind":"diagram","caption":"Planets in order from the Sun","diagram":{"type":"orbit","title":"The solar system","center":{"label":"Sun"},"items":[{"label":"Mercury"},{"label":"Venus"},{"label":"Earth"},{"label":"Mars"}]}}}`;
 
 function bodyContract(req: ChatRequest) {
   const skills = req.skills.map((s) => `${s.id}${s.tags.length ? ` [${s.tags.slice(0, 3).join(',')}]` : ''}: ${s.description}`).join('\n') || '(none)';

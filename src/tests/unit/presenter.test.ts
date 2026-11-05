@@ -60,9 +60,9 @@ describe('[A145] visual presenter — what can be shown', () => {
     expect(bad.visual).toBeNull(); expect(bad.expression).toBe('interested'); expect(bad.gesture).toBe('explain');
     expect(BrainHeadSchema.parse({ visual: { kind: 'html', html: '<script>' } }).visual).toBeNull();
     expect(BrainResponseSchema.parse({ reply: 'hi' }).visual).toBeNull();                 // most replies have none
-    // the server's coercion keeps the field (part of the contract); a visual with unknown extras is rejected → null, the reply stays
+    // the server's coercion keeps the field (part of the contract); unknown extras inside a visual are dropped, the visual itself is kept
     const c = coerceBrainResponse({ reply: 'Look right.', visual: { kind: 'image', query: 'Apollo 11', caption: 'Moon', extra: 1 } });
-    expect(c.value?.reply).toBe('Look right.'); expect(c.value?.visual).toBeNull(); expect(c.dropped).toEqual([]);
+    expect(c.value?.reply).toBe('Look right.'); expect(c.value?.visual).toEqual({ kind: 'image', query: 'Apollo 11', caption: 'Moon' }); expect(c.dropped).toEqual([]);
     expect(VisualRequestSchema.safeParse({ kind: 'image', query: 'x' }).success).toBe(false);   // too short to search
   });
 
@@ -152,5 +152,25 @@ describe('[A145] presenter body language', () => {
     const after = b.update(1 / 60); expect(after.accent).toBe(0); expect(after.speech).toBeLessThan(0.05);
     b.setState('IDLE'); for (let i = 0; i < 60; i++) b.update(1 / 60); expect(b.update(1 / 60).active).toBe(false);   // back to neutral
     const r = new BodyController(); r.reduced = true; r.setState('SPEAKING'); for (let i = 0; i < 60; i++) { r.setSpeech(i % 10 < 5 ? 1 : 0); expect(r.update(1 / 60).accent).toBe(0); }
+  });
+});
+
+describe('[A145] real-model slips are forgiven (live Gemini testing)', () => {
+  it('[A145] Wikimedia\'s resized-image host is allowed (thumbnails are served from thumb.wikimedia.org)', () => {
+    expect(isAllowedImageUrl('https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1d/Taj.jpeg/960px-Taj.jpeg')).toBe(true);
+    expect(isAllowedImageUrl('https://thumb.wikimedia.org.evil.com/a.jpg')).toBe(false);
+  });
+  it('[A145] a slightly-off visual is repaired instead of dropped: string items, long labels, extra keys, too many items, string numbers, upper-case types', () => {
+    const h = (visual: unknown) => BrainHeadSchema.parse({ expression: 'interested', visual }).visual;
+    expect(h({ kind: 'diagram', diagram: { type: 'ORBIT', title: 'Solar system', center: 'Sun', items: ['Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune', 'Pluto', 'Eris'], colour: 'blue' }, extra: true }))
+      .toMatchObject({ kind: 'diagram', diagram: { type: 'orbit', center: { label: 'Sun' }, items: expect.arrayContaining([{ label: 'Neptune' }]) } });
+    expect((h({ kind: 'diagram', diagram: { type: 'orbit', title: 'x', center: { label: 'Sun' }, items: Array.from({ length: 12 }, (_, i) => `P${i}`) } }) as { diagram: { items: unknown[] } }).diagram.items).toHaveLength(9);
+    expect(h({ kind: 'diagram', diagram: { type: 'network', title: 'Neural network', layers: [{ label: 'Input', size: '3' }, { size: 12 }, 2] } })).toMatchObject({ diagram: { layers: [{ label: 'Input', size: 3 }, { label: 'Hidden', size: 8 }, { label: 'Output', size: 2 }] } });
+    expect(h({ kind: 'diagram', diagram: { type: 'bars', title: 'Sizes', items: [{ label: 'Earth', value: '12,742' }, { label: 'Moon', value: 3474 }] } })).toMatchObject({ diagram: { items: [{ value: 12742 }, { value: 3474 }] } });
+    expect(h({ kind: 'diagram', diagram: { type: 'forces', title: 'Gravity', body: 'Apple', attractor: 'Earth', forces: [{ label: 'Weight', direction: 'Toward' }] } })).toMatchObject({ diagram: { forces: [{ direction: 'toward', strength: 0.7 }] } });
+    expect(h({ query: 'Taj Mahal' })).toEqual({ kind: 'image', query: 'Taj Mahal', caption: '' });
+    expect((h({ kind: 'diagram', diagram: { type: 'flow', title: 'A very long title that goes on and on and on beyond the limit', steps: ['a', 'b'] } }) as { diagram: { title: string } }).diagram.title.length).toBeLessThanOrEqual(48);
+    expect(h({ kind: 'diagram', diagram: { type: 'spiral', title: 'x' } })).toBeNull();      // still: unknown types are refused
+    expect(h({ kind: 'html', html: '<b>' })).toBeNull();
   });
 });

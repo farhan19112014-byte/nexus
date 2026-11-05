@@ -52,7 +52,45 @@ export type VisualRequestInput = z.input<typeof VisualRequestSchema>;
  * The field as it sits in the model's HEAD line: anything invalid becomes null (the reply and the rest of the head are
  * kept — a bad visual never costs the user the answer).
  */
-export const VisualFieldSchema = VisualRequestSchema.nullable().catch(null).default(null);
+export const VisualFieldSchema = z.preprocess((v) => normalizeVisual(v), VisualRequestSchema.nullable()).catch(null).default(null);
+
+/**
+ * Forgive the small slips language models make in a visual (the strict schema above still has the final word):
+ * unknown keys dropped, over-long labels shortened, too many items cut to the limit, strings where objects are
+ * expected ("items": ["Earth", …]) wrapped, numbers given as strings converted, sizes clamped, the type in any case.
+ */
+export function normalizeVisual(v: unknown): unknown {
+  if (v == null || typeof v !== 'object' || Array.isArray(v)) return v ?? null;
+  const o = v as Record<string, unknown>;
+  const str = (x: unknown, n: number) => (typeof x === 'string' ? x.trim().slice(0, n) : typeof x === 'number' ? String(x) : x);
+  const lbl = (x: unknown) => str(x, 48);
+  const itm = (x: unknown) => (typeof x === 'string' || typeof x === 'number' ? { label: lbl(x) } : x && typeof x === 'object' ? { label: lbl((x as Record<string, unknown>).label ?? (x as Record<string, unknown>).name ?? (x as Record<string, unknown>).title), ...((x as Record<string, unknown>).note != null ? { note: str((x as Record<string, unknown>).note, 80) } : {}) } : x);
+  const arr = (x: unknown, max: number, f: (y: unknown) => unknown) => (Array.isArray(x) ? x.slice(0, max).map(f) : x);
+  const kind = typeof o.kind === 'string' ? o.kind.toLowerCase() : o.diagram ? 'diagram' : o.query ? 'image' : o.kind;
+  const caption = str(o.caption ?? '', 160);
+  if (kind === 'image') return { kind, query: str(o.query, 80), caption };
+  if (kind !== 'diagram' || !o.diagram || typeof o.diagram !== 'object') return v;
+  const d = o.diagram as Record<string, unknown>; const type = typeof d.type === 'string' ? d.type.toLowerCase() : d.type;
+  const num = (x: unknown) => (typeof x === 'string' && x.trim() !== '' && Number.isFinite(Number(x.replace(/,/g, ''))) ? Number(x.replace(/,/g, '')) : x);
+  const base = { type, title: lbl(d.title ?? 'Diagram') };
+  let out: Record<string, unknown>;
+  switch (type) {
+    case 'orbit': out = { ...base, center: itm(d.center), items: arr(d.items, 9, itm) }; break;
+    case 'network': out = { ...base, layers: arr(d.layers, 6, (l) => (l && typeof l === 'object' ? { label: lbl((l as Record<string, unknown>).label ?? ''), size: Math.max(1, Math.min(8, Math.round(Number(num((l as Record<string, unknown>).size)) || 1))) } : typeof l === 'number' ? { label: '', size: Math.max(1, Math.min(8, Math.round(l))) } : l)) };
+      if (Array.isArray(out.layers)) out.layers = (out.layers as { label: string; size: number }[]).map((l, i, a) => ({ ...l, label: l.label || (i === 0 ? 'Input' : i === a.length - 1 ? 'Output' : 'Hidden') }));
+      break;
+    case 'flow': out = { ...base, steps: arr(d.steps, 7, itm) }; break;
+    case 'cycle': out = { ...base, steps: arr(d.steps, 8, itm) }; break;
+    case 'compare': { const side = (x: unknown) => (x && typeof x === 'object' ? { title: lbl((x as Record<string, unknown>).title ?? (x as Record<string, unknown>).label), points: arr((x as Record<string, unknown>).points, 5, (p) => str(p, 80)) } : x);
+      out = { ...base, left: side(d.left), right: side(d.right) }; break; }
+    case 'timeline': out = { ...base, events: arr(d.events, 8, (e) => (e && typeof e === 'object' ? { date: str((e as Record<string, unknown>).date, 20), label: lbl((e as Record<string, unknown>).label ?? (e as Record<string, unknown>).event), ...((e as Record<string, unknown>).note != null ? { note: str((e as Record<string, unknown>).note, 80) } : {}) } : e)) }; break;
+    case 'forces': out = { ...base, body: itm(d.body), ...(d.attractor ? { attractor: itm(d.attractor) } : {}), forces: arr(d.forces, 4, (f) => (f && typeof f === 'object' ? { label: lbl((f as Record<string, unknown>).label), direction: typeof (f as Record<string, unknown>).direction === 'string' ? ((f as Record<string, unknown>).direction as string).toLowerCase() : (f as Record<string, unknown>).direction, strength: Math.max(0.2, Math.min(1, Number(num((f as Record<string, unknown>).strength ?? 0.7)) || 0.7)) } : f)) }; break;
+    case 'hierarchy': out = { ...base, root: lbl(d.root), children: arr(d.children, 6, (c) => (typeof c === 'string' ? { label: lbl(c), children: [] } : c && typeof c === 'object' ? { label: lbl((c as Record<string, unknown>).label), children: arr((c as Record<string, unknown>).children ?? [], 4, (g) => lbl(typeof g === 'object' && g ? (g as Record<string, unknown>).label : g)) } : c)) }; break;
+    case 'bars': out = { ...base, unit: str(d.unit ?? '', 16), items: arr(d.items, 8, (b) => (b && typeof b === 'object' ? { label: lbl((b as Record<string, unknown>).label), value: num((b as Record<string, unknown>).value) } : b)) }; break;
+    default: return v;
+  }
+  return { kind, caption, diagram: out };
+}
 
 /** A real image found for an "image" request, with everything needed to credit it. */
 export interface ImageResult {
@@ -66,7 +104,8 @@ export interface ImageResult {
   licenseUrl: string | null;
   source: 'Wikimedia Commons';
 }
-export const IMAGE_HOSTS = ['upload.wikimedia.org'] as const;
+/** Wikimedia's image hosts: originals on upload., resized renditions on thumb. (both serve only Commons/Wikipedia files) */
+export const IMAGE_HOSTS = ['upload.wikimedia.org', 'thumb.wikimedia.org'] as const;
 /** only https images from the hosts above are ever shown */
 export function isAllowedImageUrl(u: string) { try { const x = new URL(u); return x.protocol === 'https:' && (IMAGE_HOSTS as readonly string[]).includes(x.hostname); } catch { return false; } }
 

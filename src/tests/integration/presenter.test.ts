@@ -90,6 +90,18 @@ describe('[A145] companion: the presenter delivers explanation, visual and gestu
     expect(t.c.getSnapshot().visual).toBeNull();
     t.stop();
   });
+  it('[A145] a visual that arrives in the reply\'s closing metadata (not the first line) is still shown', async () => {
+    const kv = new MemoryKV(); const engine = new AnimationEngine(seeded(4)); const expressions = new ExpressionController(BUILTIN_EXPRESSIONS);
+    const runtime = new CharacterRuntime(engine, expressions); const registry = new SkillRegistry(kv); const memory = new MemoryStore(kv); const learning = new LearningSystem(registry, kv);
+    const resp = BrainResponseSchema.parse({ reply: 'As you can see on the right, the Sun is at the centre.', expression: 'interested', visual: { kind: 'diagram', diagram: { type: 'orbit', title: 'Solar system', center: { label: 'Sun' }, items: [{ label: 'Earth' }] } } });
+    const api = { offline: false, status: async () => ({ provider: 'fake', label: 'fake', model: 'm', isLLM: true, configured: true, streaming: true, promptVersion: 't', runtimeConfig: false, research: { provider: 'none', configured: false } }),
+      chat: async (_i: ChatRequestInput, _s: AbortSignal, h: ChatHandlers) => { h.onHead?.({ ...resp, visual: null }); h.onDelta?.(resp.reply); return { response: resp, meta: META, offline: false }; },
+      visualImage: async () => ({ image: null }), summarize: async () => null } as unknown as ApiClient;
+    const c = new Companion({ runtime, registry, memory, learning, api, persistent: false, silentMsPerChar: 4, restAfterMs: 60_000 });
+    const timer = setInterval(() => runtime.step(0.05), 2); await memory.ready; await memory.updateSettings({ greeted: true }); await c.init();
+    await c.send('explain the solar system'); await until(() => c.sm.state === 'idle');
+    expect(c.getSnapshot().visual).toMatchObject({ status: 'ready', request: { kind: 'diagram' } }); clearInterval(timer);
+  });
   it('[A145] a comparison gets the "on one hand… on the other" gesture instead of a point', async () => {
     const t = rig(async () => ({ image: null }), (req) => BrainResponseSchema.parse({ ...demoBrain(req), actions: [] })); await t.ready();
     await t.c.send('what is the difference between weather and climate'); await until(() => t.c.sm.state === 'idle');

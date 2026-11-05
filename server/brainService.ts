@@ -141,9 +141,13 @@ export class BrainService {
     if (!head.success || p.headError) meta.droppedFields.push('head');
     let extra: Record<string, unknown> = {};
     if (p.metaRaw) { try { extra = extractJSON(p.metaRaw) as Record<string, unknown>; } catch { meta.droppedFields.push('meta'); } }
+    // a visual may come in the HEAD line or (some models) in META; a later valid one wins over an empty one
+    const rawVisual = (extra as { visual?: unknown }).visual ?? (p.head as { visual?: unknown } | null)?.visual ?? null;
     const merged = { ...(head.success ? head.data : {}), ...extra, reply: p.text };
+    if ((merged as { visual?: unknown }).visual == null && head.success && head.data.visual) (merged as { visual?: unknown }).visual = head.data.visual;
     const c = coerceBrainResponse(merged);
     meta.droppedFields.push(...c.dropped);
+    if (rawVisual && c.value && !c.value.visual) meta.droppedFields.push('visual');
     if (!c.value) { meta.degraded = true; return BrainResponseSchema.parse({ reply: p.text.slice(0, 6000) }); }
     return c.value;
   }
