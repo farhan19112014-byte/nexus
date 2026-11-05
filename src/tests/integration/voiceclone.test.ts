@@ -2,7 +2,7 @@
  * [A146] Your own voice: NEXUS's server speaks through the Gradio app of the voice-clone Colab notebook (Chatterbox).
  * The link and access code live only in the server's environment; a fake Gradio app stands in for Colab here.
  */
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -43,6 +43,38 @@ describe('[A146] your own cloned voice (Colab + Gradio)', () => {
       const out = await synthesizeClone(cfgFor(base), 'Hello from NEXUS.', new AbortController().signal);
       expect(out.mime).toBe('audio/wav'); expect(out.audio.subarray(0, 4).toString()).toBe('RIFF');
     }
+  });
+  it('[A146] fast lane: one POST /nexus/speak → WAV + timing (older notebooks without it fall back to the Gradio API, asked once)', async () => {
+    const fast = fakeGradio(); let hits = 0;
+    fast.post('/nexus/speak', (req, res) => {
+      hits++;
+      if (req.body.code !== 'secret-1') { res.status(401).json({ error: 'Wrong access code' }); return; }
+      if (!req.body.text) { res.status(400).json({ error: 'Please type something to say.' }); return; }
+      res.setHeader('content-type', 'audio/wav'); res.setHeader('x-nexus-infer-ms', '1800'); res.setHeader('x-nexus-queue-ms', '0'); res.setHeader('x-nexus-total-ms', '1850'); res.end(WAV);
+    });
+    const base = await listen(fast);
+    const out = await synthesizeClone(cfgFor(base), 'Hello from NEXUS.', new AbortController().signal);
+    expect(out.audio.subarray(0, 4).toString()).toBe('RIFF'); expect(out.timing).toMatchObject({ lane: 'fast', inferMs: 1800, queueMs: 0, colabMs: 1850 });
+    await expect(synthesizeClone(cfgFor(base, 'wrong'), 'Hi', new AbortController().signal)).rejects.toMatchObject({ code: 'auth' });
+    expect(hits).toBe(2);
+    // an older notebook: 404 once, then straight to the Gradio API
+    const old = await listen(fakeGradio()); let seen = 0;
+    const r1 = await synthesizeClone(cfgFor(old), 'Hi', new AbortController().signal); seen++;
+    const r2 = await synthesizeClone(cfgFor(old), 'Hi again', new AbortController().signal); seen++;
+    expect(seen).toBe(2); expect(r1.timing.lane).toBe('gradio'); expect(r2.timing.lane).toBe('gradio');
+  });
+  it('[A146] the speech route reports where the time went (Server-Timing: voice round trip, GPU inference, network)', async () => {
+    const fast = fakeGradio();
+    fast.post('/nexus/speak', (_q, res) => { res.setHeader('content-type', 'audio/wav'); res.setHeader('x-nexus-infer-ms', '1500'); res.setHeader('x-nexus-queue-ms', '20'); res.setHeader('x-nexus-total-ms', '1530'); res.end(WAV); });
+    const voice = await listen(fast);
+    const cfg = readConfig({ LLM_PROVIDER: 'demo', BUDGET_STORE: 'memory', TTS_PROVIDER: 'clone', VOICE_CLONE_URL: 'https://x.gradio.live', VOICE_CLONE_CODE: 'secret-1' } as NodeJS.ProcessEnv);
+    const base = await listen(createApp(cfg, { persistRuntime: false }) as unknown as express.Express);
+    // the real link is https; route it to the local (plain http) fake
+    const real = globalThis.fetch; const spy = vi.spyOn(globalThis, 'fetch').mockImplementation((u, init) => real(String(u).replace('https://x.gradio.live', voice), init));
+    const r = await fetch(`${base}/api/speech`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'Timing test.' }) });
+    spy.mockRestore();
+    expect(r.status).toBe(200); const st = r.headers.get('server-timing') ?? '';
+    expect(st).toMatch(/total;dur=\d+/); expect(st).toMatch(/voice;dur=\d+;desc="fast"/); expect(st).toMatch(/infer;dur=1500/); expect(st).toMatch(/gpuqueue;dur=20/); expect(st).toMatch(/net;dur=\d+/);
   });
   it('[A146] a wrong code, a stopped notebook or a foreign file URL are clear errors (the reply still shows as text)', async () => {
     const base = await listen(fakeGradio());

@@ -230,7 +230,7 @@ export async function listElevenVoices(c: TtsConfig, signal: AbortSignal): Promi
   }));
 }
 
-export async function synthesize(c: TtsConfig, text: string, signal: AbortSignal): Promise<{ audio: Buffer; mime: string }> {
+export async function synthesize(c: TtsConfig, text: string, signal: AbortSignal): Promise<{ audio: Buffer; mime: string; timing?: CloneTiming }> {
   const st = ttsStatus(c); if (!st.configured) throw new SpeechError(st.note, 503, 'not_configured');
   if (c.provider === 'elevenlabs') return synthesizeEleven(c, text, signal);
   if (c.provider === 'gemini') return synthesizeGemini(c, text, signal);
@@ -270,9 +270,32 @@ export async function transcribe(c: SttConfig, audio: Buffer, mime: string, sign
  * events ending in "event: complete" with the output file ({url, path}). Older Gradio apps serve the same API without
  * the /gradio_api prefix. The access code is checked by the notebook; it and the link live only in the server's env.
  */
-export async function synthesizeClone(c: TtsConfig, text: string, signal: AbortSignal): Promise<{ audio: Buffer; mime: string }> {
+/** where the time of one cloned sentence went (ms): queue/infer/colab come from the notebook, total is measured here */
+export type CloneTiming = { totalMs: number; colabMs?: number; inferMs?: number; queueMs?: number; audioMs?: number; lane: 'fast' | 'gradio' };
+/** voice servers known to have no fast lane (an older notebook): don't ask them again */
+const noFastLane = new Set<string>();
+
+export async function synthesizeClone(c: TtsConfig, text: string, signal: AbortSignal): Promise<{ audio: Buffer; mime: string; timing: CloneTiming }> {
   const base = c.baseUrl.replace(/\/+$/, '');
+  const t0 = performance.now();
   const net = (e: unknown) => { if (signal.aborted) return new SpeechError('cancelled', 499, 'cancelled'); return new SpeechError(`Could not reach your voice server (is the Colab notebook still running?): ${(e as Error).message}`, 502, 'network'); };
+  // fast lane (notebook Cell 5): ONE request that answers with the WAV bytes and its timing
+  if (!noFastLane.has(base)) {
+    let f: Response;
+    try { f = await fetch(`${base}/nexus/speak`, { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, code: c.apiKey }) }); } catch (e) { throw net(e); }
+    if (f.ok && (f.headers.get('content-type') ?? '').startsWith('audio/')) {
+      const audio = Buffer.from(await f.arrayBuffer());
+      if (audio.length < 64) throw new SpeechError('Your voice server returned empty audio.', 502, 'malformed');
+      const n = (h: string) => { const v = Number(f.headers.get(h)); return Number.isFinite(v) && v >= 0 ? v : undefined; };
+      return { audio, mime: 'audio/wav', timing: { lane: 'fast', totalMs: Math.round(performance.now() - t0), colabMs: n('x-nexus-total-ms'), inferMs: n('x-nexus-infer-ms'), queueMs: n('x-nexus-queue-ms'), audioMs: n('x-nexus-audio-ms') } };
+    }
+    if (f.status === 401) throw new SpeechError('Your voice server rejected the access code — copy VOICE_CLONE_CODE again from the notebook.', 502, 'auth');
+    if (f.status === 400) { const j = await f.json().catch(() => ({})) as { error?: string }; throw new SpeechError(`Your voice server could not speak that: ${String(j.error ?? 'bad request').slice(0, 200)}.`, 502, 'provider_error'); }
+    if (f.status === 500) { const j = await f.json().catch(() => ({})) as { error?: string }; throw new SpeechError(String(j.error ?? 'Your voice server failed to make the audio.').slice(0, 200), 502, 'provider_error'); }
+    if (f.status === 404 || f.status === 405) noFastLane.add(base);   // an older notebook: use the Gradio API from now on
+    else if (f.status === 502 || f.status === 503) throw new SpeechError(`Your voice server answered HTTP ${f.status} — the Colab notebook may have stopped.`, 502, 'provider_error');
+    else noFastLane.add(base);
+  }
   let prefix = '/gradio_api'; let r: Response;
   const post = (p: string) => fetch(`${base}${p}/call/speak`, { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify({ data: [text, c.apiKey] }) });
   try { r = await post(prefix); if (r.status === 404) { prefix = ''; r = await post(prefix); } } catch (e) { throw net(e); }
@@ -296,7 +319,7 @@ export async function synthesizeClone(c: TtsConfig, text: string, signal: AbortS
   const audio = Buffer.from(await a.arrayBuffer());
   if (audio.length < 64) throw new SpeechError('Your voice server returned empty audio.', 502, 'malformed');
   const ct = a.headers.get('content-type') ?? '';
-  return { audio, mime: /^audio\//.test(ct) ? ct.split(';')[0] : 'audio/wav' };
+  return { audio, mime: /^audio\//.test(ct) ? ct.split(';')[0] : 'audio/wav', timing: { lane: 'gradio', totalMs: Math.round(performance.now() - t0) } };
 }
 /** server-sent events → [{event, data}] */
 export function parseSse(s: string): { event: string; data: string }[] {

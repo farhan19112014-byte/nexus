@@ -10,7 +10,7 @@
  *   GET  /api/speech/voices   ElevenLabs voices on the account (loopback only)
  * Logs contain method, path, status and duration only — never message content or secrets.
  */
-import { cloneUrlAllowed, listElevenVoices, SpeechError, sttStatus, synthesize, synthesizeElevenTimed, transcribe, ttsStatus, type Alignment } from './speech';
+import { cloneUrlAllowed, listElevenVoices, SpeechError, sttStatus, synthesize, synthesizeElevenTimed, transcribe, ttsStatus, type Alignment, type CloneTiming } from './speech';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { existsSync, readFileSync } from 'node:fs';
 import { baseSecurityHeaders, buildCsp, inlineScriptHashes } from './security';
@@ -141,6 +141,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     if (origin && corsOrigins.has(origin.toLowerCase())) {
       res.setHeader('access-control-allow-origin', origin); res.setHeader('vary', 'Origin');
       res.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS'); res.setHeader('access-control-allow-headers', 'content-type'); res.setHeader('access-control-max-age', '600');
+      res.setHeader('access-control-expose-headers', 'server-timing, x-nexus-audio');
       if (req.method === 'OPTIONS') { res.status(204).end(); return; }
     }
     if (req.method !== 'GET' && req.method !== 'HEAD' && !originOk(origin)) { res.status(403).json({ error: 'Cross-origin request refused', code: 'forbidden_origin' }); return; }
@@ -339,8 +340,13 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     if (!ttsStatus(cfg.speech.tts).configured) { res.status(503).json({ error: ttsStatus(cfg.speech.tts).note, code: 'not_configured' }); return; }
     // {timing:true} with ElevenLabs: JSON { audio (base64), mime, alignment } — same voice and cost, character timing for lip-sync
     const timed = req.body?.timing === true && cfg.speech.tts.provider === 'elevenlabs';
-    const send = (audio: Buffer, mime: string, alignment: Alignment | null | undefined, replay: boolean) => {
+    const tStart = performance.now();
+    const send = (audio: Buffer, mime: string, alignment: Alignment | null | undefined, replay: boolean, timing?: CloneTiming) => {
       res.setHeader('cache-control', 'no-store'); if (replay) res.setHeader('x-nexus-audio', 'replay');
+      // where the time went (visible in the browser's network panel): voice server round trip, GPU inference, GPU queue
+      const st = [`total;dur=${Math.round(performance.now() - tStart)}`];
+      if (timing) { st.push(`voice;dur=${timing.totalMs};desc="${timing.lane}"`); if (timing.inferMs !== undefined) st.push(`infer;dur=${timing.inferMs}`); if (timing.queueMs !== undefined) st.push(`gpuqueue;dur=${timing.queueMs}`); if (timing.colabMs !== undefined) st.push(`net;dur=${Math.max(0, timing.totalMs - timing.colabMs)}`); }
+      res.setHeader('server-timing', st.join(', '));
       if (timed) { res.json({ audio: audio.toString('base64'), mime, alignment: alignment ?? null }); return; }
       res.setHeader('content-type', mime); res.end(audio);
     };
@@ -351,9 +357,9 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     const ctl = new AbortController(); res.on('close', () => { if (!res.writableFinished) ctl.abort('client'); });
     const t = setTimeout(() => ctl.abort('timeout'), opts.speechTimeoutMs ?? (cfg.speech.tts.provider === 'clone' ? 90000 : 30000));   // a free Colab GPU is slower than a speech API
     try {
-      const out = timed ? await synthesizeElevenTimed(cfg.speech.tts, text, ctl.signal) : { ...(await synthesize(cfg.speech.tts, text, ctl.signal)), alignment: null };
+      const out: { audio: Buffer; mime: string; alignment: Alignment | null; timing?: CloneTiming } = timed ? await synthesizeElevenTimed(cfg.speech.tts, text, ctl.signal) : { ...(await synthesize(cfg.speech.tts, text, ctl.signal)), alignment: null };
       cachePut(key, out.audio, out.mime, out.alignment);
-      send(out.audio, out.mime, out.alignment, false);
+      send(out.audio, out.mime, out.alignment, false, out.timing);
     } catch (e) {
       const why = ctl.signal.aborted ? ctl.signal.reason : null;
       if (why === 'timeout') {
