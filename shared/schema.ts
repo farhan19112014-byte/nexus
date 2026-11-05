@@ -4,6 +4,7 @@
  * imported files, search results — is parsed with these before use.
  */
 import { z } from 'zod';
+import { VisualFieldSchema } from './visual';
 import { DEFAULT_ROBOT_NAME, effectiveRobotName } from './identity';
 import { CHANNEL_NAMES, type Channel } from './channels';
 
@@ -215,6 +216,8 @@ export const BrainHeadSchema = z.object({
   gesture: z.string().max(48).nullable().default(null),
   pose: PoseSchema.default('neutral'),
   speakingStyle: SpeakingStyleSchema.default('warm'),
+  /** optional visual to show beside the robot while it explains (shared/visual.ts); invalid → null */
+  visual: VisualFieldSchema,
 });
 export type BrainHead = z.infer<typeof BrainHeadSchema>;
 

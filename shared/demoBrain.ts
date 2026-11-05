@@ -4,6 +4,8 @@
  * feedback, gesture preferences, explicit "remember …" requests and a few social phrases, so the
  * body, face, skill pipeline and memory can be exercised without credentials.
  */
+import { demoTopic } from './demoVisuals';
+import { VisualRequestSchema } from './visual';
 import { BrainResponseSchema, type ActionStep, type BrainResponse, type ChatRequest, type Pose, type Source } from './schema';
 import { inventExpression, inventSpec } from '../src/skills/generator';
 
@@ -131,6 +133,10 @@ export function demoBrain(req: ChatRequest, sources: Source[] = []): BrainRespon
     const key = km ? km[1].trim().toLowerCase().replace(/\s+/g, '_').slice(0, 40) : undefined;
     return R({ reply: `I'll ask the memory system to save: "${fact}". You can review or delete it in the Memory panel.`, expression: 'happy', memoryCandidates: [{ text: fact, category: /prefer|like|love|hate|favou?rite/i.test(fact) ? 'preference' : 'fact', key, reason: 'you asked me to remember this', explicit: true }], actions: [{ type: 'skill', skillId: 'nod', timing: 'with_speech', repetitions: 1 }] });
   }
+
+  // visual presenter (scripted demo topics): a short explanation with a diagram or a reference image beside the robot
+  const topic = demoTopic(t);
+  if (topic) return R({ reply: topic.reply, expression: 'interested', visual: VisualRequestSchema.parse(topic.visual), actions: topic.gesture ? [{ type: 'skill', skillId: topic.gesture, timing: 'with_speech' }] : [] });
 
   // commands: movements, poses, expressions, chained with "then", negation-aware
   const clauses = t.split(/\bthen\b|\band then\b|,|;|\band\b|\bafter that\b/).map((c) => c.trim()).filter(Boolean);

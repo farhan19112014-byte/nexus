@@ -126,6 +126,15 @@ export const BUILTIN_MOTIONS: SkillDef[] = [
    these tracks are the 2D robot's version and the face that goes with the move (eyes, mouth, glow) ---- */
 const FULL = (s: Omit<SkillDefInput, 'kind'>): SkillDef => S({ ...s, tags: [...(s.tags ?? []), 'fullbody'] });
 BUILTIN_MOTIONS.push(
+  // presenter cues ("left"/"right" are the viewer's sides; the visual panel is on the right). No mouth tracks: lip-sync keeps the mouth.
+  FULL({ id: 'point_right', name: 'Point right', description: 'Presenter cue: opens an arm toward the visual on the right, glances at it, looks back.', duration: 2.4, params: reps(1, 1, 1, false),
+    tracks: [tr('armL.raise', [0.45, 70], [1.6, 64], [2.4, 8]), tr('armL.bend', [0.45, 14], [1.6, 18], [2.4, 6]), tr('body.rot', [0.45, 4], [1.6, 3], [2.4, 0]), tr('pupil.x', [0.4, 0.9], [1.0, 0.2], [2.4, 0])], tags: ['presenter', 'indicate'] }),
+  FULL({ id: 'point_left', name: 'Point left', description: 'The same presenter cue toward the left.', duration: 2.4, params: reps(1, 1, 1, false),
+    tracks: [tr('armR.raise', [0.45, 70], [1.6, 64], [2.4, 8]), tr('armR.bend', [0.45, 14], [1.6, 18], [2.4, 6]), tr('body.rot', [0.45, -4], [1.6, -3], [2.4, 0]), tr('pupil.x', [0.4, -0.9], [1.0, -0.2], [2.4, 0])], tags: ['presenter', 'indicate'] }),
+  FULL({ id: 'compare', name: 'Compare', description: 'On one hand… on the other: an open palm to each side in turn.', duration: 3.6, params: reps(1, 1, 1, false),
+    tracks: [tr('armR.raise', [0.45, 48], [1.3, 48], [1.85, 14], [3.6, 8]), tr('armL.raise', [0.45, 14], [1.3, 14], [1.85, 48], [2.7, 48], [3.6, 8]), tr('armR.bend', [0.45, 40], [1.3, 40], [1.85, 12], [3.6, 6]), tr('armL.bend', [1.3, 12], [1.85, 40], [2.7, 40], [3.6, 6]), tr('head.rot', [0.45, -6], [1.3, -6], [1.85, 6], [2.7, 6], [3.6, 0])], tags: ['presenter', 'compare'] }),
+  FULL({ id: 'explain', name: 'Explaining', description: 'Presenter hands framing an idea while explaining.', duration: 4.4, loop: { start: 0.5, end: 3.9 }, params: reps(1, 2, 1, false),
+    tracks: [tr('armL.raise', [0.5, 34], [1.1, 30], [1.7, 34], [2.4, 46], [3.1, 40], [3.9, 34], [4.4, 8]), tr('armR.raise', [0.5, 34], [1.1, 44], [1.7, 34], [2.4, 46], [3.1, 30], [3.9, 34], [4.4, 8]), tr('armL.bend', [0.5, 48], [2.4, 34], [3.9, 48], [4.4, 6]), tr('armR.bend', [0.5, 48], [2.4, 34], [3.9, 48], [4.4, 6])], tags: ['presenter', 'explain'] }),
   FULL({ id: 'thumbs_up', name: 'Thumbs up', description: 'Right forearm up in front, thumb pointing up — "nice!".', duration: 2.0, params: reps(1, 1, 1, false),
     tracks: [tr('armR.raise', [0.45, 40], [1.4, 40], [2.0, 8]), tr('armR.bend', [0.45, 95], [1.4, 95], [2.0, 6]), tr('head.rot', [0.45, 8], [1.4, 8], [2.0, 0]), tr('eyes.happy', [0.4, 0.8], [1.5, 0.8], [2.0, 0]), tr('mouth.curve', [0.4, 1], [1.5, 1], [2.0, 0.2])], tags: ['success', 'approval'] }),
   FULL({ id: 'excited', name: 'Excited', description: 'Arms up in a V, pumping, knees bouncing.', duration: 2.4, loop: { start: 0.5, end: 1.3 }, params: reps(1, 3, 1, false),

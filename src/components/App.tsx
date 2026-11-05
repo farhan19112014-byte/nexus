@@ -16,7 +16,8 @@ import { applyCssTokens } from '../character/tokens';
 import { ThemeToggle } from './ThemeToggle';
 import { StudioLink } from './StudioLink';
 import { SpaceField } from '../space/SpaceField';
-import type { Mood } from '../space/spaceScene';
+import { VisualPanel } from '../visual/VisualPanel';
+import type { Mood } from '../space/techScene';
 /** the robot's state, as the space environment feels it */
 const spaceMood = (s: string, listening: boolean): Mood => (listening || s === 'listening' ? 'listening' : s === 'processing' ? 'thinking' : s === 'speaking' || s === 'responding' ? 'speaking' : s === 'error' ? 'error' : 'idle');
 import { SystemPanel } from '../space/SystemPanel';
@@ -123,14 +124,15 @@ export default function App() {
           ? <button className="menu-toggle" onClick={() => setSide(!side)} aria-expanded={side} aria-controls="side" title="Conversation, skills, memory, settings (Alt+P)"><Icon name="menu" /> Menu</button>
           : <button className="link" onClick={() => setSide(!side)} aria-expanded={side} aria-controls="side" title="Alt+P">{side ? 'Hide panel' : drawerMode ? 'Skills · Memory · Settings' : 'Show panel'}</button>}
       </header>
-      <main className={`layout ${side && !drawerMode ? '' : 'no-side'}${robotMode ? ' robot-layout' : ''}`}>
+      <main className={`layout ${side && !drawerMode ? '' : 'no-side'}${robotMode ? ' robot-layout' : ''}${snap.visual ? ' has-visual' : ''}`}>
         {robotMode
           ? <>
               {!s.highContrast && <SpaceField focus="right" className="robot-space" reducedMotion={s.reducedMotion} mood={spaceMood(snap.state, snap.listening)} />}
               <ErrorBoundary area="robot view"><RobotView onOpenConversation={() => openTab('conversation')} /></ErrorBoundary>
+              <ErrorBoundary area="visual" compact><VisualPanel /></ErrorBoundary>
               {!s.highContrast && <SystemPanel />}
             </>
-          : <div className="companion"><ErrorBoundary area="robot view" compact><Stage /></ErrorBoundary><ErrorBoundary area="chat"><ChatPanel /></ErrorBoundary></div>}
+          : <div className="companion"><ErrorBoundary area="robot view" compact><Stage /></ErrorBoundary><ErrorBoundary area="visual" compact><VisualPanel docked /></ErrorBoundary><ErrorBoundary area="chat"><ChatPanel /></ErrorBoundary></div>}
         {side && drawerMode && <button className="backdrop" aria-label="Close panel" tabIndex={-1} onClick={() => setSide(false)} />}
         {side && (
           <aside id="side" className={`side${drawerMode ? ' drawer' : ''}`} aria-label="Skills, memory, settings and status">

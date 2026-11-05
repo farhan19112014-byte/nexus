@@ -19,7 +19,7 @@ import { QI, qnorm, slerp, smooth } from './math';
 
 export type LayerWeights = Record<Joint | 'root', number>;
 export interface BodyLayer { pose: BodyPose; w: LayerWeights }
-export interface BodyOutput { layers: BodyLayer[]; active: boolean; action: string | null; state: BodyState }
+export interface BodyOutput { layers: BodyLayer[]; active: boolean; action: string | null; state: BodyState; /** additive head nod (radians, +x = down) on speech accents */ accent: number; /** smoothed speech energy 0…1 */ speech: number }
 
 const MASKS: Record<Mask, (Joint | 'root')[]> = {
   full: [...JOINTS, 'root'],
@@ -42,7 +42,10 @@ export const CLIP_FOR_SKILL: Record<string, string> = {
   excited: 'excited', celebrate: 'celebrate', confused: 'confused', curious: 'curious', disappointed: 'disappointed', think_chin: 'think', think: 'think',
   laugh: 'laugh', surprised: 'surprised', backflip: 'backflip', forward_roll: 'forward_roll', dance_sway: 'dance_sway', dance: 'dance',
   jump: 'jump', squat: 'squat', balance: 'balance', turn_around: 'turn_around', sit: 'sit',
+  point_right: 'point_right', point_left: 'point_left', compare: 'compare', explain: 'explain',
 };
+/** states whose gestures follow the voice: arms rest in pauses, move with the words */
+const SPEECH_STATES = new Set<BodyState>(['SPEAKING', 'EXPLAINING']);
 
 interface Track { clip: Clip; s: ClipSampler; t: number; age: number; held: boolean; released: boolean; fade: number; fadeRate: number; speed: number; engineId?: number; cancelAt?: number }
 const FADE_IN = 0.28, FADE_OUT = 0.35, STATE_FADE = 0.5;
@@ -55,6 +58,10 @@ export class BodyController {
   private actions: Track[] = [];          // [current, …fading-out previous]
   private queue: { id: string; engineId?: number; speed: number }[] = [];
   private listeners = new Set<(e: { type: 'start' | 'end'; clip: string }) => void>();
+  /* speech coordination: the voice's loudness (mouth openness) drives a fast and a slow envelope */
+  private rawSpeech = 0; private envFast = 0; private envSlow = 0; private accentV = 0;
+  /** current speech energy 0…1 (mouth openness from the playing voice; 0 when silent) */
+  setSpeech(level: number) { this.rawSpeech = Math.max(0, Math.min(1, Number.isFinite(level) ? level : 0)); }
   on(f: (e: { type: 'start' | 'end'; clip: string }) => void) { this.listeners.add(f); return () => { this.listeners.delete(f); }; }
 
   current() { const a = this.actions[0]; return a && !a.released && a.fadeRate <= 0 ? a.clip.id : null; }
@@ -96,6 +103,7 @@ export class BodyController {
       if (c && a.t >= c[0] && a.t < c[1]) a.cancelAt = c[1]; else a.fadeRate = 1 / 0.3;
     }
   }
+  private stateOf(t: Track): BodyState { return (Object.keys(STATE_CLIP) as BodyState[]).find((k) => STATE_CLIP[k] === t.clip.id) ?? 'IDLE'; }
   private committed(a: Track) { const c = COMMIT[a.clip.id]; return !!c && a.t >= c[0] && a.t < c[1] && a.fadeRate <= 0; }
 
   update(dt: number): BodyOutput {
@@ -121,11 +129,20 @@ export class BodyController {
     this.states = this.states.filter((s) => !(s.fadeRate > 0 && s.fade <= 0));
     if (this.reduced) for (const s of this.states) s.fadeRate = Math.max(s.fadeRate, 1 / STATE_FADE);
 
+    // ---- speech envelope: attack fast, release slower; pauses relax the speaking gestures, accents nod the head
+    const up = this.rawSpeech > this.envFast;
+    this.envFast += (this.rawSpeech - this.envFast) * (1 - Math.exp(-d * (up ? 18 : 6)));
+    this.envSlow += (this.rawSpeech - this.envSlow) * (1 - Math.exp(-d * 2.2));
+    const onset = Math.max(0, this.envFast - this.envSlow - 0.06);
+    const accentTarget = this.reduced ? 0 : Math.min(0.07, onset * 0.22);
+    this.accentV += (accentTarget - this.accentV) * (1 - Math.exp(-d * 10));
+    const speechGain = 0.4 + 0.6 * Math.min(1, this.envSlow * 2.2);
     // ---- layers: older first (the renderer slerps them in order over the channel pose)
     const layers: BodyLayer[] = [];
-    for (const s of [...this.states].reverse()) if (s.fade > 0.001) layers.push({ pose: s.s.sample(s.t), w: maskW(s.clip.mask, smooth(s.fade)) });
+    for (const s of [...this.states].reverse()) if (s.fade > 0.001) { const g = SPEECH_STATES.has(this.stateOf(s)) ? speechGain : 1; layers.push({ pose: s.s.sample(s.t), w: maskW(s.clip.mask, smooth(s.fade) * g) }); }
     for (const a of [...this.actions].reverse()) if (a.fade > 0.001) layers.push({ pose: a.s.sample(a.t), w: maskW(a.clip.mask, smooth(a.fade)) });
-    return { layers, active: layers.length > 0, action: this.current(), state: this.state };
+    const accent = this.accentV > 1e-4 ? this.accentV : 0;
+    return { layers, active: layers.length > 0 || accent > 0, action: this.current(), state: this.state, accent, speech: this.envSlow };
   }
 }
 

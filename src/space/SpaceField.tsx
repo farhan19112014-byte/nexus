@@ -4,7 +4,7 @@
  * automatic quality step-down when frames get slow (low-end hardware).
  */
 import { useEffect, useRef } from 'react';
-import { SpaceScene, type Mood, type Quality } from './spaceScene';
+import { TechScene, type Mood, type Quality } from './techScene';
 
 export function initialQuality(width: number, cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4): Quality {
   if (width < 700 || cores <= 2) return 'low';
@@ -13,7 +13,7 @@ export function initialQuality(width: number, cores = (typeof navigator !== 'und
 }
 
 export function SpaceField({ focus = 'right', className = '', reducedMotion = false, mood = 'idle' }: { focus?: 'right' | 'full' | 'hero'; className?: string; reducedMotion?: boolean; mood?: Mood }) {
-  const sceneRef = useRef<SpaceScene | null>(null);
+  const sceneRef = useRef<TechScene | null>(null);
   const ref = useRef<HTMLCanvasElement>(null);
   const rmRef = useRef(reducedMotion); rmRef.current = reducedMotion;
   useEffect(() => {
@@ -21,7 +21,7 @@ export function SpaceField({ focus = 'right', className = '', reducedMotion = fa
     const g = cv.getContext('2d', { alpha: true }); if (!g) return;
     const theme = () => (document.documentElement.dataset.theme === 'light' ? 'light' : 'dark') as 'dark' | 'light';
     const sysReduce = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const scene = new SpaceScene({ focus, quality: initialQuality(window.innerWidth), theme: theme() }); sceneRef.current = scene;
+    const scene = new TechScene({ focus, quality: initialQuality(window.innerWidth), theme: theme() }); sceneRef.current = scene;
     let dpr = 1, raf = 0, last = performance.now(), visible = true, acc = 0, slow = 0, frames = 0;
     const FRAME = 1 / 40;   // 40 fps is plenty for slow, drifting motion
     const size = () => {

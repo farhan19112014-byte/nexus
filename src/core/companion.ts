@@ -39,6 +39,7 @@ import { applyTheme } from '../theme';
 import { applyPalette } from '../theme/studio';
 import { describeDue, parseReminder, type Reminder, type ReminderStore } from './reminders';
 import type { ChatContextInput, ResponseMeta } from '../../shared/schema';
+import type { ImageResult, VisualRequest } from '../../shared/visual';
 type ChatContext = ChatContextInput;
 
 export interface Snapshot {
@@ -53,7 +54,10 @@ export interface Snapshot {
   voiceIssue: { message: string; at: number } | null;
   /** when server speech last really started playing in this session */
   voiceOkAt: number | null;
+  /** the visual presenter: what is shown beside the robot for the current explanation (null = nothing) */
+  visual: PresentedVisual | null;
 }
+export interface PresentedVisual { id: number; msgId: string; request: VisualRequest; status: 'loading' | 'ready' | 'failed'; image?: ImageResult; error?: string }
 export type ActivityKind = 'building' | 'editing' | 'researching' | 'reflecting';
 export interface Activity { kind: ActivityKind; label: string; since: number }
 export interface CompanionDeps {
@@ -103,13 +107,13 @@ export class Companion {
     if (d.stt) this.stt = d.stt; else { const r = new VoiceInputRouter(); this.voiceIn = r; this.stt = r; }
     this.runner = new SkillRunner(this.engine, d.registry);
     this.notifications = new Notifications(() => this.settings, (kind) => { if (kind !== 'error') void this.react('notify'); });
-    this.snap = { state: 'idle', messages: [], caps: null, capabilities: [], listening: false, interim: '', draft: null, speaking: false, error: null, lastSkillId: null, preview: null, mic: 'unknown', busy: false, activity: null, voiceIssue: null, voiceOkAt: null, connection: { state: 'untested', at: null, detail: 'No request yet' } };
+    this.snap = { state: 'idle', messages: [], caps: null, capabilities: [], listening: false, interim: '', draft: null, speaking: false, error: null, lastSkillId: null, preview: null, mic: 'unknown', busy: false, activity: null, voiceIssue: null, voiceOkAt: null, visual: null, connection: { state: 'untested', at: null, detail: 'No request yet' } };
     this.sm.on((s, prev) => this.onState(s, prev));
     this.tts.hooks = {
       onStart: () => { if (this.voiceOut?.engineName === 'server') this.set({ voiceIssue: null, voiceOkAt: Date.now() }); this.engine.setSpeaking(true); if (this.sm.state === 'responding' || this.sm.state === 'processing') this.sm.go('speaking'); this.set({ speaking: true }); },
       onWord: (w) => { const v = visemeFor(w); this.engine.speechPulse(v.open, v.round); },
       onLevel: (l, sh) => { if (this.engine.isSpeaking()) this.engine.speechLevel(l, sh); },
-      onIdle: () => { this.engine.setSpeaking(false); this.set({ speaking: false }); const f = this.speechDone; this.speechDone = null; f?.(); },
+      onIdle: () => { this.engine.setSpeaking(false); this.engine.cancelTag('speechbeat'); this.set({ speaking: false }); const f = this.speechDone; this.speechDone = null; f?.(); },
     };
     this.engine.on('recovered', (e) => this.diagnostics.log({ type: 'skill', code: 'watchdog_recovery', detail: `${e.skillId}: ${e.reason}` }));
   }
@@ -473,7 +477,9 @@ export class Companion {
     if (this.reqAbort) { this.reqAbort.abort(reason); this.reqAbort = null; }
     if (this.seqAbort) { this.seqAbort.abort(reason); this.seqAbort = null; }
     this.tts.stop();
-    this.engine.cancelTag('speech'); this.engine.cancelTag('waiting'); this.engine.setSpeaking(false);
+    this.engine.cancelTag('speech'); this.engine.cancelTag('speechbeat'); this.engine.cancelTag('waiting'); this.engine.setSpeaking(false);
+    this.visualAbort?.abort(); this.visualAbort = null;
+    if (this.snap.visual?.status === 'loading') this.snap = { ...this.snap, visual: null };   // a cancelled lookup never leaves a spinner behind
     const live = this.snap.messages.filter((m) => m.status === 'streaming' || m.status === 'sending');
     for (const m of live) this.patch(m.id, { status: 'cancelled', stage: undefined });
     if (['processing', 'responding', 'speaking', 'acting', 'greeting'].includes(this.sm.state)) { this.sm.go('interrupted'); }
@@ -557,6 +563,7 @@ export class Companion {
         onHead: (h) => {
           if (token !== this.token || headApplied) return; headApplied = true;
           this.applyExpression(h.expression, h.emotionIntensity);
+          this.presentVisual(h.visual ?? null, asst.id, token);
         },
         onDelta: (t) => {
           if (token !== this.token) return;
@@ -585,9 +592,10 @@ export class Companion {
       if (result.meta.droppedFields.length) notes.push(`Ignored invalid fields from the model: ${[...new Set(result.meta.droppedFields)].join(', ')}.`);
       if (research && result.meta.research.error) notes.push(result.meta.research.error);
       if (s.research && !this.snap.caps?.research.configured) notes.push('Research is on, but no research provider is configured — answered without live sources.');
+      { const vn = this.visualNotes.get(asst.id); if (vn) { notes.push(vn); this.visualNotes.delete(asst.id); } }
       if (knowledge.length && result.meta.isLLM) notes.push(`Sent ${knowledge.length} note(s) from NEXUS's knowledge base with this message (${Object.entries(knowledge.reduce<Record<string, number>>((acc, k) => { acc[k.status] = (acc[k.status] ?? 0) + 1; return acc; }, {})).map(([k, n]) => `${n} ${k}`).join(', ')}).`);
       this.patch(asst.id, { text: resp.reply, status: 'complete', stage: undefined, meta: result.meta, response: resp, notes, changes: [{ scope: 'conversation', text: 'This reply is part of the conversation only.' }] });
-      if (!headApplied) this.applyExpression(resp.expression, resp.emotionIntensity);
+      if (!headApplied) { this.applyExpression(resp.expression, resp.emotionIntensity); this.presentVisual(resp.visual ?? null, asst.id, token); }
       if (resp.pose !== 'neutral' || this.engine.getPose() !== 'neutral') this.engine.setPose(resp.pose as Pose);
       if (typeof document !== 'undefined' && document.hidden) this.notifications.push('response', `${this.robotName} replied.`, { react: false, desktop: true });
       try { if (result.meta.isLLM) this.d.onExchange?.({ msgId: asst.id, user: text, reply: resp.reply, uncertainty: resp.uncertainty, previousReply: prevReply }); } catch { /* learning is best-effort */ }
@@ -603,6 +611,48 @@ export class Companion {
       try { this.d.onExchange?.({ msgId: asst.id, user: text, reply: '', failed: `${err.code}: ${err.message}`.slice(0, 200) }); } catch { /* best-effort */ }
       this.fail(asst.id, err, streamed);
     }
+  }
+
+  /* ---------------- visual presenter ---------------- */
+  private visualSeq = 0; private visualAbort: AbortController | null = null; private cuedVisual = 0; private visualNotes = new Map<string, string>();
+  /**
+   * Show what the reply asked for beside the robot: a diagram at once, an image after a (cached, credited) lookup.
+   * A reply without a visual clears the previous one — the panel always belongs to the explanation being given.
+   */
+  presentVisual(req: VisualRequest | null, msgId: string, token: number) {
+    this.visualAbort?.abort(); this.visualAbort = null;
+    if (!req) { if (this.snap.visual) this.set({ visual: null }); return; }
+    const id = ++this.visualSeq;
+    if (req.kind === 'diagram') { this.set({ visual: { id, msgId, request: req, status: 'ready' } }); return; }
+    this.set({ visual: { id, msgId, request: req, status: 'loading' } });
+    const ctl = new AbortController(); this.visualAbort = ctl;
+    void this.d.api.visualImage(req.query, ctl.signal).then((r) => {
+      if (ctl.signal.aborted || token !== this.token || this.snap.visual?.id !== id) return;
+      if (r.image) { this.set({ visual: { id, msgId, request: req, status: 'ready', image: r.image } }); this.cueVisual([], undefined); return; }
+      const why = r.error && r.error !== 'cancelled' ? r.error : `No freely licensed picture was found for “${req.query}”.`;
+      this.set({ visual: { id, msgId, request: req, status: 'failed', error: why } });
+      // the note lands on the reply whether it is still streaming (kept for the final update) or already complete
+      this.visualNotes.set(msgId, `Visual: ${why}`);
+      const m = this.msg(msgId); if (m && m.status === 'complete') this.patch(msgId, { notes: [...(m.notes ?? []), `Visual: ${why}`] });
+      setTimeout(() => { if (this.snap.visual?.id === id && this.snap.visual.status === 'failed') this.set({ visual: null }); }, 4500);
+    });
+  }
+  dismissVisual() { this.visualAbort?.abort(); this.visualAbort = null; if (this.snap.visual) this.set({ visual: null }); }
+  /**
+   * The presenter cue: once per visual, while the reply is being delivered, NEXUS opens an arm toward the panel on its
+   * right (a comparison gets the "on one hand… on the other" gesture instead). Skipped when the model already chose a
+   * pointing/comparing gesture, in quiet or reduced-motion mode, and when nothing is shown.
+   */
+  private cueVisual(planned: string[], signal: AbortSignal | undefined) {
+    const v = this.snap.visual;
+    if (!v || v.status !== 'ready' || this.cuedVisual === v.id || this.settings.quietMode || this.settings.reducedMotion) return;
+    if (!['responding', 'speaking'].includes(this.sm.state) && !this.snap.busy) return;
+    if (planned.some((x) => x === 'point_right' || x === 'point_left' || x === 'compare' || x === 'point')) { this.cuedVisual = v.id; return; }
+    this.cuedVisual = v.id;
+    // the panel is on the robot's right only on wide screens (above it on narrow ones): point there, else just explain
+    const wide = typeof matchMedia !== 'function' || matchMedia('(min-width: 1100px)').matches;
+    const skill = v.request.kind === 'diagram' && v.request.diagram.type === 'compare' ? 'compare' : wide ? 'point_right' : 'explain';
+    void this.runner.run({ skillId: skill }, { tag: 'speechbeat', ...(signal ? { signal } : {}) });
   }
 
   private applyExpression(id: string, intensity: number) {
@@ -697,7 +747,8 @@ export class Companion {
     if (plan.before.length) { this.go('acting'); await run(plan.before); }
     const during = run(plan.during, 'speech');
     // a longer spoken reply with no chosen gesture gets one restrained speaking beat (never in quiet or reduced-motion mode)
-    if (voiceOn && this.tts.speaking && !plan.during.length && !plan.before.length && resp.reply.length > 140 && !this.settings.quietMode && !this.settings.reducedMotion) void this.runner.run({ skillId: 'speak_beat' }, { tag: 'speech', signal: seq.signal });
+    if (voiceOn && this.tts.speaking && !plan.during.length && !plan.before.length && resp.reply.length > 140 && !this.settings.quietMode && !this.settings.reducedMotion) void this.runner.run({ skillId: 'speak_beat' }, { tag: 'speechbeat', signal: seq.signal });
+    this.cueVisual(plan.during.map((x) => x.skillId).concat(plan.before.map((x) => x.skillId)), seq.signal);
     if (voiceOn && this.tts.speaking) {
       if (this.sm.state !== 'speaking') this.go('speaking');
       await new Promise<void>((res) => { this.speechDone = res; if (!this.tts.speaking) res(); });

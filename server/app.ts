@@ -27,6 +27,8 @@ import { makeResearch, type ResearchProvider } from './research';
 import { PROMPT_VERSION } from './prompts/system';
 import { DailyBudget, makeCounterStore, visitorOf, type CounterStore, type Denied, type MeterName } from './budget';
 import { createHash } from 'node:crypto';
+import { findImage } from '../shared/imageSearch';
+import type { ImageResult } from '../shared/visual';
 import { z } from 'zod';
 import { designModel, editModel, HoloDesignRequestSchema, HoloEditRequestSchema } from './aiTasks';
 import { draftSkill, reflect, ReflectRequestSchema, research as researchTask, ResearchRequestSchema, runSkill, SkillDraftRequestSchema, SkillRunRequestSchema } from './learn';
@@ -176,6 +178,27 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   app.get('/api/status', (_q, r) => { r.json(caps()); });
 
   const limit = rateLimiter(cfg.rateLimitPerMin);
+
+  // visual presenter: a free, credited reference image for a topic (Wikipedia / Wikimedia Commons, no key).
+  // Cached (same topic → one lookup), short timeout; a miss or an error is an honest {image:null}, never a 5xx.
+  const imageCache = new Map<string, { at: number; image: ImageResult | null }>();
+  const imageLimit = rateLimiter(Math.max(20, cfg.rateLimitPerMin * 2));
+  app.get('/api/visual/image', imageLimit, async (req, res) => {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 80) : '';
+    if (q.length < 2) { res.status(400).json({ error: 'Give a topic to look up (q).', code: 'invalid_request' }); return; }
+    const key = q.toLowerCase(); const hit = imageCache.get(key);
+    if (hit && Date.now() - hit.at < 6 * 3600_000) { res.json({ image: hit.image, cached: true }); return; }
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 8000);
+    try {
+      const image = await findImage(q, { base: cfg.research.wikipediaBase, lang: cfg.research.wikipediaLang, signal: ctl.signal, headers: { 'user-agent': 'NEXUS-companion/2.0 (visual presenter; https://github.com/farhan19112014-byte/nexus)' } });
+      if (imageCache.size > 300) imageCache.delete(imageCache.keys().next().value as string);
+      imageCache.set(key, { at: Date.now(), image });
+      res.json({ image });
+    } catch (e) {
+      opts.log?.(`[visual] image lookup failed: ${(e as Error).message}`);
+      res.json({ image: null, error: ctl.signal.aborted ? 'The image search took too long.' : 'The image search is unavailable right now.' });
+    } finally { clearTimeout(timer); }
+  });
   app.post('/api/chat', limit, async (req, res) => {
     const parsed = ChatRequestSchema.safeParse(simpleChat(req.body));
     if (!parsed.success) { res.status(400).json({ error: 'Invalid request', code: 'invalid_request', issues: parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.')}: ${i.message}`) }); return; }

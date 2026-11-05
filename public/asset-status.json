@@ -1,55 +1,55 @@
 {
-  "generatedAt": "2026-11-02T12:48:05.501Z",
+  "generatedAt": "2026-11-05T06:07:36.873Z",
   "steps": [
     {
       "name": "typecheck",
       "ok": true,
       "code": 0,
-      "seconds": 16.595
+      "seconds": 10.446
     },
     {
       "name": "build (app + server bundle)",
       "ok": true,
       "code": 0,
-      "seconds": 23.89
+      "seconds": 14.961
     },
     {
       "name": "lint (eslint, 0 warnings)",
       "ok": true,
       "code": 0,
-      "seconds": 10.984
+      "seconds": 6.715
     },
     {
       "name": "unit + integration tests",
       "ok": true,
       "code": 0,
-      "seconds": 57.518
+      "seconds": 51.576
     },
     {
       "name": "end-to-end tests",
       "ok": false,
       "code": 1,
-      "seconds": 904.723
+      "seconds": 609.227
     },
     {
       "name": "desktop app smoke test",
       "ok": true,
       "code": 0,
-      "seconds": 26.623
+      "seconds": 17.248
     }
   ],
   "suites": {
     "unit": {
-      "total": 223,
-      "passed": 223
+      "total": 234,
+      "passed": 234
     },
     "integration": {
-      "total": 70,
-      "passed": 70
+      "total": 75,
+      "passed": 75
     },
     "e2e": {
-      "total": 158,
-      "passed": 156
+      "total": 165,
+      "passed": 163
     }
   },
   "assets": {
@@ -625,19 +625,19 @@
     },
     "A96": {
       "status": "verified",
-      "passed": 223,
+      "passed": 234,
       "failed": 0,
       "missing": []
     },
     "A97": {
       "status": "verified",
-      "passed": 70,
+      "passed": 75,
       "failed": 0,
       "missing": []
     },
     "A98": {
       "status": "failing",
-      "passed": 156,
+      "passed": 163,
       "failed": 2,
       "missing": []
     },
@@ -895,7 +895,7 @@
     },
     "A141": {
       "status": "verified",
-      "passed": 8,
+      "passed": 9,
       "failed": 0,
       "missing": []
     },
@@ -914,6 +914,12 @@
     "A144": {
       "status": "verified",
       "passed": 20,
+      "failed": 0,
+      "missing": []
+    },
+    "A145": {
+      "status": "verified",
+      "passed": 22,
       "failed": 0,
       "missing": []
     }

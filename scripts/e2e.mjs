@@ -20,6 +20,9 @@ const mock = http.createServer(async (req, res) => {
   if (req.url.startsWith('/v1/audio/transcriptions')) { let n = 0; let raw = ''; for await (const c of req) { n += c.length; if (raw.length < 2_000_000) raw += c.toString('latin1'); } sttCalls.push({ bytes: n, model: /name="model"\r\n\r\n([^\r]+)/.exec(raw)?.[1] }); res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ text: 'please wave' })); }
   if (req.url.startsWith('/w/api.php')) {
     res.setHeader('content-type', 'application/json');
+    // visual presenter image search (generator=search → lead image; then the file's Commons metadata)
+    if (req.url.includes('generator=search')) return res.end(JSON.stringify({ query: { pages: [{ pageid: 11, index: 1, title: 'Apollo 11', pageimage: 'Aldrin_Apollo_11.jpg', fullurl: 'https://en.wikipedia.org/wiki/Apollo_11', thumbnail: { source: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e2e/Aldrin_Apollo_11.jpg/960px-Aldrin_Apollo_11.jpg', width: 960, height: 960 } }] } }));
+    if (req.url.includes('prop=imageinfo')) return res.end(JSON.stringify({ query: { pages: [{ imageinfo: [{ descriptionurl: 'https://commons.wikimedia.org/wiki/File:Aldrin_Apollo_11.jpg', extmetadata: { Artist: { value: '<a href="//commons.wikimedia.org/wiki/NASA">NASA</a> / Neil A. Armstrong' }, LicenseShortName: { value: 'Public domain' } } }] }] } }));
     if (req.url.includes('list=search')) return res.end(JSON.stringify({ query: { search: [{ pageid: 7, title: 'Photosynthesis' }] } }));
     return res.end(JSON.stringify({ query: { pages: { 7: { title: 'Photosynthesis', extract: 'Photosynthesis is the process plants use to convert light into chemical energy.', fullurl: 'https://en.wikipedia.org/wiki/Photosynthesis' } } } }));
   }
@@ -39,6 +42,8 @@ const mock = http.createServer(async (req, res) => {
   const name = /Your name is "([^"]+)"/.exec(sys)?.[1] ?? (/^You are NEXUS/.test(sys) ? 'NEXUS' : '?');
   const scripted = /introduce yourself/i.test(lastUser) ? { head: { expression: 'happy', gesture: null }, text: `Hi! I'm ${name}, your robot companion.`, meta: {} }
     : /more casual/i.test(lastUser) ? { head: { expression: 'playful', gesture: null }, text: 'Here is a more casual wave — preview it, and approve it if you like it.', meta: { skillProposal: { format: 'generator', spec: { id: 'casual_wave', name: 'Casual wave', description: 'A relaxed, smaller wave.', motifs: [{ motif: 'wave', side: 'right', intensity: 0.6, duration: 1.6, repeats: 2 }] } } } }
+    : /^explain the solar system/i.test(lastUser) ? { head: { expression: 'interested', gesture: 'explain', visual: { kind: 'diagram', caption: 'The eight planets in order from the Sun.', diagram: { type: 'orbit', title: 'The solar system', center: { label: 'Sun' }, items: ['Mercury', 'Venus', 'Earth', 'Mars', 'Jupiter', 'Saturn', 'Uranus', 'Neptune'].map((label) => ({ label })) } } }, text: 'The solar system is the Sun and everything that orbits it. As you can see on the right, eight planets circle the Sun, the small rocky ones close in and the giants further out.', meta: { actions: [{ type: 'skill', skillId: 'explain', timing: 'with_speech' }] } }
+    : /^show me the apollo 11 landing/i.test(lastUser) ? { head: { expression: 'interested', gesture: null, visual: { kind: 'image', query: 'Apollo 11', caption: 'Buzz Aldrin on the Moon, July 1969.' } }, text: 'In July 1969 Apollo 11 landed the first people on the Moon. The photo on the right is from that mission.', meta: {} }
     : /^please wave/i.test(lastUser) ? { head: { expression: 'happy', gesture: 'wave' }, text: 'Waving hello!', meta: { actions: [{ type: 'skill', skillId: 'wave', timing: 'with_speech' }] } }
     : null;
   if (scripted) {
@@ -208,7 +213,7 @@ try {
   await page.getByRole('tab', { name: 'Status' }).click();
   // the asset table is filled from /asset-registry.json once the panel opens
   await page.waitForFunction(() => document.querySelectorAll('.assets tbody tr').length > 0, null, { timeout: 10000 }).catch(() => {});
-  check('[A10] [A49] status panel lists capabilities and all 144 assets', (await page.locator('.assets tbody tr').count()) === 144 && (await page.locator('.caps li').count()) >= 8);
+  check('[A10] [A49] status panel lists capabilities and all 145 assets', (await page.locator('.assets tbody tr').count()) === 145 && (await page.locator('.caps li').count()) >= 8);
   {
     const diag = page.locator('[data-testid=creator-diagnostics]'); const local = await diag.count() === 1;
     if (local) await diag.locator('summary').click();
@@ -292,7 +297,7 @@ try {
       const buttons = await lp.locator('[data-clip]').count(); const states = await lp.locator('[data-state]').count();
       await lp.click('[data-clip=nod]'); await lp.waitForSelector('[data-testid=ml-report]', { timeout: 10000 }).catch(() => null);
       await lp.click('[data-testid=ml-check-all]'); const allTxt = await lp.locator('[data-testid=ml-all]').textContent({ timeout: 30000 }).catch(() => '');
-      check('[A144] Motion Lab: every clip and body state has its own preview button, and every clip passes the physical checks in the browser', buttons >= 26 && states === 11 && /^(\d+) \/ \1 clips pass/.test(allTxt ?? '') && (await lp.locator('[data-testid=ml-report]').count()) === 1 && lErr.length === 0, JSON.stringify({ buttons, states, allTxt, lErr }));
+      check('[A144] Motion Lab: every clip and body state has its own preview button, and every clip passes the physical checks in the browser', buttons >= 30 && states === 12 && /^(\d+) \/ \1 clips pass/.test(allTxt ?? '') && (await lp.locator('[data-testid=ml-report]').count()) === 1 && lErr.length === 0, JSON.stringify({ buttons, states, allTxt, lErr }));
       await lp.context().close();
     }
     check('[A125] no page errors with the 3D robot', gErr.length === 0, gErr.slice(0, 3).join(' | '));
@@ -882,6 +887,53 @@ try {
     check('[A141] [A142] phone layout: no horizontal scroll, the status panel starts as a compact pill, the controls stay reachable', mob.sw <= 390 && mob.open === false && mob.inView && mob.mic && !mob.overlap, JSON.stringify(mob));
     check('[A141] no page errors with the space interface', sErr.length === 0, sErr.slice(0, 3).join(' | '));
     await sp.close();
+  }
+
+  // [A145] visual presenter on the real server (mock Gemini-style replies + mock Wikipedia), 3D robot in WebGL
+  {
+    const vb = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+    const vc = await vb.newContext({ viewport: { width: 1440, height: 900 } }); watchCsp(vc);
+    // the sandbox has no internet: Commons' image host is answered locally with a real PNG (the page still loads it under its CSP)
+    await vc.route('https://upload.wikimedia.org/**', (r) => r.fulfill({ status: 200, contentType: 'image/png', body: readFileSync('public/icons/icon-512.png') }));
+    const vp = await vc.newPage(); const vErr = []; vp.on('pageerror', (e) => vErr.push(e.message));
+    await vp.goto(`http://127.0.0.1:${LLM_PORT}/app`, { waitUntil: 'networkidle' }); await noBoot(vp);
+    await vp.evaluate(async () => { await nexus.memory.updateSettings({ setupDone: true, layout: 'robot', greeted: true, voiceOutput: false }); nexus.companion.applySettings(); }); await vp.keyboard.press('Escape');
+    await vp.waitForSelector('.robot3d[data-ready="1"]', { timeout: 40000 }).catch(() => null);
+    await vp.evaluate(() => { window.__skills = []; nexus.engine.on('start', (e) => window.__skills.push(e.skillId)); });
+    const idleV = () => vp.waitForFunction(() => nexus.companion.sm.state === 'idle' && !nexus.companion.getSnapshot().busy, null, { timeout: 30000 }).catch(() => null);
+    await vp.evaluate(() => nexus.companion.send('explain the solar system')); await vp.waitForSelector('[data-testid=visual-panel][data-status=ready]', { timeout: 15000 }).catch(() => null);
+    const g1 = await vp.evaluate(() => { const r = (s) => { const b = document.querySelector(s)?.getBoundingClientRect(); return b ? { l: b.left, t: b.top, r: b.right, b: b.bottom } : null; };
+      return { panel: r('[data-testid=visual-panel]'), robot: r('.robot3d canvas'), diagram: document.querySelector('[data-testid=visual-panel] svg.diagram')?.getAttribute('data-diagram'), kind: document.querySelector('.vp-kind')?.textContent, planets: [...document.querySelectorAll('.diagram text')].map((t) => t.textContent).join(' ') }; });
+    const overlap = (a, b) => !!a && !!b && a.l < b.r && b.l < a.r && a.t < b.b && b.t < a.b;
+    // the robot's visible drawing area: the canvas may be wider than the robot itself, so compare with its central column
+    const robotCore = g1.robot ? { l: g1.robot.l + (g1.robot.r - g1.robot.l) * 0.25, r: g1.robot.r - (g1.robot.r - g1.robot.l) * 0.25, t: g1.robot.t, b: g1.robot.b } : null;
+    check('[A145] "explain the solar system": the AI\'s diagram appears in its own panel beside the 3D robot (not over it), labelled as AI-described', g1.diagram === 'orbit' && /Neptune/.test(g1.planets) && /described by the AI/.test(g1.kind ?? '') && !overlap(g1.panel, robotCore) && g1.panel && g1.panel.l > 720, JSON.stringify(g1));
+    await idleV();
+    const sk = await vp.evaluate(() => window.__skills);
+    check('[A145] presenter gestures match the explanation: the explaining gesture with the words, one point toward the visual', sk.includes('explain') && sk.filter((x) => x === 'point_right').length === 1, sk.join(','));
+    await vp.evaluate(() => { window.__skills = []; return nexus.companion.send('show me the apollo 11 landing'); });
+    await vp.waitForFunction(() => document.querySelector('[data-testid=visual-panel]')?.dataset.status === 'ready' && document.querySelector('.vp-img')?.complete, null, { timeout: 15000 }).catch(() => null);
+    const g2 = await vp.evaluate(() => { const img = document.querySelector('.vp-img'); const credit = document.querySelector('[data-testid=vp-credit]');
+      return { kind: document.querySelector('[data-testid=visual-panel]')?.dataset.kind, src: img?.getAttribute('src'), loaded: img ? img.naturalWidth : 0, alt: img?.alt, credit: credit?.textContent, links: [...(credit?.querySelectorAll('a') ?? [])].map((a) => [a.href, a.rel]) }; });
+    check('[A145] "show me the Apollo 11 landing": a real-image lookup through the server shows the Commons picture with author, licence and source links', g2.kind === 'image' && /^https:\/\/upload\.wikimedia\.org\//.test(g2.src ?? '') && g2.loaded > 0 && /NASA/.test(g2.credit ?? '') && /Public domain/.test(g2.credit ?? '') && g2.links.some(([h]) => h === 'https://commons.wikimedia.org/wiki/File:Aldrin_Apollo_11.jpg') && g2.links.some(([h]) => h === 'https://en.wikipedia.org/wiki/Apollo_11') && g2.links.every(([, rel]) => /noopener/.test(rel)), JSON.stringify(g2));
+    await idleV();
+    await vp.evaluate(() => nexus.companion.send('please introduce yourself'));
+    await vp.waitForSelector('[data-testid=visual-panel]', { state: 'detached', timeout: 8000 }).catch(() => null);
+    check('[A145] a reply without a visual takes the previous one away (no stale pictures)', (await vp.locator('[data-testid=visual-panel]').count()) === 0);
+    await idleV();
+    await vp.evaluate(() => nexus.companion.send('explain the solar system')); await vp.waitForSelector('[data-testid=visual-panel]', { timeout: 15000 }).catch(() => null);
+    await vp.click('.vp-close'); await vp.waitForSelector('[data-testid=visual-panel]', { state: 'detached', timeout: 5000 }).catch(() => null);
+    check('[A145] the visual can be closed', (await vp.locator('[data-testid=visual-panel]').count()) === 0);
+    await idleV();
+    // phone: the panel goes above the robot, and the robot keeps a visible share of the screen
+    await vp.setViewportSize({ width: 390, height: 844 }); await vp.evaluate(() => nexus.companion.send('explain the solar system'));
+    await vp.waitForSelector('[data-testid=visual-panel]', { timeout: 15000 }).catch(() => null); await vp.waitForTimeout(600);
+    const g3 = await vp.evaluate(() => { const p = document.querySelector('[data-testid=visual-panel]')?.getBoundingClientRect(); const st = document.querySelector('.robot-view .stage')?.getBoundingClientRect();
+      return { panelBottom: p ? Math.round(p.bottom) : null, stageTop: st ? Math.round(st.top) : null, stageH: st ? Math.round(st.height) : 0, sw: document.documentElement.scrollWidth }; });
+    check('[A145] phone layout: the panel sits above the robot, the robot stage keeps ≥ 160 px, no horizontal scroll', g3.panelBottom !== null && g3.stageTop !== null && g3.panelBottom <= g3.stageTop + 4 && g3.stageH >= 160 && g3.sw <= 390, JSON.stringify(g3));
+    await idleV();
+    check('[A145] no page errors with the visual presenter', vErr.length === 0, vErr.slice(0, 3).join(' | '));
+    await vb.close();
   }
 
   // learning engine: research through the server (mock search + mock model), knowledge with status + sources, and the

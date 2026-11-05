@@ -26,12 +26,14 @@ export function inlineScriptHashes(html: string): string[] {
 }
 
 export function buildCsp(o: CspOptions): string {
-  const connect = ["'self'", ...(o.connect ?? []).filter((u) => /^https?:\/\/[^/\s;,']+$/i.test(u))];
+  // the Wikipedia API is the visual presenter's free image search when there is no NEXUS server (offline web demo)
+  const connect = ["'self'", ...(o.connect ?? []).filter((u) => /^https?:\/\/[^/\s;,']+$/i.test(u)), 'https://en.wikipedia.org'];
   const d: [string, string[]][] = [
     ['default-src', ["'self'"]],
     ['script-src', ["'self'", ...(o.inlineScripts ?? [])]],
     ['style-src', ["'self'", "'unsafe-inline'"]],
-    ['img-src', ["'self'", 'data:', 'blob:']],
+    // reference images shown by the visual presenter come only from Wikimedia Commons' image host
+    ['img-src', ["'self'", 'data:', 'blob:', 'https://upload.wikimedia.org']],
     ['font-src', ["'self'", 'data:']],
     ['media-src', ["'self'", 'blob:', 'data:', ...(o.publicMode ? [] : ['https:'])]],
     ['connect-src', connect],

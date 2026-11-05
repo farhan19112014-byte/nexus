@@ -55,6 +55,13 @@ const CLEAR_FRONT = ik([-0.86, 0.42, 0.42], [-0.6, -1, -0.4]);
 const CLEAR_BACK = ik([-0.8, 0.3, -0.5], [-0.9, -0.6, -0.1]);
 const ARMS_BACK: ArmSpec = { sh: [45, 0, -12], el: [0, 0, -8] };
 const ARMS_OUT: ArmSpec = { sh: [0, 0, -78], el: [0, 0, -10] };
+/* presenter hands: an open arm toward a visual, a palm offered forward, hands framing an idea in front of the body */
+const PRESENT = ik([-0.86, 0.74, 0.56], [-0.5, -1, -0.3], [-25, 0, 0]);
+const PRESENT_LOW = ik([-0.84, 0.5, 0.5], [-0.6, -1, -0.3], [-20, 0, 0]);
+const OFFER = ik([-0.74, 0.52, 0.56], [-0.6, -1, -0.3], [-45, 0, 10]);
+const LOWERED = ik([-0.72, 0.3, 0.36], [-0.6, -1, -0.3], [-10, 0, 0]);
+const FRAME = ik([-0.58, 0.5, 0.56], [-0.6, -1, -0.3], [-30, 0, 0]);
+const OPEN_OUT = ik([-0.86, 0.55, 0.42], [-0.6, -1, -0.3], [-40, 0, 12]);
 
 export const CLIPS: Clip[] = [
   /* ------------------------------------------------ basic */
@@ -112,6 +119,40 @@ export const CLIPS: Clip[] = [
       k(2.2, both(ik([-0.62, 0.42, 0.48], [-0.6, -1, -0.3], [-20, 0, 0]))),
       k(2.65, both(ik([-0.84, 0.5, 0.38], [-0.6, -1, -0.3], [-38, 0, 12]))), k(3.1, both(ik([-0.66, 0.44, 0.47], [-0.6, -1, -0.3], [-24, 0, 0]))),
       hold(3.5, both(ik([-0.62, 0.42, 0.48], [-0.6, -1, -0.3], [-20, 0, 0]))), hold(4.0, N())],
+  },
+  /* ---- presenter gestures. "left"/"right" are the VIEWER's sides: the visual panel sits to the viewer's right of the
+     robot, i.e. on the robot's own left (+x), so pointing right uses the left arm. */
+  {
+    id: 'point_right', name: 'Point right (to the visual)', kind: 'basic', mask: 'full', duration: 2.4,
+    doc: 'Presenter cue: turns a little toward the visual on the viewer\'s right, opens the left arm toward it, glances at it, then looks back at the audience.',
+    keys: [k(0, N()), k(0.45, { armL: mirrorArm(PRESENT), body: [0, 12, 0], head: [-2, 18, 0] }),
+      k(1.05, { armL: mirrorArm(PRESENT), body: [0, 10, 0], head: [0, 4, 0] }),
+      hold(1.6, { armL: mirrorArm(PRESENT_LOW), body: [0, 6, 0], head: [0, 2, 0] }), hold(2.4, N())],
+  },
+  {
+    id: 'point_left', name: 'Point left', kind: 'basic', mask: 'full', duration: 2.4,
+    doc: 'The same presenter cue toward the viewer\'s left (the robot\'s right arm).',
+    keys: [k(0, N()), k(0.45, { armR: PRESENT, body: [0, -12, 0], head: [-2, -18, 0] }),
+      k(1.05, { armR: PRESENT, body: [0, -10, 0], head: [0, -4, 0] }),
+      hold(1.6, { armR: PRESENT_LOW, body: [0, -6, 0], head: [0, -2, 0] }), hold(2.4, N())],
+  },
+  {
+    id: 'compare', name: 'Compare (on one hand… on the other)', kind: 'basic', mask: 'full', duration: 3.6,
+    doc: 'Weighs two things: one open palm to the viewer\'s left, then the other to the right, the body and head following each side.',
+    keys: [k(0, N()), k(0.45, { armR: OFFER, armL: mirrorArm(LOWERED), body: [0, -7, 0], head: [0, -10, 4] }),
+      hold(1.3, { armR: OFFER, armL: mirrorArm(LOWERED), body: [0, -7, 0], head: [0, -10, 4] }),
+      k(1.85, { armL: mirrorArm(OFFER), armR: LOWERED, body: [0, 7, 0], head: [0, 10, -4] }),
+      hold(2.7, { armL: mirrorArm(OFFER), armR: LOWERED, body: [0, 7, 0], head: [0, 10, -4] }), hold(3.6, N())],
+  },
+  {
+    id: 'explain', name: 'Explaining', kind: 'basic', mask: 'arms', duration: 4.4, loop: [0.5, 3.9],
+    doc: 'Presenter hands while explaining: open palms that frame the idea, one hand offering a point, both opening out — slower and wider than chat gestures.',
+    keys: [k(0, N()), hold(0.5, both(FRAME)),
+      k(1.1, { armR: OFFER, armL: mirrorArm(FRAME) }),
+      k(1.7, both(FRAME)),
+      k(2.4, both(OPEN_OUT)),
+      k(3.1, { armL: mirrorArm(OFFER), armR: FRAME }),
+      hold(3.9, both(FRAME)), hold(4.4, N())],
   },
   {
     id: 'look_around', name: 'Look around', kind: 'basic', mask: 'full', duration: 3.2,
@@ -314,6 +355,11 @@ export const CLIPS: Clip[] = [
 
   /* ------------------------------------------------ state loops (held while NEXUS is in that state) */
   {
+    id: 'state_thinking', name: 'Thinking (state)', kind: 'state', mask: 'head', duration: 4.8, loop: [0.8, 4.8],
+    doc: 'While NEXUS works on an answer: small, slow head movements — a tilt, a glance up and aside, back — nothing busy.',
+    keys: [k(0, N()), k(0.8, { head: [-4, -6, 5] }), k(2.0, { head: [-6, 4, 3] }), k(3.4, { head: [-3, 7, -3] }), k(4.8, { head: [-4, -6, 5] })],
+  },
+  {
     id: 'state_listening', name: 'Listening (state)', kind: 'state', mask: 'noHead', duration: 2.6, loop: [0.6, 2.6],
     doc: 'Attentive: leaning in a little, hands loosely together in front, a slow breath.',
     keys: [k(0, N()), k(0.3, both(CLEAR_FRONT), { protract: 0.5 }), hold(0.6, both(ik([-0.28, 0.52, 0.66], [-1, -0.5, 0])), { protract: 0.9, body: [4, 0, 0] }),
@@ -338,9 +384,9 @@ export const CLIPS: Clip[] = [
 export const CLIP_BY_ID: Record<string, Clip> = Object.fromEntries(CLIPS.map((c) => [c.id, c]));
 
 /** NEXUS's interaction states and the clip held in each (null = the existing idle body language only) */
-export const BODY_STATES = ['IDLE', 'LISTENING', 'THINKING', 'SPEAKING', 'HAPPY', 'EXCITED', 'CONFUSED', 'CURIOUS', 'SURPRISED', 'CELEBRATING', 'DANCING'] as const;
+export const BODY_STATES = ['IDLE', 'LISTENING', 'THINKING', 'SPEAKING', 'HAPPY', 'EXCITED', 'CONFUSED', 'CURIOUS', 'SURPRISED', 'CELEBRATING', 'DANCING', 'EXPLAINING'] as const;
 export type BodyState = (typeof BODY_STATES)[number];
 export const STATE_CLIP: Record<BodyState, string | null> = {
-  IDLE: null, LISTENING: 'state_listening', THINKING: 'think', SPEAKING: 'speak_gestures', HAPPY: 'state_happy', EXCITED: 'excited',
-  CONFUSED: 'confused', CURIOUS: 'curious', SURPRISED: 'state_surprised', CELEBRATING: 'celebrate', DANCING: 'dance_sway',
+  IDLE: null, LISTENING: 'state_listening', THINKING: 'state_thinking', SPEAKING: 'speak_gestures', HAPPY: 'state_happy', EXCITED: 'excited',
+  CONFUSED: 'confused', CURIOUS: 'curious', SURPRISED: 'state_surprised', CELEBRATING: 'celebrate', DANCING: 'dance_sway', EXPLAINING: 'explain',
 };

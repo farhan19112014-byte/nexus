@@ -100,7 +100,7 @@ describe('[A144] the behaviours the brief names', () => {
       applyBody(rig, Object.fromEntries(RIG_NODES.map((n) => [n, { x: 0, y: 0, z: 0 }])), b.update(1 / 30));
       expect(rig.Mouth_Open.scale.y).toBe(mouth); expect(rig.Eye_L.scale.y).toBe(eye); expect(rig.EyeLid_L.position.y).toBe(lid);
     }
-    for (const id of Object.values(STATE_CLIP)) if (id) expect(['noHead', 'arms', 'full']).toContain(CLIP_BY_ID[id].mask === 'full' ? 'full' : CLIP_BY_ID[id].mask);
+    for (const id of Object.values(STATE_CLIP)) if (id) expect(['noHead', 'arms', 'full', 'head']).toContain(CLIP_BY_ID[id].mask === 'full' ? 'full' : CLIP_BY_ID[id].mask);
     expect(CLIP_BY_ID.speak_gestures.mask).toBe('arms');                        // speaking gestures leave the head to the speech/look-at system
   });
 
@@ -118,7 +118,7 @@ describe('[A144] the behaviours the brief names', () => {
       }
       expect(worst, seq.join('→')).toBeLessThan(LIMITS.snap);
     }
-    expect([...BODY_STATES]).toEqual(['IDLE', 'LISTENING', 'THINKING', 'SPEAKING', 'HAPPY', 'EXCITED', 'CONFUSED', 'CURIOUS', 'SURPRISED', 'CELEBRATING', 'DANCING']);
+    expect([...BODY_STATES]).toEqual(['IDLE', 'LISTENING', 'THINKING', 'SPEAKING', 'HAPPY', 'EXCITED', 'CONFUSED', 'CURIOUS', 'SURPRISED', 'CELEBRATING', 'DANCING', 'EXPLAINING']);
   });
 
   it('[A144] no conflicting animations: one action at a time, an airborne flip is never cut — a stop lands first, a new request waits', () => {

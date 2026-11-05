@@ -26,5 +26,7 @@ export function applyBody(rig: Rig, rest: Rest, out: BodyOutput | null) {
   rig.Body_Root.rotation.set(...eulerOf(rootRot));
   const off = shrugOffset(shrug, protract);
   for (const s of ['L', 'R'] as const) { const R = rest[`Arm_${s}`]; if (R) rig[`Arm_${s}`].position.set(R.x + off.arm[0], R.y + off.arm[1], R.z + off.arm[2]); }
+  // speech accent: a small additive nod on stressed syllables (on top of gaze, expression and the layers)
+  if (out?.accent) rig.Head.rotation.x += out.accent;
   rig.Head.position.set(rig.Head.position.x + off.head[0], rig.Head.position.y + off.head[1], rig.Head.position.z + off.head[2]);
 }

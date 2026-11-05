@@ -256,3 +256,31 @@ ElevenLabs with timestamps, `/api/transcribe`, `/api/holo/*`, `/api/learn/*`); r
 - Limits: rigid parts (no skin), mitten hands (point/thumbs up are whole-hand poses), the 2D robot shows simplified
   versions, stepping turns pivot on the planted foot; with software rendering (very low frame rates) a frame step is
   capped at 0.1 s, so moves play slower rather than skipping.
+
+## Visual presenter + technology environment (A145, A141 replaced)
+
+- **Visuals beside the robot** (`shared/visual.ts`): the model may add ONE optional `visual` to its HEAD line —
+  `{"kind":"image","query"}` for real-world references, or `{"kind":"diagram","diagram":{…}}` with one of nine typed
+  diagram specs (orbit, network, flow, cycle, compare, timeline, forces, hierarchy, bars). Invalid → null; the reply is
+  kept. The prompt (`VISUAL_GUIDE`) tells it to use null for chit-chat, jokes, personal or sensitive topics and short answers.
+- **Image retrieval** (`shared/imageSearch.ts`, `GET /api/visual/image`): Wikipedia search → the article's lead image with a
+  free licence (`pilicense=free`) → Commons metadata for author, licence and file page. Free, no key, cached 6 h on the
+  server, 8 s timeout; misses and outages return `{image:null}` (never a 5xx). Without a server (web demo) the browser asks
+  Wikipedia directly. Only `https://upload.wikimedia.org` images are shown (CSP img-src + a URL check).
+- **AI-generated diagrams** (`src/visual/DiagramView.tsx`): the model supplies data; the app draws SVG with theme tokens.
+  Labels are text (React-escaped), never markup.
+- **Panel** (`src/visual/VisualPanel.tsx`): right 40% of the robot page on wide screens, above the robot on narrow ones
+  (the robot stage shrinks, nothing overlaps); fade/slide in, crossfade on change, fade out when the next reply has no
+  visual; close button; honest source label ("described by the AI, drawn by NEXUS" / "scripted demo" / "Wikimedia Commons");
+  credit line with links. Also docked at the top of the chat column in the workspace layout.
+- **Presenter body language**: new clips `point_right` / `point_left` (viewer's sides; the panel is on the right, so the
+  robot's left arm), `compare` (alternating palms), `explain` (presenter hands, loop) and a subtle head-only
+  `state_thinking`; new body state EXPLAINING. Once per visual, while the reply is delivered, NEXUS points to the panel
+  (a comparison gets `compare`), unless the model already chose a pointing gesture; never in quiet or reduced-motion mode.
+- **Speech coordination**: the speaking/explaining gestures follow the voice — mouth openness (measured audio level or
+  ElevenLabs timing) drives an envelope: arms relax in pauses, the head gives a small additive nod on stressed syllables
+  (≤ 4°), and gestures tagged to the voice (`speechbeat`) are cancelled the moment the audio ends.
+- **Technology environment** (`src/space/techScene.ts` replaces `spaceScene.ts`): navy gradient, faint grid, circuit
+  traces with occasional data pulses, a slowly breathing neural network with signals, translucent glass panels with quiet
+  decorative readouts, data motes; parallax and pointer-lit nodes; mood-aware; same performance rules as before.
+- Fix found while testing: on phones the 3D canvas did not shrink with its stage; it now fits the stage exactly.

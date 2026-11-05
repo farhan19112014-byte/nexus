@@ -1,22 +1,22 @@
 # NEXUS — Release readiness & acceptance report
 
-Generated 2026-11-02T12:48:05.501Z by `npm run report` from actual command results. Do not edit by hand.
+Generated 2026-11-05T06:07:36.873Z by `npm run report` from actual command results. Do not edit by hand.
 
 ## Summary
 
 | | |
 |---|---|
 | Overall | **Some checks failed — see below** |
-| typecheck | ✅ pass · 16.6s |
-| build (app + server bundle) | ✅ pass · 23.9s |
-| lint (eslint, 0 warnings) | ✅ pass · 11.0s |
-| unit + integration tests | ✅ pass · 57.5s |
-| end-to-end tests | ❌ fail (exit 1) · 904.7s |
-| desktop app smoke test | ✅ pass · 26.6s |
-| Unit tests | 223/223 passed |
-| Integration tests | 70/70 passed |
-| End-to-end checks | 156/158 passed |
-| Assets | 140 verified · 0 implemented but not fully verified · 4 failing · 0 blocked · 0 not done |
+| typecheck | ✅ pass · 10.4s |
+| build (app + server bundle) | ✅ pass · 15.0s |
+| lint (eslint, 0 warnings) | ✅ pass · 6.7s |
+| unit + integration tests | ✅ pass · 51.6s |
+| end-to-end tests | ❌ fail (exit 1) · 609.2s |
+| desktop app smoke test | ✅ pass · 17.2s |
+| Unit tests | 234/234 passed |
+| Integration tests | 75/75 passed |
+| End-to-end checks | 163/165 passed |
+| Assets | 141 verified · 0 implemented but not fully verified · 4 failing · 0 blocked · 0 not done |
 
 **Status meanings.** *verified*: implemented and every test tagged with the asset id passed in this run. *implemented*: code exists but at least one required verification is missing in this run. *failing*: a tagged test failed. Verification uses headless Chromium and mocked external services; see each asset's limitation for what that does not prove.
 
@@ -25,12 +25,12 @@ Generated 2026-11-02T12:48:05.501Z by `npm run report` from actual command resul
 ### end-to-end tests
 
 ```
-✔ [A136] the Learning overview shows counted metrics (1 knowledge note, 1 research report) and states that the AI model is not retrained — 1knowledge notes1 pending1research reports1 sources · today 1/51experiences1 not reflected on yet0reflections0workflow skills0 approved · 0 runs—replies rated h
+✔ [A136] the Learning overview shows counted metrics (1 knowledge note, 1 research report) and states that the AI model is not retrained — 1knowledge notes1 pending1research reports1 sources · today 1/52experiences2 not reflected on yet0reflections0workflow skills0 approved · 0 runs1/1replies rated
 ✔ [A136] no page errors on the Learning page
 ✔ [A112] [A88] axe accessibility audit: no serious or critical issues on any page, dark and light
 ✔ [A98] no uncaught page errors during the run
 ✔ [UAT-S1] the Content-Security-Policy never blocked anything the app needs (no violations on any page in this run)
-156/158 browser checks passed
+163/165 browser checks passed
 ```
 
 Failing tests:
@@ -183,9 +183,9 @@ Failing tests:
 | A93 | Input and Output Validation | ✅ verified | 1/0 | `shared/schema.ts`, `src/security/validation.ts` |  |
 | A94 | Abuse and Resource Limits | ✅ verified | 2/0 | `shared/schema.ts`, `server/app.ts`, `src/animation/engine.ts` |  |
 | A95 | Observability and Diagnostics | ✅ verified | 1/0 | `src/diagnostics/log.ts`, `src/components/StatusPanel.tsx` |  |
-| A96 | Automated Unit Tests | ✅ verified | 223/0 | `src/tests/unit` |  |
-| A97 | Integration Tests | ✅ verified | 70/0 | `src/tests/integration` |  |
-| A98 | End-to-End Tests | ❌ failing | 156/2 | `scripts/e2e.mjs` |  |
+| A96 | Automated Unit Tests | ✅ verified | 234/0 | `src/tests/unit` |  |
+| A97 | Integration Tests | ✅ verified | 75/0 | `src/tests/integration` |  |
+| A98 | End-to-End Tests | ❌ failing | 163/2 | `scripts/e2e.mjs` |  |
 | A99 | Performance and Compatibility | ❌ failing | 5/1 | `scripts/e2e.mjs`, `src/core/characterRuntime.ts` |  |
 | A100 | Release Readiness and Acceptance Report | ❌ failing | 5/1 | `scripts/report.mjs`, `docs/RELEASE_REPORT.md` |  |
 
@@ -221,10 +221,11 @@ Failing tests:
 | A127 | 3D Motion Engine: state body language, bounded procedural primitives, springs + follow-through, priorities, interruption; 3D everywhere WebGL exists | ❌ failing | 15/1 | `src/character3d/motion3d.ts`, `src/character3d/Robot3D.tsx`, `src/core/characterRuntime.ts`, `src/site/site.css` |  |
 | A128 | MISSION NEXUS website: cinematic boot, landing (hero, robot viewer with view angles, capabilities with honest status, architecture, roadmap), route transitions, robot-page theme, 3D loading progress + retry | ✅ verified | 1/0 | `src/site/Landing.tsx`, `src/site/site.css`, `src/site/reveal.ts`, `src/boot.ts`, `src/character3d/Robot3D.tsx`, `src/components/app-theme.css` |  |
 | A113 | Compact Prompt for Small Local Models | ✅ verified | 3/0 | `server/prompts/system.ts`, `server/brainService.ts` |  |
-| A141 | Space interface: animated space environment (planets, rings, wireframes, asteroids, particles, stars, shooting stars, parallax), stage light, micro-interactions, space boot sequence | ✅ verified | 8/0 | `src/space/spaceScene.ts`, `src/space/SpaceField.tsx`, `src/space/space.css`, `index.html` | Canvas 2D illustration (not a physical simulation); the NEXUS robot model, materials and animations are unchanged. |
+| A141 | Technology environment (replaced the planetary scene): dark navy grid, circuit traces with travelling data pulses, a breathing neural network with signals, translucent glass panels with quiet live readouts, data motes, parallax; stage light, micro-interactions, boot sequence | ✅ verified | 9/0 | `src/space/techScene.ts`, `src/space/SpaceField.tsx`, `src/space/space.css`, `index.html` | Canvas 2D illustration; the panels show decorative readouts (not real metrics — the real status is the System panel); the NEXUS robot model is unchanged. |
 | A142 | Live experience: truthful system status (server, AI, voice, interaction) with the NEXUS chain, audio-reactive voice scope from measured mic/voice levels, optional synthesized interface sounds, landing storytelling (voice step, HOLOBUILD + learning tiles), holographic HOLOBUILD frame | ✅ verified | 9/0 | `src/space/systemStatus.ts`, `src/space/SystemPanel.tsx`, `src/space/VoiceScope.tsx`, `src/voice/levels.ts`, `src/core/uiSounds.ts`, `src/site/Landing.tsx` | Browser voices expose no audio, so they get no waveform; with browser speech recognition the waveform comes from a separate microphone meter. |
 | A143 | Adaptive Colour Studio: two colours (48-colour library or custom HEX) generate a full site theme and recolour the robot — every brand colour re-mapped with lightness kept for contrast, live preview, smooth switch, saved with settings, one-click reset | ✅ verified | 18/0 | `src/theme/palette.ts`, `src/theme/colour.ts`, `src/theme/studio.ts`, `src/site/ColourStudio.tsx`, `src/theme/palette.css` |  |
 | A144 | Full-body 3D motion system: 29 clips (clap with palm contact, wave, nod, shake, shrug, point, thumbs up, speaking gestures, look around, excited, celebrate jump, confused, curious, disappointed, think, laugh, surprised, backflip, forward roll, two dances, jump, squat, one-leg balance, turn around, sit/stand), two-bone IK, a state + action controller (IDLE…DANCING) driven by the engine, AI/command triggers, Motion Lab preview | ✅ verified | 20/0 | `src/character3d/body/clips.ts`, `src/character3d/body/clip.ts`, `src/character3d/body/ik.ts`, `src/character3d/body/controller.ts`, `src/character3d/body/checks.ts`, `src/site/MotionLab.tsx` | Rigid parts on joints (no skin deformation); mitten hands, so pointing and thumbs up are whole-hand poses; the 2D robot shows simplified versions; stepping turns pivot on the planted foot. |
+| A145 | Visual presenter: NEXUS shows a credited Wikimedia Commons photo or an AI-generated diagram (9 types: orbit, network, flow, cycle, compare, timeline, forces, hierarchy, bars) beside the robot while it explains, points to it, uses presenter gestures (explain, point left/right, compare) and speech-coordinated hands and head | ✅ verified | 22/0 | `shared/visual.ts`, `shared/imageSearch.ts`, `src/visual/VisualPanel.tsx`, `src/visual/DiagramView.tsx`, `server/app.ts`, `src/core/companion.ts`, `src/character3d/body/clips.ts` | Images are the lead picture of the best-matching Wikipedia article, so they can be generic; diagrams are schematic (not to scale); no paid image-generation model is used; gestures follow the voice loudness, not the meaning of individual words. |
 
 ### HOLOBUILD 3D workspace
 
@@ -256,7 +257,7 @@ Failing tests:
 ## Laptop & desktop app
 
 - Laptop layouts (1024–1536 px wide, 640–800 px tall, including browser-bar heights such as 1366×657) are checked by the end-to-end suite (asset A90 rows above).
-- Desktop app smoke test (linux-x64): ✅ — `{"ok":true,"title":"NEXUS — robot workspace","nodeAccess":false,"ms":387,"url":"http://localhost:18787","provider":"demo","reused":false,"pages":["Robot","Home page","About","Privacy","Set up again (name, AI brain, theme)…"],"home":true,"back":true}`
+- Desktop app smoke test (linux-x64): ✅ — `{"ok":true,"title":"NEXUS — robot workspace","nodeAccess":false,"ms":347,"url":"http://localhost:18787","provider":"demo","reused":false,"pages":["Robot","Home page","About","Privacy","Set up again (name, AI brain, theme)…"],"home":true,"back":true}`
 - Not verifiable here: the Windows installer (`npm run dist:win`) and the `.bat` start scripts were not run on Windows by this report. Voice input is unavailable inside the desktop app (Electron ships no speech-to-text service); the app says so and voice works in Chrome/Edge.
 
 ## Configuration requirements

@@ -6,6 +6,8 @@
 import { BrainResponseSchema, ChatRequestSchema, type BrainHead, type BrainResponse, type ChatMessage, type ChatRequestInput, type ErrorCode, type ResponseMeta, type ServerCapabilities, type Source, type StreamEvent } from '../../shared/schema';
 import { demoBrain } from '../../shared/demoBrain';
 import { API_BASE, REMOTE_API, WEB_DEMO } from '../webDemo';
+import { findImage } from '../../shared/imageSearch';
+import { isAllowedImageUrl, type ImageResult } from '../../shared/visual';
 
 export class ApiError extends Error { constructor(msg: string, public code: ErrorCode, public retryable = false) { super(msg); } }
 export interface ChatHandlers { onStatus?(s: 'researching' | 'thinking' | 'streaming'): void; onSources?(s: Source[]): void; onHead?(h: BrainHead): void; onDelta?(t: string): void }
@@ -136,6 +138,24 @@ export class ApiClient {
       if (!r.ok) throw new ApiError(j?.error ?? `Server error ${r.status}`, j?.code ?? 'provider', j?.retryable ?? r.status >= 500);
       return j;
     } finally { clearTimeout(timer); signal?.removeEventListener('abort', onAbort); }
+  }
+
+  /**
+   * Visual presenter: a free, credited reference image for a topic. Through the NEXUS server when there is one
+   * (cached there); without a server (web demo, server unreachable) straight from Wikipedia. Never throws — null on
+   * any failure, so the explanation simply goes on without a picture.
+   */
+  async visualImage(query: string, signal?: AbortSignal): Promise<{ image: ImageResult | null; error?: string }> {
+    const direct = async () => { try { return { image: await findImage(query, { signal }) }; } catch (e) { return { image: null, error: (e as Error).name === 'AbortError' ? 'cancelled' : 'The image search is unavailable right now.' }; } };
+    if (this.webDemo) return direct();
+    try {
+      const r = await fetch(`${this.base}/api/visual/image?q=${encodeURIComponent(query.slice(0, 80))}`, { signal });
+      if (r.status === 404) return direct();                       // an older server without the route
+      if (!r.ok) return { image: null, error: r.status === 429 ? 'Too many image requests — try again in a minute.' : `The image search returned HTTP ${r.status}.` };
+      const j = await r.json() as { image?: ImageResult | null; error?: string };
+      const img = j.image && isAllowedImageUrl(j.image.url) ? j.image : null;
+      return { image: img, ...(j.error ? { error: j.error } : {}) };
+    } catch (e) { if ((e as Error).name === 'AbortError') return { image: null, error: 'cancelled' }; return direct(); }
   }
 
   async summarize(messages: ChatMessage[]): Promise<string | null> {

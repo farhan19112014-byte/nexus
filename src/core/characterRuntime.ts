@@ -15,7 +15,8 @@ export function bodyStateFor(m: MotionState, expression: string | null): BodySta
   switch (m) {
     case 'listening': case 'waiting': return 'LISTENING';
     case 'thinking': return 'THINKING';
-    case 'speaking': case 'explaining': return 'SPEAKING';
+    case 'speaking': return 'SPEAKING';
+    case 'explaining': return 'EXPLAINING';
     case 'curious': return 'CURIOUS';
     case 'excited': return 'EXCITED';
     case 'confused': return 'CONFUSED';
@@ -67,6 +68,8 @@ export class CharacterRuntime {
     const v = this.engine.update(dt);
     this.body.reduced = this.engine.reducedMotion;
     this.body.setState(this.bodyState ?? bodyStateFor(this.motion, this.expressions.current()));
+    // the voice drives the speaking gestures: mouth openness (measured audio level / word pulses) only while speaking
+    this.body.setSpeech(this.engine.isSpeaking() ? (v['mouth.open'] ?? 0) : 0);
     const b = this.body.update(dt);
     for (const r of this.rigs) { r.setBody?.(b); r.apply(v); }
     this.frames++;

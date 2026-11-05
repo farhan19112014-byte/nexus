@@ -11,6 +11,7 @@ import './theme/studio.css';
 import './components/depth.css';
 import './holobuild/holobuild.css';
 import './space/space.css';
+import './visual/visual.css';
 import { routeFor, useLocation } from './router';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { initTheme } from './theme';
