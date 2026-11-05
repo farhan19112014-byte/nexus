@@ -31,6 +31,8 @@ export const SETTINGS_VERSION = 4;
 export const SettingsSchema = z.object({
   memoryEnabled: z.boolean().default(true),
   responseStyle: z.enum(['concise', 'balanced', 'detailed']).default('balanced'),
+  /** visual presenter: a picture or diagram with every answer (default), only when it helps, or never */
+  visuals: z.enum(['always', 'helpful', 'off']).default('always'),
   /** tone only (humour, energy, curiosity, formality) — never safety, honesty or the voice */
   personality: PersonalitySchema.prefault({}),
   language: z.string().max(40).default('English'),

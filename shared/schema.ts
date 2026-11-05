@@ -293,6 +293,8 @@ export const UserProfileSchema = z.object({
   robotName: z.string().max(200).default(DEFAULT_ROBOT_NAME).transform((v) => effectiveRobotName(v)),
   /** personality settings (Settings → Personality); they shape tone only — never safety, honesty or the voice */
   personality: PersonalitySchema.prefault({}),
+  /** visual presenter mode chosen in Settings (older clients omit it: "helpful") */
+  visuals: z.enum(['always', 'helpful', 'off']).default('helpful'),
 }).strict();
 
 export const ChatRequestSchema = z.object({

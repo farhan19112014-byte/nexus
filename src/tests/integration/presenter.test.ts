@@ -59,7 +59,7 @@ describe('[A145] server: GET /api/visual/image', () => {
 });
 
 const META: ResponseMeta = { provider: 'fake', model: null, isLLM: true, latencyMs: 1, streamed: true, repaired: false, droppedFields: [], degraded: false, historySent: 1, promptVersion: 't', research: { used: false, provider: null, count: 0 } };
-function rig(image: (q: string) => Promise<{ image: ImageResult | null; error?: string }>, script?: (req: ReturnType<typeof ChatRequestSchema.parse>) => BrainResponse) {
+function rig(image: (q: string) => Promise<{ image: ImageResult | null; error?: string }>, script?: (req: ReturnType<typeof ChatRequestSchema.parse>) => BrainResponse, visuals: 'always' | 'helpful' | 'off' = 'helpful') {
   const kv = new MemoryKV(); const engine = new AnimationEngine(seeded(3)); const expressions = new ExpressionController(BUILTIN_EXPRESSIONS);
   const runtime = new CharacterRuntime(engine, expressions); const registry = new SkillRegistry(kv); const memory = new MemoryStore(kv); const learning = new LearningSystem(registry, kv);
   const queries: string[] = [];
@@ -69,7 +69,7 @@ function rig(image: (q: string) => Promise<{ image: ImageResult | null; error?: 
   const c = new Companion({ runtime, registry, memory, learning, api, persistent: false, silentMsPerChar: 4, restAfterMs: 60_000 });
   const started: string[] = []; engine.on('start', (e) => started.push(e.skillId));
   const timer = setInterval(() => runtime.step(0.05), 2);
-  return { c, runtime, started, queries, stop: () => clearInterval(timer), async ready() { await memory.ready; await memory.updateSettings({ greeted: true }); await c.init(); } };
+  return { c, runtime, started, queries, stop: () => clearInterval(timer), async ready() { await memory.ready; await memory.updateSettings({ greeted: true, visuals }); await c.init(); } };
 }
 const until = async (f: () => boolean, ms = 5000) => { const t0 = Date.now(); while (!f()) { if (Date.now() - t0 > ms) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 5)); } };
 const IMG: ImageResult = { url: 'https://upload.wikimedia.org/a.jpg', width: 960, height: 640, title: 'Apollo 11', pageUrl: 'https://en.wikipedia.org/wiki/Apollo_11', fileUrl: 'https://commons.wikimedia.org/wiki/File:A.jpg', author: 'NASA', license: 'Public domain', licenseUrl: null, source: 'Wikimedia Commons' };
@@ -129,5 +129,26 @@ describe('[A145] companion: the presenter delivers explanation, visual and gestu
     expect(t.c.getSnapshot().visual).toBeNull();
     await t.c.send('explain gravity'); await until(() => !!t.c.getSnapshot().visual);
     t.c.dismissVisual(); expect(t.c.getSnapshot().visual).toBeNull(); t.stop();
+  });
+});
+
+describe('[A145] Visuals setting: always (default) / only when helpful / off', () => {
+  const plain = (reply: string) => () => BrainResponseSchema.parse({ reply, expression: 'happy' });
+  it('[A145] "always": when the model sends no visual, NEXUS looks up a picture of the subject itself, and a pronoun follow-up reuses the last subject', async () => {
+    const t = rig(async () => ({ image: IMG }), plain('He is a famous actor.'), 'always'); await t.ready();
+    await t.c.send('Who is Shah Rukh Khan?'); await until(() => t.c.getSnapshot().visual?.status === 'ready');
+    expect(t.queries).toEqual(['Shah Rukh Khan']);
+    await until(() => t.c.sm.state === 'idle');
+    await t.c.send('how does he look like'); await until(() => t.queries.length === 2);
+    expect(t.queries[1]).toBe('Shah Rukh Khan'); t.stop();
+  });
+  it('[A145] "off": nothing is shown even when the model sends a visual', async () => {
+    const t = rig(async () => ({ image: IMG }), undefined, 'off'); await t.ready();
+    await t.c.send('Explain the solar system'); await until(() => t.c.sm.state === 'idle');
+    expect(t.c.getSnapshot().visual).toBeNull(); expect(t.queries).toEqual([]); t.stop();
+  });
+  it('[A145] the setting is sent to the server with every message (it shapes the prompt)', async () => {
+    let seen: string | undefined; const t = rig(async () => ({ image: null }), (req) => { seen = req.profile.visuals; return BrainResponseSchema.parse({ reply: 'ok' }); }, 'always'); await t.ready();
+    await t.c.send('what is a volcano'); await until(() => t.c.sm.state === 'idle'); expect(seen).toBe('always'); t.stop();
   });
 });

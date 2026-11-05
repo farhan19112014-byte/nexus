@@ -39,7 +39,7 @@ import { applyTheme } from '../theme';
 import { applyPalette } from '../theme/studio';
 import { describeDue, parseReminder, type Reminder, type ReminderStore } from './reminders';
 import type { ChatContextInput, ResponseMeta } from '../../shared/schema';
-import type { ImageResult, VisualRequest } from '../../shared/visual';
+import { topicFromText, type ImageResult, type VisualRequest } from '../../shared/visual';
 type ChatContext = ChatContextInput;
 
 export interface Snapshot {
@@ -555,7 +555,7 @@ export class Companion {
         messages: buildContext(this.snap.messages.filter((m) => m.id !== asst.id), s.historyLimit),
         skills: this.d.registry.catalog(), expressions: this.expressions.ids().filter((x) => x !== '__preview'),
         memory: this.d.memory.contextLines(text), preferences: this.prefs(),
-        profile: { responseStyle: s.responseStyle, language: s.language, robotName: s.robotName, personality: s.personality }, lastSkillId: this.runner.lastSkillId,
+        profile: { responseStyle: s.responseStyle, language: s.language, robotName: s.robotName, personality: s.personality, visuals: s.visuals }, lastSkillId: this.runner.lastSkillId,
         research, stream: s.streaming, ...(context ? { context } : {}),
       }, ctl.signal, {
         onStatus: (st) => { if (token === this.token) this.patch(asst.id, { stage: st }); },
@@ -598,6 +598,11 @@ export class Companion {
       if (!headApplied) { this.applyExpression(resp.expression, resp.emotionIntensity); this.presentVisual(resp.visual ?? null, asst.id, token); }
       // the visual arrived after the head (in the reply's closing metadata): show it now
       else if (resp.visual && this.snap.visual?.msgId !== asst.id) this.presentVisual(resp.visual, asst.id, token);
+      // "always" (Settings → Visuals): the model sent none — look up a picture of the subject ourselves
+      if (s.visuals === 'always' && !resp.visual && this.snap.visual?.msgId !== asst.id) {
+        const topic = topicFromText(text) ?? this.lastTopic;
+        if (topic) this.presentVisual({ kind: 'image', query: topic, caption: '' }, asst.id, token);
+      }
       if (resp.pose !== 'neutral' || this.engine.getPose() !== 'neutral') this.engine.setPose(resp.pose as Pose);
       if (typeof document !== 'undefined' && document.hidden) this.notifications.push('response', `${this.robotName} replied.`, { react: false, desktop: true });
       try { if (result.meta.isLLM) this.d.onExchange?.({ msgId: asst.id, user: text, reply: resp.reply, uncertainty: resp.uncertainty, previousReply: prevReply }); } catch { /* learning is best-effort */ }
@@ -616,19 +621,25 @@ export class Companion {
   }
 
   /* ---------------- visual presenter ---------------- */
-  private visualSeq = 0; private visualAbort: AbortController | null = null; private cuedVisual = 0; private visualNotes = new Map<string, string>();
+  private visualSeq = 0; private visualAbort: AbortController | null = null; private cuedVisual = 0; private visualNotes = new Map<string, string>(); private lastTopic: string | null = null;
   /**
    * Show what the reply asked for beside the robot: a diagram at once, an image after a (cached, credited) lookup.
    * A reply without a visual clears the previous one — the panel always belongs to the explanation being given.
    */
   presentVisual(req: VisualRequest | null, msgId: string, token: number) {
     this.visualAbort?.abort(); this.visualAbort = null;
+    if (this.settings.visuals === 'off') req = null;
+    // with "always", a reply whose head has no visual keeps the panel until the final check decides (no flicker)
+    if (!req && this.settings.visuals === 'always' && this.snap.visual && this.snap.visual.msgId !== msgId) return;
     if (!req) { if (this.snap.visual) this.set({ visual: null }); return; }
+    this.lastTopic = req.kind === 'image' ? req.query : req.diagram.title;
     const id = ++this.visualSeq;
     if (req.kind === 'diagram') { this.set({ visual: { id, msgId, request: req, status: 'ready' } }); return; }
     this.set({ visual: { id, msgId, request: req, status: 'loading' } });
     const ctl = new AbortController(); this.visualAbort = ctl;
-    void this.d.api.visualImage(req.query, ctl.signal).then((r) => {
+    // an image lookup can never break the reply: any error (or an API client without the route) is just "no picture"
+    const look = (): Promise<{ image: ImageResult | null; error?: string }> => { try { return typeof this.d.api.visualImage === 'function' ? this.d.api.visualImage(req.query, ctl.signal).catch(() => ({ image: null })) : Promise.resolve({ image: null }); } catch { return Promise.resolve({ image: null }); } };
+    void look().then((r) => {
       if (ctl.signal.aborted || token !== this.token || this.snap.visual?.id !== id) return;
       if (r.image) { this.set({ visual: { id, msgId, request: req, status: 'ready', image: r.image } }); this.cueVisual([], undefined); return; }
       const why = r.error && r.error !== 'cancelled' ? r.error : `No freely licensed picture was found for “${req.query}”.`;

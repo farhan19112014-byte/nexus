@@ -114,3 +114,20 @@ export function plainText(html: string | undefined, max = 120): string {
   if (!html) return '';
   return html.replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim().slice(0, max);
 }
+
+const LEAD = /^(?:(?:hey|hi|ok|okay|so|please|nexus)[,!\s]+)*(?:can you |could you |would you |pls |please )?(?:tell me (?:about|more about)|explain(?: to me)?|show me(?: a picture of| an image of| a photo of)?|describe|teach me about|what (?:is|are|was|were)|what's|who (?:is|are|was|were)|who's|where (?:is|are|was|were)|where's|when (?:was|were|is|did)|why (?:is|are|do|does|did)|how (?:does|do|did|is|are|was|were)|how's)\s+/i;
+const TAIL = /\s+(?:look like|looks like|work|works|mean|means|happen|happened|made|built|formed|used|exist|called|located)\??$/i;
+const SMALL_TALK = /^(?:hi|hello|hey|yo|thanks|thank you|thx|ok|okay|bye|goodbye|good (?:morning|night|evening)|lol|haha|yes|no|nice|cool|great)\b/i;
+/**
+ * The subject of a message, as an image-search query — for "always show a visual" when the model sent none:
+ * "Who is Shah Rukh Khan?" → "Shah Rukh Khan", "how does the Eiffel Tower look like" → "the Eiffel Tower".
+ * Small talk and pronoun-only follow-ups ("how does he look like") return null (the caller then reuses the last topic).
+ */
+export function topicFromText(text: string): string | null {
+  let t = text.trim().replace(/[?!.]+$/g, '').replace(/\s+/g, ' ');
+  if (!t || SMALL_TALK.test(t)) return null;
+  for (let i = 0; i < 2; i++) t = t.replace(LEAD, '');
+  t = t.replace(TAIL, '').replace(/^(?:the|a|an)\s+/i, '').trim();
+  if (/^(?:he|she|it|they|him|her|them|this|that|these|those|e|one)$/i.test(t) || t.length < 2) return null;
+  return t.slice(0, 80);
+}

@@ -117,7 +117,7 @@ describe('[A145] when a visual is shown (not on every reply)', () => {
   });
   it('[A145] the AI is told when (and when not) to show a visual, in its HEAD line, with the exact diagram shapes', () => {
     const p = buildSystemPrompt(req('explain gravity'), { streaming: true, sources: [] });
-    expect(p).toContain('VISUAL (optional, in HEAD as "visual")'); expect(p).toMatch(/Use null for greetings, chit-chat/); expect(p).toMatch(/Never show a visual just to decorate/);
+    expect(p).toContain('VISUAL (in HEAD as "visual")'); expect(p).toMatch(/Use null for greetings, chit-chat/); expect(p).toMatch(/Never show a visual just to decorate/);
     for (const t of DIAGRAM_TYPES) expect(p).toContain(`"type":"${t}"`);
     expect(p).toContain('"visual"}'); expect(p).toMatch(/point_right/); expect(PROMPT_VERSION).toMatch(/presenter/);
     expect(buildSystemPrompt(req('x'), { streaming: false, sources: [] })).toContain('speakingStyle, visual, actions');
@@ -172,5 +172,23 @@ describe('[A145] real-model slips are forgiven (live Gemini testing)', () => {
     expect((h({ kind: 'diagram', diagram: { type: 'flow', title: 'A very long title that goes on and on and on beyond the limit', steps: ['a', 'b'] } }) as { diagram: { title: string } }).diagram.title.length).toBeLessThanOrEqual(48);
     expect(h({ kind: 'diagram', diagram: { type: 'spiral', title: 'x' } })).toBeNull();      // still: unknown types are refused
     expect(h({ kind: 'html', html: '<b>' })).toBeNull();
+  });
+});
+
+describe('[A145] the Visuals setting shapes the prompt; subjects are found for "always"', () => {
+  const r = (visuals: 'always' | 'helpful' | 'off') => ChatRequestSchema.parse({ messages: [{ role: 'user', content: 'hi' }], profile: { visuals } });
+  it('[A145] always / helpful / off', () => {
+    expect(buildSystemPrompt(r('always'), { streaming: true, sources: [] })).toMatch(/include a visual with EVERY reply/);
+    expect(buildSystemPrompt(r('helpful'), { streaming: true, sources: [] })).toMatch(/only when a picture genuinely helps/);
+    const off = buildSystemPrompt(r('off'), { streaming: true, sources: [] }); expect(off).toMatch(/turned visuals off/); expect(off).not.toContain('"type":"orbit"');
+    expect(ChatRequestSchema.parse({ messages: [{ role: 'user', content: 'x' }] }).profile.visuals).toBe('helpful');   // older clients
+  });
+  it('[A145] topicFromText', async () => {
+    const { topicFromText } = await import('../../../shared/visual');
+    expect(topicFromText('Who is Shahrukh Khan?')).toBe('Shahrukh Khan');
+    expect(topicFromText('how does the Eiffel Tower look like')).toBe('Eiffel Tower');
+    expect(topicFromText('Can you tell me about black holes?')).toBe('black holes');
+    expect(topicFromText('what is photosynthesis')).toBe('photosynthesis');
+    for (const t of ['hi', 'thanks!', 'how does he look like', 'how does e look like', 'ok']) expect(topicFromText(t), t).toBeNull();
   });
 });

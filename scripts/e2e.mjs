@@ -897,7 +897,7 @@ try {
     await vc.route('https://upload.wikimedia.org/**', (r) => r.fulfill({ status: 200, contentType: 'image/png', body: readFileSync('public/icons/icon-512.png') }));
     const vp = await vc.newPage(); const vErr = []; vp.on('pageerror', (e) => vErr.push(e.message));
     await vp.goto(`http://127.0.0.1:${LLM_PORT}/app`, { waitUntil: 'networkidle' }); await noBoot(vp);
-    await vp.evaluate(async () => { await nexus.memory.updateSettings({ setupDone: true, layout: 'robot', greeted: true, voiceOutput: false }); nexus.companion.applySettings(); }); await vp.keyboard.press('Escape');
+    await vp.evaluate(async () => { await nexus.memory.updateSettings({ setupDone: true, layout: 'robot', greeted: true, voiceOutput: false, visuals: 'helpful' }); nexus.companion.applySettings(); }); await vp.keyboard.press('Escape');
     await vp.waitForSelector('.robot3d[data-ready="1"]', { timeout: 40000 }).catch(() => null);
     await vp.evaluate(() => { window.__skills = []; nexus.engine.on('start', (e) => window.__skills.push(e.skillId)); });
     const idleV = () => vp.waitForFunction(() => nexus.companion.sm.state === 'idle' && !nexus.companion.getSnapshot().busy, null, { timeout: 30000 }).catch(() => null);
@@ -921,6 +921,14 @@ try {
     await vp.waitForSelector('[data-testid=visual-panel]', { state: 'detached', timeout: 8000 }).catch(() => null);
     check('[A145] a reply without a visual takes the previous one away (no stale pictures)', (await vp.locator('[data-testid=visual-panel]').count()) === 0);
     await idleV();
+    // Settings → Visuals: "always" (the default): even a reply the model sent without a visual gets a picture of its subject
+    await vp.evaluate(async () => { await nexus.memory.updateSettings({ visuals: 'always' }); });
+    await vp.evaluate(() => nexus.companion.send('who is buzz aldrin?'));
+    await vp.waitForFunction(() => document.querySelector('[data-testid=visual-panel]')?.dataset.status === 'ready', null, { timeout: 15000 }).catch(() => null);
+    const g4 = await vp.evaluate(() => ({ kind: document.querySelector('[data-testid=visual-panel]')?.dataset.kind, src: document.querySelector('.vp-img')?.getAttribute('src') }));
+    check('[A145] "Always" visuals (default): a reply sent without one still gets a picture of its subject (looked up by NEXUS)', g4.kind === 'image' && /wikimedia/.test(g4.src ?? ''), JSON.stringify(g4));
+    await idleV();
+    await vp.evaluate(async () => { await nexus.memory.updateSettings({ visuals: 'helpful' }); });
     await vp.evaluate(() => nexus.companion.send('explain the solar system')); await vp.waitForSelector('[data-testid=visual-panel]', { timeout: 15000 }).catch(() => null);
     await vp.click('.vp-close'); await vp.waitForSelector('[data-testid=visual-panel]', { state: 'detached', timeout: 5000 }).catch(() => null);
     check('[A145] the visual can be closed', (await vp.locator('[data-testid=visual-panel]').count()) === 0);

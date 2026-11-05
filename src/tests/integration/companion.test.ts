@@ -230,7 +230,7 @@ describe('[A97] companion integration', () => {
     const t = rig(); await t.ready();
     await t.memory.updateSettings({ responseStyle: 'concise', language: 'Hindi', animationIntensity: 0.5, reducedMotion: true }); t.c.applySettings();
     await t.c.send('hello'); await idle(t.c);
-    expect(t.requests.at(-1)!.profile).toEqual({ responseStyle: 'concise', language: 'Hindi', robotName: 'NEXUS', personality: { humour: 'light', energy: 'balanced', curiosity: 'normal', formality: 'neutral' } });
+    expect(t.requests.at(-1)!.profile).toEqual({ responseStyle: 'concise', language: 'Hindi', robotName: 'NEXUS', personality: { humour: 'light', energy: 'balanced', curiosity: 'normal', formality: 'neutral' }, visuals: 'always' });
     expect(t.engine.intensity).toBe(0.5); expect(t.engine.reducedMotion).toBe(true); expect(t.engine.idleEnabled).toBe(false);
     const full = new AnimationEngine(seeded(1)); full.rateLimit = false; const small = new AnimationEngine(seeded(1)); small.rateLimit = false; small.intensity = 0.5; small.reducedMotion = true;
     const wave = t.registry.get('wave')!; full.play(wave); small.play(wave);
