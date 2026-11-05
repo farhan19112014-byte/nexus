@@ -190,5 +190,11 @@ describe('[A145] the Visuals setting shapes the prompt; subjects are found for "
     expect(topicFromText('Can you tell me about black holes?')).toBe('black holes');
     expect(topicFromText('what is photosynthesis')).toBe('photosynthesis');
     for (const t of ['hi', 'thanks!', 'how does he look like', 'how does e look like', 'ok']) expect(topicFromText(t), t).toBeNull();
+    expect(topicFromText('hi, who is Einstein?')).toBe('Einstein');
+  });
+  it('[A145] greetings are small talk (no picture, not even the last topic)', async () => {
+    const { isSmallTalk } = await import('../../../shared/visual');
+    for (const t of ['hello', 'Hello!', 'hi nexus', 'hey there', 'thanks bro', 'how are you?', 'good morning nexus', 'hiii', 'ok cool']) expect(isSmallTalk(t), t).toBe(true);
+    for (const t of ['hello, who is Einstein?', 'hi what is a black hole', 'thanks, now explain gravity', 'Shah Rukh Khan']) expect(isSmallTalk(t), t).toBe(false);
   });
 });

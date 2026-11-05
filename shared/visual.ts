@@ -117,7 +117,10 @@ export function plainText(html: string | undefined, max = 120): string {
 
 const LEAD = /^(?:(?:hey|hi|ok|okay|so|please|nexus)[,!\s]+)*(?:can you |could you |would you |pls |please )?(?:tell me (?:about|more about)|explain(?: to me)?|show me(?: a picture of| an image of| a photo of)?|describe|teach me about|what (?:is|are|was|were)|what's|who (?:is|are|was|were)|who's|where (?:is|are|was|were)|where's|when (?:was|were|is|did)|why (?:is|are|do|does|did)|how (?:does|do|did|is|are|was|were)|how's)\s+/i;
 const TAIL = /\s+(?:look like|looks like|work|works|mean|means|happen|happened|made|built|formed|used|exist|called|located)\??$/i;
-const SMALL_TALK = /^(?:hi|hello|hey|yo|thanks|thank you|thx|ok|okay|bye|goodbye|good (?:morning|night|evening)|lol|haha|yes|no|nice|cool|great)\b/i;
+const GREETING = '(?:hi+|hello+|hey+|hiya|yo|sup|what\'?s up|wassup|namaste|salaam|thanks|thank you|thx|ty|ok|okay|k|bye|goodbye|good (?:morning|afternoon|night|evening)|gm|gn|lol|haha+|hehe+|yes|yeah|yep|no|nope|nice|cool|great|awesome|wow|hmm+|how are you|how r u|how are you doing|how\'?s it going)';
+/** the whole message is a greeting / small talk ("hello", "hi nexus!", "thanks bro", "how are you?") — "hi, who is Einstein?" is not */
+const SMALL_TALK = new RegExp(`^(?:${GREETING}[\\s,!.?]*)+(?:(?:nexus|there|buddy|bro|man|dude|mate|friend|everyone|again)[\\s,!.?]*)*$`, 'i');
+export function isSmallTalk(text: string): boolean { return SMALL_TALK.test(text.trim().replace(/\s+/g, ' ')); }
 /**
  * The subject of a message, as an image-search query — for "always show a visual" when the model sent none:
  * "Who is Shah Rukh Khan?" → "Shah Rukh Khan", "how does the Eiffel Tower look like" → "the Eiffel Tower".
@@ -125,7 +128,7 @@ const SMALL_TALK = /^(?:hi|hello|hey|yo|thanks|thank you|thx|ok|okay|bye|goodbye
  */
 export function topicFromText(text: string): string | null {
   let t = text.trim().replace(/[?!.]+$/g, '').replace(/\s+/g, ' ');
-  if (!t || SMALL_TALK.test(t)) return null;
+  if (!t || isSmallTalk(t)) return null;
   for (let i = 0; i < 2; i++) t = t.replace(LEAD, '');
   t = t.replace(TAIL, '').replace(/^(?:the|a|an)\s+/i, '').trim();
   if (/^(?:he|she|it|they|him|her|them|this|that|these|those|e|one)$/i.test(t) || t.length < 2) return null;

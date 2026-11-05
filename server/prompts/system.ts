@@ -7,7 +7,7 @@ import { CHANNELS, CHANNEL_NAMES, FACE_CHANNELS } from '../../shared/channels';
 import { PRODUCT_NAME, creatorLine } from '../../shared/identity';
 import { persona as editablePersona } from './persona';
 
-export const PROMPT_VERSION = 'nexus-presenter-2026.11.06-2';
+export const PROMPT_VERSION = 'nexus-presenter-2026.11.06-3';
 
 /** The persona is rebuilt for every request so a rename takes effect immediately (no stale copies of the old name). */
 function persona(req: ChatRequest) {
@@ -71,7 +71,7 @@ export const VISUAL_GUIDE = `VISUAL (in HEAD as "visual"): you can show ONE visu
   Example HEAD: HEAD {"expression":"interested","emotionIntensity":0.7,"gesture":"explain","pose":"neutral","speakingStyle":"warm","visual":{"kind":"diagram","caption":"Planets in order from the Sun","diagram":{"type":"orbit","title":"The solar system","center":{"label":"Sun"},"items":[{"label":"Mercury"},{"label":"Venus"},{"label":"Earth"},{"label":"Mars"}]}}}`;
 
 const VISUAL_WHEN = {
-  always: 'the user chose "always": include a visual with EVERY reply, also short answers and follow-ups. A person, place, animal, object, artwork, brand, film, food or event → an image of it (query = its exact name). A concept, process, structure or comparison → a diagram. Chit-chat or a greeting → an image of the thing being talked about (or of the most relevant subject in the conversation). Use null only for emergencies, self-harm, abuse or other distressing topics.',
+  always: 'the user chose "always": include a visual with EVERY reply, also short answers and follow-ups. A person, place, animal, object, artwork, brand, film, food or event → an image of it (query = its exact name). A concept, process, structure or comparison → a diagram. A pure greeting or small talk ("hello", "thanks", "how are you") → null — never reuse an earlier topic\'s picture for it. Use null only for emergencies, self-harm, abuse or other distressing topics.',
   helpful: 'only when a picture genuinely helps the explanation: a concept, a process, a structure, a comparison, a place, a person, a historical event, an object the user may not picture. Use null for greetings, chit-chat, jokes, opinions, personal or emotional topics and anything sensitive. Never show a visual just to decorate a reply.',
 } as const;
 /** the visual guide for the user's Visuals setting (Settings → Visuals beside NEXUS); "off" sends none */

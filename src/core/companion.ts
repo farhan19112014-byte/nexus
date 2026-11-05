@@ -39,7 +39,7 @@ import { applyTheme } from '../theme';
 import { applyPalette } from '../theme/studio';
 import { describeDue, parseReminder, type Reminder, type ReminderStore } from './reminders';
 import type { ChatContextInput, ResponseMeta } from '../../shared/schema';
-import { topicFromText, type ImageResult, type VisualRequest } from '../../shared/visual';
+import { isSmallTalk, topicFromText, type ImageResult, type VisualRequest } from '../../shared/visual';
 type ChatContext = ChatContextInput;
 
 export interface Snapshot {
@@ -538,6 +538,7 @@ export class Companion {
     void this.waitingLoop(token);
 
     const asst = this.push({ role: 'assistant', text: '', status: 'sending', replyTo: user.id, stage: 'thinking' });
+    if (isSmallTalk(text)) this.smallTalk.add(asst.id); // a greeting gets no picture (not even the last topic's)
     const ctl = new AbortController(); this.reqAbort = ctl;
     const s = this.settings;
     const research = s.research && !!this.snap.caps?.research.configured;
@@ -599,7 +600,8 @@ export class Companion {
       // the visual arrived after the head (in the reply's closing metadata): show it now
       else if (resp.visual && this.snap.visual?.msgId !== asst.id) this.presentVisual(resp.visual, asst.id, token);
       // "always" (Settings → Visuals): the model sent none — look up a picture of the subject ourselves
-      if (s.visuals === 'always' && !resp.visual && this.snap.visual?.msgId !== asst.id) {
+      if (this.smallTalk.has(asst.id)) { this.smallTalk.delete(asst.id); if (this.snap.visual) this.set({ visual: null }); }
+      else if (s.visuals === 'always' && !resp.visual && this.snap.visual?.msgId !== asst.id) {
         const topic = topicFromText(text) ?? this.lastTopic;
         if (topic) this.presentVisual({ kind: 'image', query: topic, caption: '' }, asst.id, token);
       }
@@ -621,14 +623,15 @@ export class Companion {
   }
 
   /* ---------------- visual presenter ---------------- */
-  private visualSeq = 0; private visualAbort: AbortController | null = null; private cuedVisual = 0; private visualNotes = new Map<string, string>(); private lastTopic: string | null = null;
+  private visualSeq = 0; private visualAbort: AbortController | null = null; private cuedVisual = 0; private visualNotes = new Map<string, string>(); private lastTopic: string | null = null; private smallTalk = new Set<string>();
   /**
    * Show what the reply asked for beside the robot: a diagram at once, an image after a (cached, credited) lookup.
    * A reply without a visual clears the previous one — the panel always belongs to the explanation being given.
    */
   presentVisual(req: VisualRequest | null, msgId: string, token: number) {
     this.visualAbort?.abort(); this.visualAbort = null;
-    if (this.settings.visuals === 'off') req = null;
+    if (this.settings.visuals === 'off' || this.smallTalk.has(msgId)) req = null;
+    if (!req && this.smallTalk.has(msgId)) { if (this.snap.visual) this.set({ visual: null }); return; }
     // with "always", a reply whose head has no visual keeps the panel until the final check decides (no flicker)
     if (!req && this.settings.visuals === 'always' && this.snap.visual && this.snap.visual.msgId !== msgId) return;
     if (!req) { if (this.snap.visual) this.set({ visual: null }); return; }

@@ -142,6 +142,16 @@ describe('[A145] Visuals setting: always (default) / only when helpful / off', (
     await t.c.send('how does he look like'); await until(() => t.queries.length === 2);
     expect(t.queries[1]).toBe('Shah Rukh Khan'); t.stop();
   });
+  it('[A145] "always": a plain greeting shows no picture — not the last subject, not even one the model sent — and clears the old one', async () => {
+    const t = rig(async () => ({ image: IMG }), (req) => {
+      const last = [...req.messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+      return BrainResponseSchema.parse({ reply: 'Hi!', visual: { kind: 'image', query: last ? 'Shah Rukh Khan' : 'x', caption: '' } });
+    }, 'always'); await t.ready();
+    await t.c.send('Who is Shah Rukh Khan?'); await until(() => t.c.getSnapshot().visual?.status === 'ready');
+    await until(() => t.c.sm.state === 'idle');
+    await t.c.send('hello'); await until(() => t.c.sm.state === 'idle');
+    expect(t.c.getSnapshot().visual).toBeNull(); expect(t.queries).toEqual(['Shah Rukh Khan']); t.stop();
+  });
   it('[A145] "off": nothing is shown even when the model sends a visual', async () => {
     const t = rig(async () => ({ image: IMG }), undefined, 'off'); await t.ready();
     await t.c.send('Explain the solar system'); await until(() => t.c.sm.state === 'idle');
