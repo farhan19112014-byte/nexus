@@ -32,23 +32,25 @@ export function applyChannels(rig: Rig, rest: Rest, v: Record<Channel, number>):
   const sq = v['body.squash'];
   rig.Body_Root.position.set(v['body.x'] / 100, -v['body.y'] / 100, 0);
   rig.Body_Root.scale.set(1 - sq * 0.6, 1 + sq, 1 - sq * 0.6);
-  rig.Body.rotation.z = -rad(v['body.rot']);
-  rig.Body.rotation.y = v['body.facing'] * 0.6;
+  // every axis of every body joint is ASSIGNED each frame (the model's rest rotations are all zero): the body layer
+  // writes full rotations after this, so an axis left alone here would carry last frame's pose into the next one and
+  // the presence layer's additive motion would accumulate (a slow random walk — the hands visibly shook)
+  rig.Body.rotation.set(0, v['body.facing'] * 0.6, -rad(v['body.rot']));
   // head: tilt, nod (forward = face down), a little turn toward where the eyes look
   const H = p('Head');
   rig.Head.position.set(H.x + v['head.x'] / 100, H.y - v['head.y'] / 100, H.z);
   rig.Head.rotation.set(v['head.nod'] * 0.28, v['pupil.x'] * 0.14 + v['body.facing'] * 0.2, -rad(v['head.rot']));
   rig.Antenna.rotation.z = -rad(v['antenna.rot']);
   // arms: raise and bend in the body plane (+ = away from the body), wrist spin
-  rig.Arm_L.rotation.z = rad(v['armL.raise']); rig.Arm_R.rotation.z = -rad(v['armR.raise']);
-  rig.Forearm_L.rotation.z = rad(v['armL.bend']); rig.Forearm_R.rotation.z = -rad(v['armR.bend']);
-  rig.Hand_L.rotation.z = -rad(v['handL.spin']); rig.Hand_R.rotation.z = -rad(v['handR.spin']);
+  rig.Arm_L.rotation.set(0, 0, rad(v['armL.raise'])); rig.Arm_R.rotation.set(0, 0, -rad(v['armR.raise']));
+  rig.Forearm_L.rotation.set(0, 0, rad(v['armL.bend'])); rig.Forearm_R.rotation.set(0, 0, -rad(v['armR.bend']));
+  rig.Hand_L.rotation.set(0, 0, -rad(v['handL.spin'])); rig.Hand_R.rotation.set(0, 0, -rad(v['handR.spin']));
   // legs: spread sideways; lift is a real knee bend (thigh forward, shin back, foot level)
   for (const s of ['L', 'R'] as const) {
     const sign = s === 'L' ? 1 : -1; const lift = clamp01(v[`leg${s}.lift` as Channel]);
     rig[`Leg_${s}`].rotation.set(-lift * 1.05, 0, sign * rad(v[`leg${s}.spread` as Channel]));
-    rig[`Shin_${s}`].rotation.x = lift * 1.7;
-    rig[`Foot_${s}`].rotation.x = -lift * 0.65;
+    rig[`Shin_${s}`].rotation.set(lift * 1.7, 0, 0);
+    rig[`Foot_${s}`].rotation.set(-lift * 0.65, 0, 0);
   }
   // eyes: blink, size, gaze, "happy" crescents (a screen-coloured lid rises over the lower half)
   const size = v['eyes.size'], happy = clamp01(v['eyes.happy']);
