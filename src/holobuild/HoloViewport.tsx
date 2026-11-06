@@ -5,6 +5,7 @@
  * clear message when WebGL is unavailable or the GPU context is lost.
  */
 import { useEffect, useRef, useState } from 'react';
+import { attention } from '../character3d/attention';
 import type * as THREE_NS from 'three';
 import type { OrbitControls as OrbitControlsT } from 'three/examples/jsm/controls/OrbitControls.js';
 import { modelBounds, type HoloModel } from '../../shared/holo';
@@ -123,6 +124,25 @@ export function HoloViewport({ ctl, snap, reducedMotion }: { ctl: HoloController
   }, [snap.model, snap.view.wireframe, ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { const c = ctx.current; if (c?.built) { c.scene3.applySelection(c.T, c.built, snap.selected); c.dirty = true; } }, [snap.selected, ready]);
+  // NEXUS can look and point at the model: the selected part's real screen position (projected by this camera), or the
+  // model's centre — and turns to it when the user selects a part
+  useEffect(() => {
+    attention.set('holo', {
+      label: 'HOLOBUILD',
+      point: () => {
+        const c = ctx.current; const s = snapRef.current; if (!c?.built || !s.model) return null;
+        const el = c.renderer.domElement; const r = el.getBoundingClientRect(); if (r.width < 10) return null;
+        const cam = s.view.projection === 'orthographic' ? c.ortho : c.persp; const v = new c.T.Vector3();
+        const mesh = s.selected ? c.built.meshes.get(s.selected) : null;
+        if (mesh && mesh.visible) mesh.getWorldPosition(v); else new c.T.Box3().setFromObject(c.built.root).getCenter(v);
+        v.project(cam); if (v.z > 1 || Math.abs(v.x) > 1.2 || Math.abs(v.y) > 1.2) return null;
+        return { x: r.left + (v.x * 0.5 + 0.5) * r.width, y: r.top + (-v.y * 0.5 + 0.5) * r.height };
+      },
+    });
+    return () => attention.set('holo', null);
+  }, []);
+  useEffect(() => { if (snap.selected) attention.focus('holo'); }, [snap.selected]);
+  useEffect(() => { if (snap.model) attention.focus('holo'); }, [snap.model?.id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { const c = ctx.current; if (!c) return; c.grid.visible = snap.view.grid; c.axes.visible = snap.view.axes; c.dirty = true; if (!snap.view.labels) setLabels([]); }, [snap.view.grid, snap.view.axes, snap.view.labels, ready]);
   useEffect(() => {
     const c = ctx.current; if (!c) return;

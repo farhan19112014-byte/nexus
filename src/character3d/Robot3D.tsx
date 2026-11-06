@@ -12,7 +12,8 @@ import { useResolvedTheme } from '../themeHook';
 import { withBase } from '../webDemo';
 import { applyChannels, RIG_NODES, type Glow, type Rig, type Rest } from './rig3d';
 import { skin3d } from './skins3d';
-import { applyBody } from './body/apply';
+import { applyBody, applyThumb, type ThumbNode, type ThumbRest } from './body/apply';
+import { attention } from './attention';
 import type { BodyOutput } from './body/controller';
 import { usePalette } from '../theme/usePalette';
 import { applyMotion, gesturingFrom, Motion3D, type MotionState } from './motion3d';
@@ -23,6 +24,7 @@ interface Ctx {
   THREE: Three; renderer: import('three').WebGLRenderer; scene: import('three').Scene; camera: import('three').PerspectiveCamera;
   rig: Rig; rest: Rest; mats: Record<string, import('three').MeshStandardMaterial>; base: Record<string, number>;
   env: import('three').Object3D[]; dirty: boolean; raf: number; ro: ResizeObserver | null; dispose: () => void; lastT: number; dist: number; yaw: number; orbitRaf: number; place?: () => void;
+  thumbs: Partial<Record<'L' | 'R', { node: ThumbNode; rest: ThumbRest }>>; frame: number;
 }
 
 export interface Robot3DProps extends RobotProps { onFail?: (reason: string) => void; onReady?: () => void; /** viewing angle around the robot, radians (0 = front) */ orbit?: number }
@@ -110,6 +112,24 @@ export const Robot3D = forwardRef<RigHandle, Robot3DProps>(function Robot3D(prop
     setSeat() { /* the 3D robot has no stool yet; sitting poses still bend the legs */ },
     setIndicator(i) { pending.current.ind = i; indicate(i); },
     setMotion(state: MotionState, reduced: boolean) { motion.current.amplitude = reduced ? 0 : 1; motion.current.setState(state); host.current?.setAttribute('data-motion', state); },
+    attentionTargets() {
+      // real positions: the camera is the user; a page target (IVES panel, HOLOBUILD part) is the point where the
+      // camera ray through it meets a plane just in front of the robot, facing the camera
+      const c = ctx.current; const el = host.current; if (!c || !el) return null;
+      const T = c.THREE; const cam = c.camera; const r = el.getBoundingClientRect(); if (r.width < 10 || r.height < 10) return null;
+      const n = new T.Vector3(Math.sin(c.yaw), 0, Math.cos(c.yaw)); const p0 = n.clone().multiplyScalar(0.7);
+      const out: Partial<Record<'user' | 'visual' | 'holo', [number, number, number]>> = { user: [cam.position.x, 2.3, cam.position.z] };
+      for (const id of attention.ids()) {
+        const pt = attention.get(id)?.point(); if (!pt) continue;
+        const ndc = new T.Vector3(((pt.x - r.left) / r.width) * 2 - 1, -(((pt.y - r.top) / r.height) * 2 - 1), 0.5).unproject(cam);
+        const dir = ndc.sub(cam.position).normalize(); const den = dir.dot(n); if (Math.abs(den) < 1e-4) continue;
+        const k = p0.clone().sub(cam.position).dot(n) / den; if (k <= 0) continue;
+        const w = cam.position.clone().add(dir.multiplyScalar(k));
+        // keep it within the room: a target far off to the side is still "over there", not kilometres away
+        out[id] = [Math.max(-4, Math.min(4, w.x)), Math.max(0.3, Math.min(4.5, w.y)), Math.max(-4, Math.min(4, w.z))];
+      }
+      return out;
+    },
     busy: () => motion.current.busy() || !!body.current.out?.active,
     setBody(o) { body.current.out = o; },
     apply(v) {
@@ -120,13 +140,26 @@ export const Robot3D = forwardRef<RigHandle, Robot3DProps>(function Robot3D(prop
       const B = body.current; const bodyOn = !!B.out?.active;
       if (prev && !c.dirty && !M.busy() && !bodyOn && !B.was && sameChannels(prev, v) && M.active() === null && dt < 0.5) { M.update(dt, false); return; } // nothing moved: no GPU work
       c.dirty = false;
+      const P = B.out?.presence ?? null; M.sequences = !P;          // the presence layer owns idle life and gestures when attached
       const m = M.update(dt, gesturingFrom(v));
       const s = Object.assign(scratch.current, v); s['pupil.x'] = v['pupil.x'] + m.gazeX; s['pupil.y'] = v['pupil.y'] + m.gazeY;
+      if (P) {
+        // eyes lead the head toward the attention target; brows lift on questions, emphasis and reactions
+        const k = P.gaze.own; s['pupil.x'] += (P.gaze.x - s['pupil.x']) * k; s['pupil.y'] += (P.gaze.y - s['pupil.y']) * k;
+        s['browL.y'] += P.brow; s['browR.y'] += P.brow;
+        // a real walk replaces the 2D walk's slide and leg lifts (the feet step instead)
+        if (P.suppressWalkChannels) { s['body.x'] = 0; s['body.y'] = 0; s['body.facing'] = 0; s['legL.lift'] = 0; s['legR.lift'] = 0; s['armL.raise'] = 8; s['armR.raise'] = 8; }
+      }
       glowTo(applyChannels(c.rig, c.rest, s as Record<Channel, number>)); applyMotion(c.rig as unknown as Parameters<typeof applyMotion>[0], m);
       applyBody(c.rig, c.rest, B.out); B.was = bodyOn;
+      for (const side of ['L', 'R'] as const) { const th = c.thumbs[side]; if (th) applyThumb(th.node, th.rest, side, P ? P.thumb[side] : 0.5); }
+      if (P && host.current && ++c.frame % 6 === 0) {
+        const fl = P.feet.L, fr = P.feet.R;
+        host.current.dataset.presence = JSON.stringify({ gesture: P.info.gesture, attention: P.info.attention, reaction: P.info.reaction, walking: P.info.walking, steps: P.info.steps, root: P.root.pos.map((x) => +x.toFixed(3)), yaw: +P.root.yaw.toFixed(3), feet: [+fl.x.toFixed(3), +fl.z.toFixed(3), +fr.x.toFixed(3), +fr.z.toFixed(3)], lift: +Math.max(fl.lift, fr.lift).toFixed(3), armW: +Math.max(P.arms.L.w, P.arms.R.w).toFixed(2), breath: +P.info.breath.toFixed(2), gaze: [+P.gaze.x.toFixed(2), +P.gaze.y.toFixed(2)] });
+      }
       clipLids(); request();
       // live measurements of the real scene for tests and the motion lab: palm distance, root rotation, lowest sole
-      if (bodyOn && host.current) {
+      if (bodyOn && host.current && (B.out!.layers.length || c.frame % 6 === 0)) {
         const T = c.THREE; const w = (n: string) => (c.rig[n as keyof typeof c.rig] as unknown as import('three').Object3D).getWorldPosition(new T.Vector3());
         const hl = w('Hand_L'), hr = w('Hand_R'); const fl = w('Foot_L'), fr = w('Foot_R');
         const palm = (h: import('three').Vector3, n: string) => h.add(new T.Vector3(0, -0.03, 0).applyQuaternion((c.rig[n as keyof typeof c.rig] as unknown as import('three').Object3D).getWorldQuaternion(new T.Quaternion())));
@@ -189,7 +222,10 @@ export const Robot3D = forwardRef<RigHandle, Robot3DProps>(function Robot3D(prop
       // a soft contact shadow and the stage floor
       const shadowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d')!; const gr = g.createRadialGradient(64, 64, 4, 64, 64, 64); gr.addColorStop(0, 'rgba(0,0,0,.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
       const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false })); shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.005; scene.add(shadow);
-      const c: Ctx = { THREE, renderer, scene, camera, rig, rest, mats, base, env: [shadow], dirty: true, raf: 0, ro: null, dispose: () => {}, lastT: 0, dist: 11, yaw: orbitRef.current, orbitRaf: 0 };
+      // the thumbs are separate capsules on each hand (no bones): articulated about their base by applyThumb
+      const thumbs: Ctx['thumbs'] = {};
+      for (const sd of ['L', 'R'] as const) { const o = gltf.scene.getObjectByName(`Hand_${sd}_Thumb`); if (o) thumbs[sd] = { node: o as unknown as ThumbNode, rest: { pos: [o.position.x, o.position.y, o.position.z], rot: [o.rotation.x, o.rotation.y, o.rotation.z] } }; }
+      const c: Ctx = { THREE, renderer, scene, camera, rig, rest, mats, base, env: [shadow], dirty: true, raf: 0, ro: null, dispose: () => {}, lastT: 0, dist: 11, yaw: orbitRef.current, orbitRaf: 0, thumbs, frame: 0 };
       const placeCamera = () => { const y = c.yaw, d = c.dist; camera.position.set(Math.sin(y) * d, 2.25 + d * 0.05, Math.cos(y) * d); camera.lookAt(0, 2.2, 0); };
       c.place = placeCamera;
       ctx.current = c;

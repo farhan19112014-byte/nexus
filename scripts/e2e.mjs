@@ -501,7 +501,7 @@ try {
   check('[A99] rendering pauses while the tab is hidden', hiddenStops);
   // the 3D robot (three.js, ~730 KB) is a separate chunk that only loads when the 3D style is chosen; HOLOBUILD's three.js
   // add-ons (orbit controls, GLTF exporter) and its scene/file helpers load only inside the 3D workspace — same category
-  const onDemand3d = /^(three\.module|Robot3D|GLTFLoader|GLTFExporter|OrbitControls|RoomEnvironment|scene-|io-)/;
+  const onDemand3d = /^(three\.module|Robot3D|presence-|GLTFLoader|GLTFExporter|OrbitControls|RoomEnvironment|scene-|io-)/;
   const all = readdirSync('dist/assets').filter((f) => f.endsWith('.js'));
   const js = all.filter((f) => !onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
   const js3d = all.filter((f) => onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
@@ -910,7 +910,11 @@ try {
     check('[A145] "explain the solar system": the AI\'s diagram appears in its own panel beside the 3D robot (not over it), labelled as AI-described', g1.diagram === 'orbit' && /Neptune/.test(g1.planets) && /described by the AI/.test(g1.kind ?? '') && !overlap(g1.panel, robotCore) && g1.panel && g1.panel.l > 720, JSON.stringify(g1));
     await idleV();
     const sk = await vp.evaluate(() => window.__skills);
-    check('[A145] presenter gestures match the explanation: the explaining gesture with the words, one point toward the visual', sk.includes('explain') && sk.filter((x) => x === 'point_right').length === 1, sk.join(','));
+    // 3D (A147): the presence layer gestures from the words and presents the panel at its real position (the canned
+    // point clips give way to it; with the voice off there are no sentences, so the explain clip still plays); 2D keeps the clips
+    const pl = await vp.evaluate(() => nexus.runtime.body.presence ? nexus.runtime.presence.log.join(' ') : null);
+    const presOk = pl !== null && /gesture:present:aimed/.test(pl) && (/sentence:/.test(pl) || sk.includes('explain')) && !sk.includes('point_right');
+    check('[A145] presenter gestures match the explanation: the explaining gesture with the words, one point toward the visual', presOk || (sk.includes('explain') && sk.filter((x) => x === 'point_right').length === 1), pl !== null ? `3D presence: ${(pl.match(/gesture:\S+/g) ?? []).join(',')} · clips ${sk.join(',')}` : sk.join(','));
     await vp.evaluate(() => { window.__skills = []; return nexus.companion.send('show me the apollo 11 landing'); });
     await vp.waitForFunction(() => document.querySelector('[data-testid=visual-panel]')?.dataset.status === 'ready' && document.querySelector('.vp-img')?.complete, null, { timeout: 15000 }).catch(() => null);
     const g2 = await vp.evaluate(() => { const img = document.querySelector('.vp-img'); const credit = document.querySelector('[data-testid=vp-credit]');

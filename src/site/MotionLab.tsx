@@ -22,6 +22,8 @@ import { CLIPS, BODY_STATES, STATE_CLIP, type BodyState } from '../character3d/b
 import { CLIP_FOR_SKILL } from '../character3d/body/controller';
 import { analyzeClip, LIMITS, type ClipReport } from '../character3d/body/checks';
 import { reducedMotionPreferred } from './PreviewRobot';
+import { attention, rectPoint } from '../character3d/attention';
+import type { ReactionKind } from '../character3d/body/presence';
 import './motionlab.css';
 
 const MOTION = new Map(BUILTIN_MOTIONS.map((m) => [m.id, m]));
@@ -33,6 +35,13 @@ const SEQUENCES: { id: string; label: string; steps: [BodyState, number][] }[] =
   { id: 'b', label: 'Idle → Listening → Speaking', steps: [['IDLE', 1], ['LISTENING', 2.2], ['SPEAKING', 2.8], ['IDLE', 0]] },
   { id: 'c', label: 'Speaking → Confused → Thinking', steps: [['SPEAKING', 2.2], ['CONFUSED', 2.4], ['THINKING', 2.4], ['IDLE', 0]] },
 ];
+const SAMPLES = [
+  'You might wonder why the sky is blue, but it is actually all about tiny particles scattering sunlight.',
+  'Is that not amazing? The whole universe follows the very same rules.',
+  'I think this part here is the most important one.',
+];
+const REACTIONS: ReactionKind[] = ['acknowledge', 'curious', 'surprise', 'discovery', 'correction', 'uncertain'];
+interface PresenceInfo { gesture: string | null; attention: string; reaction: string | null; walking: boolean; steps: number; root: number[]; yaw: number; armW: number; breath: number; gaze: number[] }
 interface Metrics { action: string | null; state: string; palms: number; up: number; pitch: number; yaw: number; foot: number }
 interface Peaks { palmsMin: number; upMin: number; footMin: number; footMax: number }
 const freshPeaks = (): Peaks => ({ palmsMin: Infinity, upMin: Infinity, footMin: Infinity, footMax: -Infinity });
@@ -57,6 +66,28 @@ export default function MotionLab() {
   const seqTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const reduced = useMemo(() => reducedMotionPreferred(), []);
   const flat = effectiveStyle('auto') === '2d';
+  const marker = useRef<HTMLDivElement>(null);
+  const [pi, setPi] = useState<PresenceInfo | null>(null);
+  const [markerOn, setMarkerOn] = useState(false);
+  const speakTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // a real on-page target the robot can look and point at (a marker beside the stage, like the IVES panel)
+  useEffect(() => {
+    if (!markerOn) { attention.set('visual', null); return; }
+    attention.set('visual', { label: 'marker', point: () => rectPoint(marker.current) });
+    const id = setTimeout(() => attention.focus('visual'), 80);
+    return () => { clearTimeout(id); attention.set('visual', null); };
+  }, [markerOn]);
+  useEffect(() => {
+    const id = setInterval(() => { const raw = box.current?.querySelector<HTMLElement>('[data-presence]')?.dataset.presence; if (!raw) return; try { setPi(JSON.parse(raw) as PresenceInfo); } catch { /* partial */ } }, 120);
+    return () => clearInterval(id);
+  }, []);
+  /** say a line: the speaking mouth runs, the presence plans its gestures from the words (like a real reply) */
+  const sayLine = (i: number) => {
+    if (speakTimer.current) clearTimeout(speakTimer.current);
+    const text = SAMPLES[i]; const sec = Math.max(2.5, text.split(' ').length * 0.36);
+    rt.engine.setSpeaking(true); rt.setMotion('speaking'); setSpeaking(true); rt.presence?.sentence(text, sec); rt.kick();
+    speakTimer.current = setTimeout(() => { rt.engine.setSpeaking(false); rt.setMotion('idle'); setSpeaking(false); }, sec * 1000 + 300);
+  };
 
   useEffect(() => {
     rt.engine.reducedMotion = reduced; rt.engine.idleEnabled = !reduced;
@@ -112,6 +143,7 @@ export default function MotionLab() {
 
         <div className="ml-grid">
           <section className="ml-stage" aria-label="Robot">
+            {markerOn && <div ref={marker} className="ml-marker" aria-label="A target for NEXUS to look at" data-testid="ml-marker-dot">Look here</div>}
             <div ref={box} className="ml-robot">
               <RobotAuto ref={rig} mode="auto" onReady3d={() => { rt.set3d(true); setIs3d(true); }} environment="transparent" effects accessories={{ antenna: true, sidePanels: true, chestLight: true, cheekLights: true, foreheadIndicator: true }} title={`${PRODUCT_NAME} in 3D, previewing full-body animations`} className="preview-svg" />
             </div>
@@ -154,6 +186,18 @@ export default function MotionLab() {
               <button type="button" className={`ml-btn ${speaking ? 'on' : ''}`} onClick={toggleSpeak} aria-pressed={speaking} data-testid="ml-speak">Speaking mouth {speaking ? 'on' : 'off'}</button>
             </div>
 
+            <h2 className="ml-h2">Presence <span className="muted">idle life, attention, gestures from meaning, walking</span></h2>
+            <div className="ml-buttons">
+              <button type="button" className="ml-btn" onClick={() => { rt.engine.play(MOTION.get('walk_across')!, { conflict: 'interrupt' }); rt.kick(); }} data-testid="ml-walk">Walk across and back</button>
+              <button type="button" className="ml-btn" onClick={() => { rt.presence?.walkTo(0.6, 0.3); rt.kick(); }} data-testid="ml-walk-side">Step over to the side</button>
+              <button type="button" className="ml-btn" onClick={() => { rt.presence?.walkTo(0, 0, 0); rt.kick(); }}>Back to the centre</button>
+              <button type="button" className={`ml-btn ${markerOn ? 'on' : ''}`} onClick={() => setMarkerOn((x) => !x)} aria-pressed={markerOn} data-testid="ml-marker">Show a target to look at</button>
+              <button type="button" className="ml-btn" disabled={!markerOn} onClick={() => { rt.engine.setSpeaking(true); setTimeout(() => rt.engine.setSpeaking(false), 2600); rt.presence?.attend('visual', 2.6, true); rt.kick(); }} data-testid="ml-point">Present the target</button>
+              {SAMPLES.map((t, i) => <button key={i} type="button" className="ml-btn" onClick={() => sayLine(i)} title={t} data-say={i}>Say: “{t.slice(0, 26)}…”</button>)}
+              {REACTIONS.map((r) => <button key={r} type="button" className="ml-btn" onClick={() => { rt.presence?.react(r); rt.kick(); }} data-react={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</button>)}
+            </div>
+            <p className="small" data-testid="ml-presence">{pi ? `Looking at: ${pi.attention} · gesture: ${pi.gesture ?? '—'} · arms ${Math.round(pi.armW * 100)}% · ${pi.walking ? 'walking' : 'standing'} (${pi.steps} steps) · breath ${pi.breath.toFixed(2)}${pi.reaction ? ` · reacting: ${pi.reaction}` : ''}` : 'The presence layer runs on the 3D robot.'}</p>
+
             <h2 className="ml-h2">Physical checks {selClip && <span className="muted">{selClip.name}</span>}</h2>
             {report && selClip ? (
               <div className={`ml-report ${report.ok ? 'ok' : 'bad'}`} data-testid="ml-report">
@@ -174,7 +218,7 @@ export default function MotionLab() {
             {all && <p className="small" data-testid="ml-all">{all.filter((r) => r.ok).length} / {all.length} clips pass every check{all.some((r) => !r.ok) && ` — failing: ${all.filter((r) => !r.ok).map((r) => r.id).join(', ')}`}</p>}
           </section>
         </div>
-        <p className="small muted ml-foot">Limitations: NEXUS has mitten hands (pointing and thumbs up are whole-hand poses), the model is rigid parts on joints (no skin deformation), and the 2D robot shows simplified versions. <Link to={PATHS.app}>Back to the robot</Link></p>
+        <p className="small muted ml-foot">Limitations: NEXUS has ball hands with one thumb and no finger joints (pointing, open palms and thumbs up are whole-hand poses; the thumb opens and closes), one torso joint (no spine or clavicles), the face is a screen (mouth shapes follow the voice's loudness and, with ElevenLabs, its letters — not phonemes), and the model is rigid parts on joints (no skin deformation). The 2D robot shows simplified versions. <Link to={PATHS.app}>Back to the robot</Link></p>
       </div>
     </SitePage>
   );

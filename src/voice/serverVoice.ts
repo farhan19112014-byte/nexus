@@ -112,7 +112,12 @@ export class ServerSpeechOutput implements SpeechOut {
     const a = new Audio(this.url); this.current = a; a.playbackRate = this.rate; a.volume = Math.min(1, Math.max(0, this.volume));
     const done = (failed?: string) => { if (g !== this.gen || this.current !== a) return; this.stopLevels(); this.cleanupAudio(); if (failed) this.onFailure(failed, item.text); void this.next(g); };
     a.onended = () => done(); a.onerror = () => done('The speech audio could not be played.');
-    a.onplaying = () => { if (g !== this.gen) return; if (!this.started) { this.started = true; this.hooks.onStart?.(); } this.startLevels(a); };
+    let announced = false;
+    a.onplaying = () => {
+      if (g !== this.gen) return; if (!this.started) { this.started = true; this.hooks.onStart?.(); }
+      if (!announced) { announced = true; this.hooks.onSentence?.(item.text, Number.isFinite(a.duration) && a.duration > 0 ? a.duration / (a.playbackRate || 1) : undefined); }
+      this.startLevels(a);
+    };
     a.onpause = () => this.stopLevels();
     try { await a.play(); } catch (e) { done(`Audio playback was blocked: ${(e as Error).message}`); }
   }

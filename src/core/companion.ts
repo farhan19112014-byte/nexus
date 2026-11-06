@@ -111,6 +111,7 @@ export class Companion {
     this.sm.on((s, prev) => this.onState(s, prev));
     this.tts.hooks = {
       onStart: () => { if (this.voiceOut?.engineName === 'server') this.set({ voiceIssue: null, voiceOkAt: Date.now() }); this.engine.setSpeaking(true); if (this.sm.state === 'responding' || this.sm.state === 'processing') this.sm.go('speaking'); this.set({ speaking: true }); },
+      onSentence: (t, sec) => { this.pres()?.sentence(t, sec); },   // the 3D presence plans gestures from what is being said
       onWord: (w) => { const v = visemeFor(w); this.engine.speechPulse(v.open, v.round); },
       onLevel: (l, sh) => { if (this.engine.isSpeaking()) this.engine.speechLevel(l, sh); },
       onIdle: () => { this.engine.setSpeaking(false); this.engine.cancelTag('speechbeat'); this.set({ speaking: false }); const f = this.speechDone; this.speechDone = null; f?.(); },
@@ -118,6 +119,8 @@ export class Companion {
     this.engine.on('recovered', (e) => this.diagnostics.log({ type: 'skill', code: 'watchdog_recovery', detail: `${e.skillId}: ${e.reason}` }));
   }
 
+  /** the 3D robot's presence layer — only while the 3D robot is on screen (the 2D robot has its own body language) */
+  private pres() { return this.d.runtime.body.presence; }
   get settings(): Settings { return this.d.memory.settings; }
   subscribe = (f: () => void) => { this.listeners.add(f); return () => { this.listeners.delete(f); }; };
   getSnapshot = () => this.snap;
@@ -473,6 +476,7 @@ export class Companion {
 
   /* ---------------- interruption ---------------- */
   interrupt(reason: string) {
+    if (['responding', 'speaking', 'acting'].includes(this.sm.state)) this.pres()?.react('interrupted');
     this.token++;
     if (this.reqAbort) { this.reqAbort.abort(reason); this.reqAbort = null; }
     if (this.seqAbort) { this.seqAbort.abort(reason); this.seqAbort = null; }
@@ -530,6 +534,8 @@ export class Companion {
       if (r) { await this.handleReminder(text, r); return; }
     }
     this.interrupt('new input');
+    // the robot registers what was said: a small acknowledging nod — or, for a correction, an "I see" tilt
+    this.pres()?.react(/^\s*(no\b|nope|actually|that'?s (not|wrong)|not quite|wrong|incorrect)/i.test(text) ? 'correction' : 'acknowledge');
     if (this.stt.listening) this.stt.abort();
     const token = this.token;
     const user = this.push({ role: 'user', text, status: 'complete' });
@@ -665,6 +671,8 @@ export class Companion {
     if (!['responding', 'speaking'].includes(this.sm.state) && !this.snap.busy) return;
     if (planned.some((x) => x === 'point_right' || x === 'point_left' || x === 'compare' || x === 'point')) { this.cuedVisual = v.id; return; }
     this.cuedVisual = v.id;
+    // 3D: the presence layer knows where the panel really is — it turns, looks and presents it (no fixed-angle clip)
+    const p = this.pres(); if (p) { if (p.hasTarget('visual')) p.attend('visual', 2.6, this.sm.state === 'speaking'); else p.presentWhenSeen('visual'); return; }
     // the panel is on the robot's right only on wide screens (above it on narrow ones): point there, else just explain
     const wide = typeof matchMedia !== 'function' || matchMedia('(min-width: 1100px)').matches;
     const skill = v.request.kind === 'diagram' && v.request.diagram.type === 'compare' ? 'compare' : wide ? 'point_right' : 'explain';
@@ -761,9 +769,18 @@ export class Companion {
     const seq = new AbortController(); this.seqAbort = seq;
     const run = async (steps: PlannedStep[], tag?: string) => { for (const s of steps) { if (seq.signal.aborted || token !== this.token) return; const r = await this.runner.run(s, { tag, signal: seq.signal }); this.set({ lastSkillId: this.runner.lastSkillId }); if (r === 'missing') this.notifications.push('info', `"${s.skillId}" is unavailable.`, { react: false }); } };
     if (plan.before.length) { this.go('acting'); await run(plan.before); }
+    // 3D: pointing at the visual is done by the presence layer at the panel's REAL position — the canned fixed-angle
+    // point clips are dropped while a visual is on screen or on its way (2D keeps them)
+    // the generic speaking-gesture clips likewise give way to the presence layer's gestures planned from the words
+    const P = this.pres(); const POINTS = ['point_right', 'point_left', 'point']; const TALK = ['explain', 'speak_beat'];
+    const visualComing = !!resp.visual || !!this.snap.visual || this.settings.visuals === 'always';
+    if (P) {
+      if (visualComing && plan.during.some((x) => POINTS.includes(x.skillId))) { plan.during = plan.during.filter((x) => !POINTS.includes(x.skillId)); P.presentWhenSeen('visual'); }
+      if (voiceOn) plan.during = plan.during.filter((x) => !TALK.includes(x.skillId));
+    }
     const during = run(plan.during, 'speech');
     // a longer spoken reply with no chosen gesture gets one restrained speaking beat (never in quiet or reduced-motion mode)
-    if (voiceOn && this.tts.speaking && !plan.during.length && !plan.before.length && resp.reply.length > 140 && !this.settings.quietMode && !this.settings.reducedMotion) void this.runner.run({ skillId: 'speak_beat' }, { tag: 'speechbeat', signal: seq.signal });
+    if (!P && voiceOn && this.tts.speaking && !plan.during.length && !plan.before.length && resp.reply.length > 140 && !this.settings.quietMode && !this.settings.reducedMotion) void this.runner.run({ skillId: 'speak_beat' }, { tag: 'speechbeat', signal: seq.signal });
     this.cueVisual(plan.during.map((x) => x.skillId).concat(plan.before.map((x) => x.skillId)), seq.signal);
     if (voiceOn && this.tts.speaking) {
       if (this.sm.state !== 'speaking') this.go('speaking');
@@ -776,6 +793,7 @@ export class Companion {
     this.seqAbort = null;
     this.set({ busy: false });
     if (resp.uncertainty !== 'high' && !resp.clarification) void this.react('complete_nod');
+    else if (resp.uncertainty === 'high') this.pres()?.react('uncertain');
     this.go('idle');
     if (this.settleTimer) clearTimeout(this.settleTimer);
     this.settleTimer = setTimeout(() => { if (token === this.token && this.sm.state === 'idle') { this.expressions.release('response'); this.engine.setPose('neutral'); } }, 7000);
@@ -813,7 +831,7 @@ export class Companion {
     if ((this.stt.kind ?? '') !== 'server') { this.micMeter ??= new MicMeter(); this.micMeter.start(); }
     this.ui.play('listen');
     this.stt.start({
-      onInterim: (t) => this.set({ interim: t }),
+      onInterim: (t) => { this.set({ interim: t }); this.pres()?.userActivity(); },
       onTranscribing: () => { this.micMeter?.stop(); this.set({ listening: false }); if (this.sm.state === 'listening') this.go('processing'); },
       onFinal: (t) => {
         this.diagnostics.log({ type: 'voice', code: 'final' });

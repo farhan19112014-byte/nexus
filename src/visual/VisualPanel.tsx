@@ -9,6 +9,7 @@ import { companion } from '../core/runtime';
 import { useSnapshot } from '../components/hooks';
 import { Icon } from '../components/Icon';
 import { DiagramView } from './DiagramView';
+import { attention, rectPoint } from '../character3d/attention';
 import type { PresentedVisual } from '../core/companion';
 
 const LEAVE_MS = 320;
@@ -47,6 +48,15 @@ export function VisualPanel({ docked = false }: { docked?: boolean }) {
     return () => { if (timer.current) clearTimeout(timer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v]);
+  // IVES ↔ the robot: NEXUS knows where the visual really is on the page — it looks there, and presents it
+  const panel = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!shown || leaving) { attention.set('visual', null); return; }
+    attention.set('visual', { label: shown.request.kind, point: () => rectPoint(panel.current?.querySelector('.vp-body') ?? panel.current, 0.4, 0.45) });
+    const id = setTimeout(() => attention.focus('visual'), 60);
+    return () => clearTimeout(id);
+  }, [shown?.id, leaving]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => attention.set('visual', null), []);
   if (!shown) return null;
   const r = shown.request;
   // honest source label: a diagram described by the language model, or one from the scripted demo brain
@@ -54,7 +64,7 @@ export function VisualPanel({ docked = false }: { docked?: boolean }) {
   const kind = r.kind === 'diagram' ? (byAI ? 'Diagram · described by the AI, drawn by NEXUS' : 'Diagram · scripted demo') : 'Photo · Wikimedia Commons';
   const title = r.kind === 'diagram' ? r.diagram.title : shown.image?.title ?? r.query;
   return (
-    <aside className={`visual-panel${docked ? ' docked' : ''}${leaving ? ' leaving' : ''}`} aria-label={`Visual: ${title}`} data-testid="visual-panel" data-kind={r.kind} data-status={shown.status}>
+    <aside ref={panel} className={`visual-panel${docked ? ' docked' : ''}${leaving ? ' leaving' : ''}`} aria-label={`Visual: ${title}`} data-testid="visual-panel" data-kind={r.kind} data-status={shown.status}>
       <header className="vp-head">
         <span className="vp-kind">{kind}</span>
         <h2 className="vp-title">{title}</h2>

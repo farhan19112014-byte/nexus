@@ -23,7 +23,7 @@ export function voiceParams(style: SpeakingStyle, character: VoiceCharacter, use
   const s = STYLE[style] ?? STYLE.warm;
   return character === 'cute' ? { rate: s.rate * userRate, pitch: Math.min(1.5, s.pitch * 1.12) } : { rate: s.rate * userRate, pitch: s.pitch };
 }
-export interface TTSHooks { onStart?(): void; onWord?(word: string): void; onIdle?(): void; /** mouth openness 0…1 measured from the playing audio, plus an approximate lip shape from its spectrum (server voice only) */ onLevel?(level: number, shape?: { round: number; wide: number }): void }
+export interface TTSHooks { onStart?(): void; /** a sentence (queue item) starts playing; its audio length when known */ onSentence?(text: string, seconds?: number): void; onWord?(word: string): void; onIdle?(): void; /** mouth openness 0…1 measured from the playing audio, plus an approximate lip shape from its spectrum (server voice only) */ onLevel?(level: number, shape?: { round: number; wide: number }): void }
 
 /** Approximate mouth shape from a word (used only when the engine reports word boundaries). */
 export function visemeFor(word: string): { open: number; round: number } {
@@ -60,7 +60,7 @@ export class SpeechOutput {
     let advanced = false;
     const advance = () => { if (advanced) return; advanced = true; if (this.wd?.advance === advance) clearTimeout(this.wd.h); this.next(g); };
     this.wd = { advance, ms: wdMs, h: setTimeout(() => { if (!this.paused) advance(); }, wdMs) };
-    u.onstart = () => { if (!started) { started = true; this.hooks.onStart?.(); } };
+    u.onstart = () => { if (!started) { started = true; this.hooks.onStart?.(); } this.hooks.onSentence?.(t); };
     u.onboundary = (e) => { if (e.name && e.name !== 'word') return; this.boundaryEvents = true; this.hooks.onWord?.(t.slice(e.charIndex, e.charIndex + (e.charLength || 6))); };
     u.onend = advance;
     u.onerror = advance;

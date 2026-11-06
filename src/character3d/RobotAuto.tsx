@@ -26,6 +26,7 @@ export const RobotAuto = forwardRef<RigHandle, RobotProps & { mode: RobotStyle; 
     setMotion(m, reduced) { last.current.motion = m; last.current.reduced = reduced; inner.current?.setMotion?.(m, reduced); },
     setBody(o) { inner.current?.setBody?.(o); },
     busy: () => inner.current?.busy?.() ?? false,
+    attentionTargets: () => inner.current?.attentionTargets?.() ?? null,
   }), []);
   const [attempt, setAttempt] = useState(0);
   const flat = <Robot ref={bind} {...props} />;

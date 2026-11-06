@@ -9,6 +9,9 @@ import type { Channel } from '../../shared/channels';
 import type { MotionState } from '../character3d/motion3d';
 import { BodyController, CLIP_FOR_SKILL } from '../character3d/body/controller';
 import type { BodyState } from '../character3d/body/clips';
+import type { Presence } from '../character3d/body/presence';
+import { gesturingFrom } from '../character3d/motion3d';
+import { attention } from '../character3d/attention';
 
 /** NEXUS's interaction state → the full-body state loop (the expression adds HAPPY / SURPRISED while otherwise idle) */
 export function bodyStateFor(m: MotionState, expression: string | null): BodyState {
@@ -39,6 +42,18 @@ export class CharacterRuntime {
 
   /** the 3D robot's full-body animation controller (states + explicit actions); the 2D rig ignores its output */
   readonly body = new BodyController();
+  /** the 3D robot's presence layer (idle life, attention, meaningful gestures, walking); attached while 3D is shown */
+  /** loaded with the 3D view (its own chunk: the 2D robot never downloads it) */
+  presence: Presence | null = null;
+  private presenceLoad: Promise<void> | null = null;
+  private loadPresence() {
+    this.presenceLoad ??= import('../character3d/body/presence').then((m) => {
+      this.presence = new m.Presence();
+      if (this.is3d) { this.body.presence = this.presence; this.kick(); }
+    }).catch((e) => { this.presenceLoad = null; console.warn('[presence] could not load', e); });
+    return this.presenceLoad;
+  }
+  private walkId: number | null = null;
   constructor(readonly engine: AnimationEngine, readonly expressions: ExpressionController) {
     engine.setFaceSource(expressions);
     engine.on('start', (e) => {
@@ -46,8 +61,13 @@ export class CharacterRuntime {
       // the engine owns arbitration (priorities, queue, conflicts): the body follows its actions, so explicit commands
       // play, queue or interrupt exactly as the engine decides — never at random
       const clip = CLIP_FOR_SKILL[e.skillId]; if (clip) this.body.play(clip, { engineId: e.id, speed: e.speed });
+      // the 2D "walk across" (a slide with leg lifts) becomes a real walk in 3D: steps, planted feet, back again
+      if (e.skillId === 'walk_across' && this.body.presence && !engine.reducedMotion) { this.walkId = e.id; this.body.presence.startWalkSkill(); }
     });
-    engine.on('end', (e) => { if (e.result === 'completed') this.body.release(e.id); else this.body.stop(e.id); });
+    engine.on('end', (e) => {
+      if (e.result === 'completed') this.body.release(e.id); else this.body.stop(e.id);
+      if (e.id === this.walkId) { this.walkId = null; this.presence?.endWalkSkill(e.result === 'completed'); }
+    });
   }
   attach(r: RigHandle) { this.rigs.add(r); r.setIndicator(this.indicator); r.setMotion?.(this.motion, this.engine.reducedMotion); r.apply(this.engine.values); return () => { this.rigs.delete(r); }; }
   setIndicator(i: Indicator) { this.indicator = i; this.rigs.forEach((r) => r.setIndicator(i)); }
@@ -57,9 +77,13 @@ export class CharacterRuntime {
   setMotion(m: MotionState) { const key = `${m}|${this.engine.reducedMotion}`; if (key === this.motionKey) return; this.motionKey = key; this.motion = m; this.rigs.forEach((r) => r.setMotion?.(m, this.engine.reducedMotion)); this.kick(); }
   /** true while the 3D robot is on screen: its motion engine replaces the 2D-style idle sway of the animation engine */
   is3d = false;
-  set3d(on: boolean) { this.is3d = on; this.engine.bodyIdle = !on; this.motionKey = ''; this.rigs.forEach((r) => r.setMotion?.(this.motion, this.engine.reducedMotion)); }
+  set3d(on: boolean) { this.is3d = on; this.engine.bodyIdle = !on; this.body.presence = on ? this.presence : null; if (on && !this.presence) void this.loadPresence(); this.motionKey = ''; this.rigs.forEach((r) => r.setMotion?.(this.motion, this.engine.reducedMotion)); }
 
-  /** forces a body state (the Motion Lab's state buttons); null = follow the interaction state as usual */
+  private targetT = 0;
+  /** a page target asked for attention (a new visual, a selected HOLOBUILD part): look — and present it while speaking */
+  readonly offFocus = attention.on((id, kind) => { if (kind !== 'focus' || !this.body.presence) return; this.targetT = 0; this.pendingFocus = id; });
+  private pendingFocus: 'visual' | 'holo' | null = null;
+    /** forces a body state (the Motion Lab's state buttons); null = follow the interaction state as usual */
   bodyState: BodyState | null = null;
 
   step(dt: number): Record<Channel, number> {
@@ -69,7 +93,21 @@ export class CharacterRuntime {
     this.body.reduced = this.engine.reducedMotion;
     this.body.setState(this.bodyState ?? bodyStateFor(this.motion, this.expressions.current()));
     // the voice drives the speaking gestures: mouth openness (measured audio level / word pulses) only while speaking
-    this.body.setSpeech(this.engine.isSpeaking() ? (v['mouth.open'] ?? 0) : 0);
+    this.body.setSpeech(this.engine.isSpeaking() ? (v['mouth.open'] ?? 0) : 0, this.engine.isSpeaking());
+    const P = this.body.presence;
+    if (P) {
+      // real positions of what NEXUS can look at (from the 3D view: camera, IVES panel, HOLOBUILD part) — at ~6 Hz
+      this.targetT -= dt;
+      if (this.targetT <= 0) {
+        this.targetT = 0.16;
+        for (const r of this.rigs) { const t = r.attentionTargets?.(); if (!t) continue; for (const id of ['user', 'visual', 'holo'] as const) P.setTarget(id, t[id] ?? null); break; }
+      }
+      if (this.pendingFocus && P.hasTarget(this.pendingFocus)) { P.attend(this.pendingFocus, 2.6, this.engine.isSpeaking()); this.pendingFocus = null; }
+      this.body.channelGesture = this.walkId === null && gesturingFrom(v);
+      // the chat box (the user typing, the reply streaming in) — never over a spoken reply or a visual/model it is attending
+      const g = this.engine.getGaze(); const f = P.attending();
+      if (g.mode === 'chat' && !this.engine.isSpeaking() && (f === 'user' || f === 'aside')) P.lookScreen(g.x, g.y);
+    }
     const b = this.body.update(dt);
     for (const r of this.rigs) { r.setBody?.(b); r.apply(v); }
     this.frames++;

@@ -284,3 +284,31 @@ ElevenLabs with timestamps, `/api/transcribe`, `/api/holo/*`, `/api/learn/*`); r
   traces with occasional data pulses, a slowly breathing neural network with signals, translucent glass panels with quiet
   decorative readouts, data motes; parallax and pointer-lit nodes; mood-aware; same performance rules as before.
 - Fix found while testing: on phones the 3D canvas did not shrink with its stage; it now fits the stage exactly.
+
+## Presence motion system (A147)
+
+- **Where it sits**: `src/character3d/body/presence.ts` adds one layer to the 3D body (`controller.ts` → `frame.ts`):
+  state clips → presence gesture arms → explicit action clips (slerp by weight) → presence additive life → stage root
+  (walking position/heading) → foot-lock IK → arm/torso collision pass. Action clips (wave, backflip, dances) always win;
+  the presence layer fades its arms/head under them. 2D keeps the existing system unchanged.
+- **Idle**: asymmetric breathing with drifting rate (inhale in speech pauses), hip weight shifts with the feet planted,
+  head/hand/shoulder/glance events chosen without immediate repeats, smooth-noise micro-motion; all amplitudes go
+  through cascaded critically damped springs (C2-smooth, no velocity jumps on state changes).
+- **Attention** (`src/character3d/attention.ts`): the IVES panel and HOLOBUILD model/selected part register their REAL
+  page position; the 3D view turns it into a stage point (camera ray → plane in front of the robot). Eyes lead, then the
+  head (±34°), then the torso (±24°), then the feet turn in steps past 58°. No source/off screen → NEXUS looks at the user.
+- **Gestures from meaning** (`gestures.ts`): each spoken sentence (TTS `onSentence`, with its real audio duration) is
+  planned into 0–4 forms (self, open palm, offer, frame, wide, small, question, negate, emphasis, count, present, beat),
+  hands alternating, never the same form twice in a row; prep → stroke on the voice's accent onset → hold → retract.
+  A visual is presented with an open hand aimed (IK) at its real position. With the presence layer attached the canned
+  `explain`/`speak_beat`/`point_*` clips are dropped from spoken replies (the presence layer does those from real data).
+- **Conversation**: listening nods on the user's pauses, thinking gaze aversion (up and aside), reactions (acknowledge,
+  curious, surprise, discovery, correction, uncertain, interrupted); an interruption retracts the hands fast and keeps the
+  eyes on the user for 1.8 s.
+- **Walking** (`locomotion.ts`, `footlock.ts`): capture-style stepping (a foot steps when the stance error passes a
+  threshold), alternating feet, heel-toe lift profile, pelvis bob/sway, arm swing, hips kept 1.5 cm short of full leg
+  extension; two-bone IK keeps planted boots exactly still. The engine's "walk across" becomes a real walk over and back.
+- **Slow frames**: the presence layer splits a frame of up to 0.25 s into ≤ 50 ms steps, so its time keeps real pace on
+  slow machines and in power-saving mode.
+- **Tests**: `src/tests/unit/presence.test.ts` (19, physics at 480 Hz: no snaps, no sliding, no penetration, feet above
+  the floor), `scripts/e2e-presence.mjs` (14 checks in the real built app with WebGL, real server, mock speech audio).

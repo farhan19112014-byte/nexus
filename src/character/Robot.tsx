@@ -42,6 +42,8 @@ export interface RigHandle {
   busy?(): boolean;
   /** 3D robot only: the full-body animation layers for this frame (the 2D rig ignores them) */
   setBody?(o: import('../character3d/body/controller').BodyOutput): void;
+  /** 3D robot only: real positions (its stage, metres) of what it can look at — the user (camera) and page targets */
+  attentionTargets?(): Partial<Record<'user' | 'visual' | 'holo', [number, number, number]>> | null;
 }
 
 type Refs = Record<string, SVGElement | null>;

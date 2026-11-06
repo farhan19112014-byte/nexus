@@ -167,6 +167,8 @@ export class Motion3D {
   state: MotionState = 'idle';
   /** 0 = no procedural motion (reduced motion); 1 = normal */
   amplitude = 1;
+  /** run the idle/gesture SEQUENCES (off when the presence layer owns idle life and gestures; base poses and the antenna stay) */
+  sequences = true;
   private seq: { id: string; prims: Primitive[]; t: number; end: number } | null = null;
   private lastSeq: string | null = null;
   private wait = 1.5;
@@ -221,7 +223,7 @@ export class Motion3D {
     // sequencing
     if (this.amplitude > 0) {
       if (this.seq) { this.seq.t += dt; if (this.seq.t >= this.seq.end) { this.seq = null; const r = STATE_RHYTHM[this.state]; this.wait = r ? rr(this.rng, r[0], r[1]) : Infinity; } }
-      else if (Number.isFinite(this.wait)) { this.wait -= dt; if (this.wait <= 0) this.pick(); }
+      else if (Number.isFinite(this.wait) && this.sequences) { this.wait -= dt; if (this.wait <= 0) this.pick(); }
     } else this.seq = null;
     // springs (critically damped): x'' = w²(target - x) - 2w x'
     const tg = this.target(); const fast = this.settleFast > 0; this.settleFast -= dt;
