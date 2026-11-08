@@ -1,14 +1,14 @@
 /** One-click switch between the classic dark NEXUS and the light NEXUS (white and light-blue robot). Saved like the Settings choice. */
 import { Icon } from './Icon';
-import { applyTheme } from '../theme';
+import { chooseTheme } from '../theme';
 import { useResolvedTheme } from '../themeHook';
 
 export function ThemeToggle({ className = '' }: { className?: string }) {
   const theme = useResolvedTheme();
   const next = theme === 'dark' ? 'light' : 'dark';
   const toggle = () => {
-    applyTheme(next);   // instant, also before the saved settings have loaded
-    void import('../core/runtime').then(async ({ memory }) => { await memory.ready; await memory.updateSettings({ theme: next }); }).catch(() => { /* the choice still applies to this page */ });
+    // instant, also before the saved settings have loaded; saved right after (and kept as "pending" until it is)
+    chooseTheme(next, (t) => import('../core/runtime').then(async ({ memory }) => { await memory.ready; await memory.updateSettings({ theme: t }); }));
   };
   const label = next === 'light' ? 'Switch to light mode' : 'Switch to dark mode';
   return (

@@ -168,3 +168,40 @@
 /* muted spoken replies: the speaker button reads as off at a glance */
 .dock-btn[data-voice="off"] svg { opacity: .65; }
 @media (prefers-reduced-motion: reduce) { .type-bar .send-flash::after { animation: none; display: none; } }
+
+/* ===================================================================== Live Vision panel (top-left of the robot view) */
+.vision-panel { position: absolute; left: 24px; top: 16px; z-index: 3; width: 300px; max-height: calc(100% - 140px); overflow: auto; display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border-radius: 14px; font-size: .82rem; color: var(--c-text); background: rgb(var(--k-07111f) / .9); border: 1px solid rgb(var(--k-778394) / .22);
+  box-shadow: 0 18px 50px -24px rgba(0, 0, 0, .9); animation: panel-in .25s ease both; }
+:root[data-theme="light"] .vision-panel { background: rgba(255, 255, 255, .94); border-color: rgb(var(--k-0f172a) / .12); box-shadow: 0 18px 40px -26px rgb(var(--k-0f172a) / .5); }
+.vision-panel.is-live { border-color: rgb(var(--k-38d9ff) / .45); }
+.vision-panel .vp-head { display: flex; align-items: center; gap: 8px; }
+.vision-title { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: .72rem; flex: 1; }
+.live-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 999px; font: 700 .68rem/1.4 var(--font); letter-spacing: .12em; color: #fff; background: #c81e3a; }
+.live-badge .dot { width: 7px; height: 7px; border-radius: 50%; background: #fff; animation: live-dot 1.6s ease-in-out infinite; }
+@keyframes live-dot { 50% { opacity: .35; } }
+.vision-intro ul { margin: 6px 0 10px; padding-left: 18px; display: grid; gap: 4px; }
+.vision-go { width: 100%; letter-spacing: .06em; }
+.vision-err { color: var(--c-bad); margin: 4px 0 8px; }
+.vision-preview { position: relative; border-radius: 10px; overflow: hidden; background: #000; aspect-ratio: 4 / 3; }
+.vision-preview video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.vision-local { position: absolute; left: 6px; bottom: 6px; padding: 1px 6px; border-radius: 6px; background: rgba(0, 0, 0, .55); color: #fff; }
+.vision-state { margin: 0; color: var(--c-muted); }
+.vision-obs p { margin: 0 0 4px; }
+.vision-stale { color: var(--c-warn); }
+.vision-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip-s { padding: 1px 7px; border-radius: 999px; border: 1px solid rgb(var(--k-38d9ff) / .35); font-size: .72rem; }
+.vision-ask { display: flex; gap: 6px; }
+.vision-ask input { flex: 1; min-width: 0; }
+.vision-reply { margin: 0; padding: 8px 10px; border-radius: 10px; background: rgb(var(--k-38d9ff) / .08); border: 1px solid rgb(var(--k-38d9ff) / .2); }
+.vision-reply.failed { background: transparent; border-color: var(--c-bad); color: var(--c-bad); }
+.vision-stop { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; font-weight: 700; letter-spacing: .06em; border-color: #c81e3a; color: #ff6b81; }
+:root[data-theme="light"] .vision-stop { color: #b3172f; }
+@media (max-width: 1099px) { .vision-panel { left: 12px; top: 12px; width: min(300px, calc(100vw - 24px)); } }
+/* phones: the panel takes the top of the screen in a compact form; the robot stays below it */
+@media (max-width: 699px) { .vision-panel { position: relative; left: auto; top: auto; width: auto; margin: 8px 12px 0; max-height: 46vh; }
+  .vision-preview { aspect-ratio: 16 / 9; }
+  /* the status card would sit on top of the panel on a phone: while Live Vision is open it steps aside (Menu → Status still has it) */
+  .robot-layout:has(.vision-panel) .system-panel { display: none; } }
+@media (prefers-reduced-motion: reduce) { .vision-panel { animation: none; } .live-badge .dot { animation: none; } }
+.app.hc .vision-panel { background: var(--c-bg); border: 2px solid var(--c-text); }

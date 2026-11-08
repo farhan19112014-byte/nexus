@@ -30,6 +30,8 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { findImage } from '../shared/imageSearch';
 import type { ImageResult } from '../shared/visual';
 import { z } from 'zod';
+import { analyzeFrame } from './vision';
+import { parseImageDataUrl, VisionAnalyzeRequestSchema } from '../shared/vision';
 import { designModel, editModel, HoloDesignRequestSchema, HoloEditRequestSchema } from './aiTasks';
 import { draftSkill, reflect, ReflectRequestSchema, research as researchTask, ResearchRequestSchema, runSkill, SkillDraftRequestSchema, SkillRunRequestSchema } from './learn';
 
@@ -157,6 +159,8 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   const budget = new DailyBudget(base.budget, counterStore);
   /** reserve or answer with the refusal; null = refused (already answered) */
   const take = async (res: Response, m: MeterName, ip: string | undefined, n: number) => { const r = await budget.reserve(m, ip, n); if (!r.ok) { deny(res, r); return null; } return r; };
+  // a camera frame (Live Vision) is larger than a text request: these two routes accept up to 1 MB, everything else 128 KB
+  app.use(['/api/vision/analyze', '/api/chat'], express.json({ limit: '1mb' }));
   app.use(express.json({ limit: '128kb' }));
   /** What the server sees as this visitor (their own address and the number of forwarding hops) — for checking the proxy setup. */
   app.get('/api/visitor', rateLimiter(30), (req, res) => {
@@ -172,6 +176,9 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
       provider: provider.id, label: provider.label(), model: provider.model, isLLM: provider.id !== 'demo', configured: st.ok,
       streaming: provider.supportsStreaming, promptVersion: PROMPT_VERSION, timeoutMs: cfg.timeoutMs, runtimeConfig: cfg.allowRuntimeConfig, hosted: cfg.publicMode, note: st.note,
       speech: { tts: ttsStatus(cfg.speech.tts), stt: sttStatus(cfg.speech.stt) },
+      vision: provider.id === 'demo' ? { available: false, note: 'Live Vision needs an AI model that can see images (this server is in demo mode).' }
+        : !provider.supportsVision ? { available: false, note: 'The configured AI model cannot take images.' }
+        : { available: st.ok, note: st.ok ? `Frames are analysed by ${provider.label()}.` : (st.note ?? 'The AI model is not configured.') },
       research: { provider: research?.id ?? 'none', configured: !!rs?.ok, note: research ? rs?.note : 'Set RESEARCH_PROVIDER (wikipedia, searxng or tavily) to enable live research.' },
     };
   };
@@ -269,6 +276,32 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
       if (!res.headersSent && ctl.signal.reason !== 'client') res.status(timeout ? 504 : pe.status).json({ error: timeout ? 'The AI provider did not respond in time.' : pe.message, code: timeout ? 'timeout' : pe.code, retryable: pe.retryable });
     } finally { clearTimeout(t); }
   };
+  /**
+   * Live Vision: one camera frame → a validated observation (description, objects, legible text, cautious changes,
+   * uncertainties, a people COUNT — never identities). The frame is forwarded to the configured AI model and not kept;
+   * nothing about it is logged. Metered per visitor on a public server (DAILY_VISION_LIMIT…); a failure before the AI
+   * answered is given back.
+   */
+  const visionLimit = rateLimiter(Math.max(40, cfg.rateLimitPerMin * 2));
+  app.post('/api/vision/analyze', visionLimit, async (req, res) => {
+    const p = VisionAnalyzeRequestSchema.safeParse(req.body);
+    if (!p.success) { res.status(400).json({ error: 'Invalid vision request', code: 'invalid_request' }); return; }
+    if (!parseImageDataUrl(p.data.image)) { res.status(400).json({ error: 'The camera frame was not a valid JPEG, PNG or WebP image (or it was too large).', code: 'invalid_request' }); return; }
+    if (provider.id === 'demo' || !provider.supportsVision) { const pe = provider.id === 'demo' ? 'Live Vision needs an AI model that can see images — this NEXUS server is in demo mode (no AI model connected).' : 'The AI model configured on this NEXUS server cannot take images, so Live Vision is unavailable.'; res.status(503).json({ error: pe, code: 'unconfigured' }); return; }
+    const ticket = await take(res, 'vision', req.ip, 1); if (!ticket) return;
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort('timeout'), Math.min(cfg.timeoutMs, 30000));
+    res.on('close', () => { if (!res.writableEnded) ctl.abort('client'); });
+    try {
+      const { observation, model } = await analyzeFrame(provider, p.data, ctl.signal);
+      res.setHeader('cache-control', 'no-store');
+      res.json({ observation, at: Date.now(), model });
+    } catch (e) {
+      const pe = e instanceof ProviderError ? e : new ProviderError('Internal server error', 'internal', 500);
+      if (!ctl.signal.aborted && pe.code !== 'cancelled' && pe.code !== 'timeout') void ticket.refund();
+      const timeout = ctl.signal.reason === 'timeout';
+      if (!res.headersSent && ctl.signal.reason !== 'client') res.status(timeout ? 504 : pe.status).json({ error: timeout ? 'The AI model did not analyse the frame in time.' : pe.message, code: timeout ? 'timeout' : pe.code, retryable: timeout || pe.retryable });
+    } finally { clearTimeout(t); }
+  });
   app.post('/api/holo/design', limit, aiTask(HoloDesignRequestSchema, (b, signal) => designModel(provider, b.prompt, signal)));
   app.post('/api/holo/edit', limit, aiTask(HoloEditRequestSchema, (b, signal) => editModel(provider, b, signal)));
   // learning engine (research, reflection, workflow skills) — same allowance, same refund rules

@@ -27,8 +27,10 @@ export interface BudgetLimits {
   chatsPerDay: number; chatsPerIpPerDay: number;
   speechCharsPerDay: number; speechCharsPerIpPerDay: number;
   transcriptionsPerDay: number; transcriptionsPerIpPerDay: number;
+  /** Live Vision: camera frames analysed (background observations; a question is a chat message) */
+  visionPerDay: number; visionPerIpPerDay: number;
 }
-export type MeterName = 'chat' | 'speech' | 'stt';
+export type MeterName = 'chat' | 'speech' | 'stt' | 'vision';
 export type Denied = { ok: false; reason: string; status: 429 | 503; code: 'rate_limited' | 'quota' | 'quota_unavailable'; retryAfterS: number };
 export type Reservation = { ok: true; refund: () => Promise<void> } | Denied;
 
@@ -148,6 +150,7 @@ const MAX_VISITORS_TRACKED = 50000;      // memory guard for the memory/file sto
 const TEXT: Record<MeterName, { all: string; ip: (n: number) => string }> = {
   chat: { all: 'NEXUS has answered as many messages as this public server allows today (to protect its free AI quota). Please try again tomorrow — or run NEXUS on your own computer.', ip: (n) => `You have reached today's limit of ${n} messages on this public server. Please come back tomorrow — or run NEXUS on your own computer for unlimited use.` },
   speech: { all: "The voice has used today's budget on this public server — replies are shown as text until tomorrow.", ip: () => "You have used today's voice allowance on this public server — replies are shown as text until tomorrow." },
+  vision: { all: "Live Vision has analysed as many camera frames as this public server allows today — it is paused until tomorrow (you can still ask questions).", ip: () => "You have used today's Live Vision allowance on this public server — automatic observation is paused until tomorrow." },
   stt: { all: "Voice input has reached today's limit on this public server — please type instead until tomorrow.", ip: () => "You have used today's voice-input allowance on this public server — please type instead until tomorrow." },
 };
 
@@ -155,13 +158,13 @@ export class DailyBudget {
   readonly limits: BudgetLimits;
   private visitors = new Map<string, Set<string>>();   // day → visitor hashes seen (memory/file stores only)
   constructor(limits: Partial<BudgetLimits> & Pick<BudgetLimits, 'chatsPerDay' | 'chatsPerIpPerDay' | 'speechCharsPerDay'>, readonly store: CounterStore = new MemoryStore(), private now = () => new Date()) {
-    const L = { speechCharsPerIpPerDay: 0, transcriptionsPerDay: 0, transcriptionsPerIpPerDay: 0, ...limits };
+    const L = { speechCharsPerIpPerDay: 0, transcriptionsPerDay: 0, transcriptionsPerIpPerDay: 0, visionPerDay: 0, visionPerIpPerDay: 0, ...limits };
     for (const [k, v] of Object.entries(L)) if (!Number.isInteger(v) || v < 0) throw new Error(`Budget limit ${k} must be a whole number ≥ 0 (got ${String(v)})`);
     this.limits = L;
   }
   private caps(m: MeterName): [number, number] {
     const L = this.limits;
-    return m === 'chat' ? [L.chatsPerDay, L.chatsPerIpPerDay] : m === 'speech' ? [L.speechCharsPerDay, L.speechCharsPerIpPerDay] : [L.transcriptionsPerDay, L.transcriptionsPerIpPerDay];
+    return m === 'chat' ? [L.chatsPerDay, L.chatsPerIpPerDay] : m === 'speech' ? [L.speechCharsPerDay, L.speechCharsPerIpPerDay] : m === 'vision' ? [L.visionPerDay, L.visionPerIpPerDay] : [L.transcriptionsPerDay, L.transcriptionsPerIpPerDay];
   }
   /** true when this meter has any limit (unmetered meters never touch the store) */
   metered(m: MeterName) { const [a, b] = this.caps(m); return a > 0 || b > 0; }
@@ -199,8 +202,8 @@ export class DailyBudget {
 
   /** Today's whole-server totals (no visitor data). */
   async snapshot() {
-    const day = utcDay(this.now()); const out: Record<MeterName, number> = { chat: 0, speech: 0, stt: 0 };
-    for (const m of ['chat', 'speech', 'stt'] as const) if (this.caps(m)[0]) out[m] = await this.store.incr(`nexus:${day}:${m}:all`, 0, TTL_S).catch(() => -1);
+    const day = utcDay(this.now()); const out: Record<MeterName, number> = { chat: 0, speech: 0, stt: 0, vision: 0 };
+    for (const m of ['chat', 'speech', 'stt', 'vision'] as const) if (this.caps(m)[0]) out[m] = await this.store.incr(`nexus:${day}:${m}:all`, 0, TTL_S).catch(() => -1);
     return { day, store: this.store.kind, totals: out, limits: this.limits };
   }
 }

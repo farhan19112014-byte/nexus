@@ -88,6 +88,8 @@ mock.post(/^\/gemini\/v1beta\/models\/([^/:]+):(generateContent|streamGenerateCo
   if (model === 'not-for-you') return gemErr(res, 404, 'NOT_FOUND', 'models/not-for-you is not found');
   if (model === 'empty-model') return res.json({ candidates: [{ content: { role: 'model', parts: [] }, finishReason: 'MAX_TOKENS' }] });
   if (model === 'blocked-model') return res.json({ promptFeedback: { blockReason: 'SAFETY' } });
+  // Live Vision: the "eyes" prompt gets an observation (or, for vision-bad, something unusable)
+  if (JSON.stringify(req.body.systemInstruction ?? '').includes('eyes of NEXUS')) return res.json({ candidates: [{ content: { role: 'model', parts: [{ text: model === 'vision-bad' ? 'I see things' : JSON.stringify({ description: 'A desk with a laptop and a mug.', objects: [{ label: 'Laptop', position: 'centre' }, { label: 'Mug', position: 'right of the laptop' }], text: ['NEXUS'], changes: [], uncertainties: ['the mug colour (dark)'], people: 1, identity: 'Farhan' }) }] }, finishReason: 'STOP' }] });
   const cfgIn = (req.body.generationConfig ?? {}) as Record<string, unknown>;
   const ping = (req.body.contents as { parts: { text: string }[] }[]).at(-1)!.parts.at(-1)!.text.includes('Reply with OK');
   if (method === 'generateContent') {
@@ -256,7 +258,8 @@ describe('[A97] server integration', () => {
     const url = await start({ LLM_PROVIDER: 'demo', RATE_LIMIT_PER_MIN: '4' });
     expect((await post(`${url}/api/chat`, { messages: [] })).status).toBe(400);
     expect((await post(`${url}/api/chat`, { messages: [{ role: 'system', content: 'x' }] })).status).toBe(400);
-    expect((await post(`${url}/api/chat`, 'x'.repeat(200_000))).status).toBe(413);
+    expect((await post(`${url}/api/chat`, 'x'.repeat(1_200_000))).status).toBe(413);   // a chat may carry one camera frame (Live Vision): 1 MB at most
+    expect((await post(`${url}/api/config/test`, 'x'.repeat(200_000))).status).toBe(413);  // every other route: 128 KB
     const codes = []; for (let i = 0; i < 6; i++) codes.push((await post(`${url}/api/chat`, chat())).status);
     expect(codes).toContain(429);
     expect(readFileSync('server/start.ts', 'utf8')).toContain("cfg.publicMode ? '0.0.0.0' : '127.0.0.1'");   // loopback only, unless deliberately hosted (PUBLIC_MODE)
@@ -573,7 +576,7 @@ describe('[A97] server integration', () => {
     // invalid ALLOWED_ORIGINS entries are ignored
     expect(readConfig({ ALLOWED_ORIGINS: 'https://ok.example, javascript:alert(1), https://x.example/path' } as NodeJS.ProcessEnv).allowedOrigins).toEqual(['https://ok.example']);
     // on your own computer nothing changes: no budgets, settings allowed
-    const local = readConfig({} as NodeJS.ProcessEnv); expect(local.publicMode).toBe(false); expect(local.budget).toEqual({ chatsPerDay: 0, chatsPerIpPerDay: 0, speechCharsPerDay: 0, speechCharsPerIpPerDay: 0, transcriptionsPerDay: 0, transcriptionsPerIpPerDay: 0 }); expect(local.allowRuntimeConfig).toBe(true); expect(readConfig({ PUBLIC_MODE: 'true' } as NodeJS.ProcessEnv).budget).toMatchObject({ speechCharsPerDay: 20000, speechCharsPerIpPerDay: 3000, transcriptionsPerIpPerDay: 60 });
+    const local = readConfig({} as NodeJS.ProcessEnv); expect(local.publicMode).toBe(false); expect(local.budget).toEqual({ chatsPerDay: 0, chatsPerIpPerDay: 0, speechCharsPerDay: 0, speechCharsPerIpPerDay: 0, transcriptionsPerDay: 0, transcriptionsPerIpPerDay: 0, visionPerDay: 0, visionPerIpPerDay: 0 }); expect(local.allowRuntimeConfig).toBe(true); expect(readConfig({ PUBLIC_MODE: 'true' } as NodeJS.ProcessEnv).budget).toMatchObject({ speechCharsPerDay: 20000, speechCharsPerIpPerDay: 3000, transcriptionsPerIpPerDay: 60 });
   });
   it('[A94] local models get a longer timeout unless LLM_TIMEOUT_MS is explicit', () => {
     const local = readConfig({ LLM_PROVIDER: 'openai', OPENAI_BASE_URL: 'http://localhost:11434/v1' } as NodeJS.ProcessEnv);
@@ -585,4 +588,51 @@ describe('[A97] server integration', () => {
     expect(applyRuntime(local, { provider: 'openai', openai: { baseUrl: 'https://api.example.com/v1' } }).timeoutMs).toBe(45000);
     expect(readConfig({ LLM_PROVIDER: 'openai', OPENAI_BASE_URL: 'http://localhost.evil.com/v1' } as NodeJS.ProcessEnv).timeoutMs).toBe(45000);
   });
+
+  it('[A149] Live Vision: a camera frame reaches Gemini as an inline image; the observation is validated; the chat question carries the frame', async () => {
+    const JPG = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, ...new Array(300).fill(9)]).toString('base64')}`;
+    const env = { GEMINI_API_KEY: 'AIza-vision-secret-3131', GEMINI_MODEL: 'gemini-test', GEMINI_BASE_URL: `${base}/gemini`, GEMINI_RETRY_DELAY_MS: '0', GEMINI_FALLBACK_MODELS: 'none' };
+    const url = await start(env);
+    const st = await (await fetch(`${url}/api/status`)).json(); expect(st.vision).toMatchObject({ available: true });
+    const n0 = gemSeen.length;
+    const r = await post(`${url}/api/vision/analyze`, { image: JPG, previous: 'A desk with a laptop.' }); const j = await r.json();
+    expect(r.status).toBe(200); expect(j.observation).toMatchObject({ description: 'A desk with a laptop and a mug.', people: 1, text: ['NEXUS'] });
+    expect(j.observation.objects.map((o: { label: string }) => o.label)).toEqual(['Laptop', 'Mug']); expect(JSON.stringify(j)).not.toContain('Farhan');   // unknown fields (an identity) dropped
+    const sent = gemSeen.slice(n0)[0].body as { contents: { parts: { inlineData?: { mimeType: string; data: string }; text?: string }[] }[]; systemInstruction: unknown };
+    const parts = sent.contents.at(-1)!.parts; expect(parts[0].inlineData).toEqual({ mimeType: 'image/jpeg', data: JPG.split(',')[1] }); expect(parts.at(-1)!.text).toContain('PREVIOUS OBSERVATION');
+    expect(JSON.stringify(sent.systemInstruction)).toMatch(/never identify anyone/i);
+    // invalid frames are refused before any AI call; oversized bodies too
+    const n1 = gemSeen.length;
+    expect((await post(`${url}/api/vision/analyze`, { image: JPG.replace('image/jpeg', 'image/png') })).status).toBe(400);
+    expect((await post(`${url}/api/vision/analyze`, { image: 'data:image/jpeg;base64,AAAA' })).status).toBe(400);
+    expect((await post(`${url}/api/vision/analyze`, { image: JPG, extra: 1 })).status).toBe(400);
+    expect((await post(`${url}/api/vision/analyze`, { image: `data:image/jpeg;base64,${'A'.repeat(1_200_000)}` })).status).toBe(413);
+    expect(gemSeen.length).toBe(n1);
+    // an unusable model answer is an honest error, never an invented observation
+    const bad = await start({ ...env, GEMINI_MODEL: 'vision-bad' }); const br = await post(`${bad}/api/vision/analyze`, { image: JPG });
+    expect(br.status).toBe(502); expect((await br.json()).code).toBe('malformed');
+    // a provider failure is reported as such
+    const down = await start({ ...env, GEMINI_MODEL: 'down-model' }); const dr = await post(`${down}/api/vision/analyze`, { image: JPG });
+    expect(dr.status).toBe(502); expect((await dr.json()).error).toMatch(/temporarily unavailable/);
+    // a question with Live Vision on: the frame goes with the newest user message, the prompt explains the rules
+    const n2 = gemSeen.length;
+    const cr = await post(`${url}/api/chat`, { messages: [{ role: 'user', content: 'What is beside my laptop?' }], stream: false, context: { vision: { frame: JPG, notes: 'Newest observation (2 s ago): A desk with a laptop and a mug.', ageS: 0 } } });
+    expect(cr.status).toBe(200);
+    const cb = gemSeen.slice(n2)[0].body as { contents: { role: string; parts: { inlineData?: unknown; text?: string }[] }[]; systemInstruction: unknown };
+    expect(cb.contents.at(-1)!.parts[0].inlineData).toMatchObject({ mimeType: 'image/jpeg' });
+    const sys = JSON.stringify(cb.systemInstruction); expect(sys).toContain('LIVE VISION'); expect(sys).toContain('A desk with a laptop and a mug'); expect(sys).toMatch(/Never identify people/);
+    // without Live Vision nothing about the camera is sent
+    const n3 = gemSeen.length; await post(`${url}/api/chat`, { messages: [{ role: 'user', content: 'hello' }], stream: false });
+    expect(JSON.stringify(gemSeen.slice(n3)[0].body)).not.toMatch(/inlineData|LIVE VISION/);
+  });
+  it('[A149] Live Vision is refused honestly in demo mode and metered per visitor on a public server', async () => {
+    const JPG = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, ...new Array(300).fill(9)]).toString('base64')}`;
+    const demo = await start({ LLM_PROVIDER: 'demo' });
+    expect((await (await fetch(`${demo}/api/status`)).json()).vision.available).toBe(false);
+    const d = await post(`${demo}/api/vision/analyze`, { image: JPG }); expect(d.status).toBe(503); expect((await d.json()).error).toMatch(/demo mode/);
+    const pub = await start({ PUBLIC_MODE: 'true', BUDGET_STORE: 'memory', GEMINI_API_KEY: 'AIza-pub-vision-1', GEMINI_MODEL: 'gemini-test', GEMINI_BASE_URL: `${base}/gemini`, GEMINI_FALLBACK_MODELS: 'none', DAILY_VISION_LIMIT_PER_VISITOR: '2' }, { persistRuntime: false, trustProxy: 'false' });
+    const codes = []; for (let i = 0; i < 3; i++) codes.push((await post(`${pub}/api/vision/analyze`, { image: JPG })).status);
+    expect(codes).toEqual([200, 200, 429]);
+  });
 });
+

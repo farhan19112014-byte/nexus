@@ -23,7 +23,7 @@ export interface ServerConfig {
   provider: 'demo' | 'openai' | 'anthropic' | 'gemini';
   port: number; timeoutMs: number; maxTokens: number; temperature: number;
   historyMaxMessages: number; historyMaxChars: number; rateLimitPerMin: number; maxRetries: number;
-  openai: { baseUrl: string; apiKey: string; model: string; jsonMode: boolean };
+  openai: { baseUrl: string; apiKey: string; model: string; jsonMode: boolean; vision?: boolean };
   anthropic: { apiKey: string; model: string; baseUrl: string };
   /** Google Gemini through the official @google/genai SDK; the key never leaves the server */
   gemini: { apiKey: string; model: string; baseUrl: string; fallbackModels: string[]; retryDelayMs?: number };
@@ -72,7 +72,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     provider: p === 'openai' || p === 'anthropic' || p === 'gemini' ? p : 'demo',
     port: n(env.PORT, 8787), timeoutMs: n(env.LLM_TIMEOUT_MS, DEFAULT_TIMEOUT_MS), maxTokens: n(env.LLM_MAX_TOKENS, 1400), temperature: n(env.LLM_TEMPERATURE, 0.7),
     historyMaxMessages: n(env.HISTORY_MAX_MESSAGES, 16), historyMaxChars: n(env.HISTORY_MAX_CHARS, 12000), rateLimitPerMin: n(env.RATE_LIMIT_PER_MIN, 30), maxRetries: n(env.LLM_MAX_RETRIES, 1),
-    openai: { baseUrl: (env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/+$/, ''), apiKey: env.OPENAI_API_KEY ?? '', model: env.OPENAI_MODEL ?? '', jsonMode: (env.OPENAI_JSON_MODE ?? 'true') !== 'false' },
+    openai: { baseUrl: (env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1').replace(/\/+$/, ''), apiKey: env.OPENAI_API_KEY ?? '', model: env.OPENAI_MODEL ?? '', jsonMode: (env.OPENAI_JSON_MODE ?? 'true') !== 'false', ...(env.OPENAI_VISION ? { vision: env.OPENAI_VISION.toLowerCase() === 'true' } : {}) },
     anthropic: { apiKey: env.ANTHROPIC_API_KEY ?? '', model: env.ANTHROPIC_MODEL ?? '', baseUrl: (env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com').replace(/\/+$/, '') },
     gemini: { apiKey: env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '', model: env.GEMINI_MODEL || GEMINI_DEFAULT_MODEL, baseUrl: (env.GEMINI_BASE_URL ?? '').replace(/\/+$/, ''),
       // tried in order when the main model is overloaded (HTTP 5xx); "none" turns this off
@@ -84,8 +84,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
     allowedOrigins: (env.ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter((o) => /^https?:\/\/[^/\s]+$/i.test(o)),
     // 0 = unlimited (the default on your own computer); public hosts get conservative defaults
     budget: pub
-      ? { chatsPerDay: n(env.DAILY_CHAT_LIMIT, 400), chatsPerIpPerDay: n(env.DAILY_CHAT_LIMIT_PER_VISITOR, 60), speechCharsPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT, 20000), speechCharsPerIpPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR, 3000), transcriptionsPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT, 600), transcriptionsPerIpPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT_PER_VISITOR, 60) }
-      : { chatsPerDay: n(env.DAILY_CHAT_LIMIT, 0), chatsPerIpPerDay: n(env.DAILY_CHAT_LIMIT_PER_VISITOR, 0), speechCharsPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT, 0), speechCharsPerIpPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR, 0), transcriptionsPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT, 0), transcriptionsPerIpPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT_PER_VISITOR, 0) },
+      ? { chatsPerDay: n(env.DAILY_CHAT_LIMIT, 400), chatsPerIpPerDay: n(env.DAILY_CHAT_LIMIT_PER_VISITOR, 60), speechCharsPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT, 20000), speechCharsPerIpPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR, 3000), transcriptionsPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT, 600), transcriptionsPerIpPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT_PER_VISITOR, 60), visionPerDay: n(env.DAILY_VISION_LIMIT, 3000), visionPerIpPerDay: n(env.DAILY_VISION_LIMIT_PER_VISITOR, 300) }
+      : { chatsPerDay: n(env.DAILY_CHAT_LIMIT, 0), chatsPerIpPerDay: n(env.DAILY_CHAT_LIMIT_PER_VISITOR, 0), speechCharsPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT, 0), speechCharsPerIpPerDay: n(env.DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR, 0), transcriptionsPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT, 0), transcriptionsPerIpPerDay: n(env.DAILY_TRANSCRIPTION_LIMIT_PER_VISITOR, 0), visionPerDay: n(env.DAILY_VISION_LIMIT, 0), visionPerIpPerDay: n(env.DAILY_VISION_LIMIT_PER_VISITOR, 0) },
     budgetStore: { BUDGET_STORE: env.BUDGET_STORE, BUDGET_FILE: env.BUDGET_FILE, UPSTASH_REDIS_REST_URL: env.UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN: env.UPSTASH_REDIS_REST_TOKEN },
     runtimeConfigPath: env.RUNTIME_CONFIG_PATH ?? 'data/runtime-config.json',
     promptMode: (['full', 'compact'].includes(env.PROMPT_MODE ?? '') ? env.PROMPT_MODE : 'auto') as ServerConfig['promptMode'],

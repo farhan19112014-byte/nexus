@@ -27,13 +27,16 @@ const transient = (e: unknown) => { const st = statusOf(e); return st >= 500 || 
 const placeholder = (s: string) => !s || /^replace|^your-|^<|^\*+$/i.test(s);
 
 /** NEXUS roles → Gemini roles ("assistant" is "model"); consecutive turns with the same role are merged. */
-export function toGeminiContents(messages: CompletionRequest['messages']): Content[] {
+export function toGeminiContents(messages: CompletionRequest['messages'], images: CompletionRequest['images'] = []): Content[] {
   const out: Content[] = [];
   for (const m of messages) {
     const role = m.role === 'assistant' ? 'model' : 'user';
     const last = out.at(-1);
     if (last && last.role === role) last.parts!.push({ text: m.content }); else out.push({ role, parts: [{ text: m.content }] });
   }
+  // camera frames: inline image parts on the newest user turn, before its text
+  const last = out.at(-1);
+  if (images.length && last?.role === 'user') last.parts!.unshift(...images.map((im) => ({ inlineData: { mimeType: im.mime, data: im.data } })));
   return out;
 }
 
@@ -66,6 +69,8 @@ function emptyReason(r: GenerateContentResponse | undefined): ProviderError {
 export class GeminiProvider implements LLMProvider {
   readonly id = 'gemini';
   readonly supportsStreaming = true;
+  /** Gemini models take images in the same request (inline data parts) */
+  readonly supportsVision = true;
   private ai: GoogleGenAI | null = null;
   private used: string | null = null;
   constructor(private cfg: GeminiConfig) {}
@@ -117,7 +122,7 @@ export class GeminiProvider implements LLMProvider {
 
   async complete(req: CompletionRequest, signal: AbortSignal) {
     this.check();
-    const r: GenerateContentResponse = await this.withFallback(signal, (model) => this.client().models.generateContent({ model, contents: toGeminiContents(req.messages), config: this.config(req, signal) }), () => false);
+    const r: GenerateContentResponse = await this.withFallback(signal, (model) => this.client().models.generateContent({ model, contents: toGeminiContents(req.messages, req.images), config: this.config(req, signal) }), () => false);
     const t = r.text;
     if (typeof t !== 'string' || !t.trim()) throw emptyReason(r);
     return t;
@@ -128,7 +133,7 @@ export class GeminiProvider implements LLMProvider {
     let full = ''; let last: GenerateContentResponse | undefined;
     try {
       await this.withFallback(signal, async (model) => {
-        const it = await this.client().models.generateContentStream({ model, contents: toGeminiContents(req.messages), config: this.config({ ...req, json: false }, signal) });
+        const it = await this.client().models.generateContentStream({ model, contents: toGeminiContents(req.messages, req.images), config: this.config({ ...req, json: false }, signal) });
         for await (const chunk of it) {
           if (signal.aborted) break;
           last = chunk; const t = chunk.text;

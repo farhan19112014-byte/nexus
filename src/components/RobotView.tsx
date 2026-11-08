@@ -3,7 +3,7 @@
  * exchange is shown as captions under the robot (so the app is usable without sound and for screen readers); typing
  * is a compact alternative; everything else (conversation history, skills, memory, settings) opens from the menu.
  */
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Stage from './Stage';
 import { Message } from './ChatPanel';
 import { Icon } from './Icon';
@@ -11,6 +11,10 @@ import { VoiceScope } from '../space/VoiceScope';
 import { companion, memory } from '../core/runtime';
 import { useSnapshot, useStore } from './hooks';
 import { attachCursorGaze } from '../core/cursorGaze';
+import { visionHost } from '../vision/host';
+import { loadVision } from '../core/runtime';
+import type { LiveVision } from '../vision/liveVision';
+const VisionPanel = lazy(() => import('../vision/VisionPanel'));
 import { engine } from '../core/runtime';
 
 export const COMPOSE_EVENT = 'nexus:compose';
@@ -25,6 +29,10 @@ export default function RobotView({ onOpenConversation }: { onOpenConversation: 
   useEffect(() => { const o = () => { setTyping(true); setFocusTick((n) => n + 1); }; window.addEventListener(COMPOSE_EVENT, o); return () => window.removeEventListener(COMPOSE_EVENT, o); }, []);
   useEffect(() => { if (typing) input.current?.focus(); }, [typing, focusTick]);
   // the eyes glance toward the pointer while idle (limited, smoothed; off under reduced motion / quiet mode)
+  useSyncExternalStore(visionHost.subscribe, visionHost.getStatus); const visionOn = visionHost.on;
+  // Live Vision's code is fetched the first time its button is pressed; the camera itself still needs "Activate"
+  const [lv, setLv] = useState<LiveVision | null>(visionHost.instance); const [vToggle, setVToggle] = useState(0);
+  const openVision = () => { if (lv) { setVToggle((n) => n + 1); return; } void loadVision().then(setLv).catch(() => companion.notifications.push('error', 'Live Vision could not be loaded — check the connection to NEXUS and try again.', { react: false })); };
   const view = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = view.current; if (!el) return;
@@ -49,6 +57,7 @@ export default function RobotView({ onOpenConversation }: { onOpenConversation: 
   return (
     <div className="robot-view" data-testid="robot-view" ref={view}>
       <Stage compact />
+      {lv && <Suspense fallback={null}><VisionPanel vision={lv} toggle={vToggle} /></Suspense>}
       <p className="maker-plate" data-testid="maker-plate"><span aria-hidden>◆</span> Made by Farhan</p>
       <div className="captions" aria-live="polite" data-testid="captions">
         {snap.listening && <VoiceScope source="mic" label="Your voice" />}
@@ -77,6 +86,7 @@ export default function RobotView({ onOpenConversation }: { onOpenConversation: 
           ? <button className="mic-btn listening" onClick={() => companion.stopListening()} aria-pressed="true" aria-label="Stop listening"><Icon name="stop" size={28} /></button>
           : <button className="mic-btn" onClick={() => companion.startListening()} disabled={micUnavailable} aria-label={micUnavailable ? 'Voice input unavailable' : 'Talk'} title={micUnavailable ? (companion.voiceIn?.isDesktop ? 'Voice input in the desktop app needs a transcription service (Settings → Voice)' : 'This browser has no speech recognition') : snap.mic === 'denied' ? 'Microphone blocked — allow it in settings' : 'Talk (asks for microphone permission the first time)'}><Icon name="mic" size={28} /></button>}
         {busyish && <button className="dock-btn" onClick={stopAll} aria-label="Stop" title="Stop (Esc)"><Icon name="close" size={20} /></button>}
+        <button className={`dock-btn${visionOn ? ' on' : ''}`} onClick={openVision} aria-pressed={visionOn} aria-label={visionOn ? 'Live Vision is on — show the panel' : 'Live Vision (camera)'} title="Live Vision" data-testid="vision-toggle"><Icon name="camera" size={20} /></button>
         <button className={`dock-btn${s.voiceOutput ? ' on' : ''}`} data-voice={s.voiceOutput ? 'on' : 'off'} onClick={toggleVoice} disabled={!companion.tts.supported} aria-pressed={s.voiceOutput} aria-label={s.voiceOutput ? 'Spoken replies on — mute' : 'Spoken replies off — unmute'} title={companion.tts.supported ? 'Spoken replies' : 'No voice available on this system'}><Icon name={s.voiceOutput ? 'speaker' : 'mute'} size={20} /></button>
       </div>
     </div>

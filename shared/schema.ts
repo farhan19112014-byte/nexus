@@ -4,6 +4,7 @@
  * imported files, search results — is parsed with these before use.
  */
 import { z } from 'zod';
+import { VisionChatContextSchema } from './visionContext';
 import { VisualFieldSchema } from './visual';
 import { DEFAULT_ROBOT_NAME, effectiveRobotName } from './identity';
 import { CHANNEL_NAMES, type Channel } from './channels';
@@ -283,6 +284,8 @@ export const KnowledgeContextSchema = z.object({
 export const ChatContextSchema = z.object({
   workspace: z.string().max(4000).default(''),
   knowledge: z.array(KnowledgeContextSchema).max(8).default([]),
+  /** Live Vision is on: the newest camera frame and recent observations (absent otherwise) */
+  vision: VisionChatContextSchema.optional(),
 }).strict();
 export type ChatContextInput = z.input<typeof ChatContextSchema>;
 
@@ -324,6 +327,8 @@ export interface ServerCapabilities {
   configured: boolean;
   streaming: boolean;
   research: { provider: string; configured: boolean; note?: string };
+  /** Live Vision (camera frames → the AI model); absent on older servers */
+  vision?: { available: boolean; note: string };
   /** optional server-side speech; absent on older servers */
   speech?: { tts: { configured: boolean; note: string }; stt: { configured: boolean; note: string } };
   promptVersion: string;

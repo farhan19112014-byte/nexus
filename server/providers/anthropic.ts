@@ -3,9 +3,18 @@ import { httpJSON, ProviderError, sseLines, type CompletionRequest, type LLMProv
 export interface AnthropicConfig { apiKey: string; model: string; baseUrl: string }
 const placeholder = (s: string) => !s || /^replace|^your-|^<|^\*+$/i.test(s);
 
+/** images go before the text of the newest user message, as base64 image blocks */
+function withImages(req: CompletionRequest): unknown[] {
+  if (!req.images?.length) return req.messages;
+  const out: unknown[] = req.messages.map((m) => ({ ...m })); const i = out.length - 1; const last = req.messages[i];
+  out[i] = { role: last.role, content: [...req.images.map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.data } })), { type: 'text', text: last.content }] };
+  return out;
+}
+
 export class AnthropicProvider implements LLMProvider {
   readonly id = 'anthropic';
   readonly supportsStreaming = true;
+  readonly supportsVision = true;
   constructor(private cfg: AnthropicConfig) {}
   get model() { return this.cfg.model || null; }
   configured() {
@@ -16,7 +25,7 @@ export class AnthropicProvider implements LLMProvider {
   label() { return `Anthropic · ${this.cfg.model || 'no model'}`; }
   private init(req: CompletionRequest, stream: boolean): RequestInit {
     return { method: 'POST', headers: { 'content-type': 'application/json', 'x-api-key': this.cfg.apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: this.cfg.model, system: req.system, messages: req.messages, max_tokens: req.maxTokens, temperature: req.temperature, stream }) };
+      body: JSON.stringify({ model: this.cfg.model, system: req.system, messages: withImages(req), max_tokens: req.maxTokens, temperature: req.temperature, stream }) };
   }
   async complete(req: CompletionRequest, signal: AbortSignal) {
     if (!this.configured().ok) throw new ProviderError(this.configured().note!, 'unconfigured', 503);

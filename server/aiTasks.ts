@@ -8,17 +8,17 @@
 import { z } from 'zod';
 import { HOLO_LIMITS, HoloOpSchema, MATERIAL_IDS, coerceModel, type HoloModel, type HoloOp } from '../shared/holo';
 import { extractJSON } from './prompts/system';
-import { ProviderError, type LLMProvider } from './providers/types';
+import { ProviderError, type ImagePart, type LLMProvider } from './providers/types';
 
-export async function aiJSON<T>(provider: LLMProvider, system: string, user: string, signal: AbortSignal, check: (raw: unknown) => { value: T | null; error?: string }, maxTokens = 2400): Promise<T> {
+export async function aiJSON<T>(provider: LLMProvider, system: string, user: string, signal: AbortSignal, check: (raw: unknown) => { value: T | null; error?: string }, maxTokens = 2400, images?: ImagePart[]): Promise<T> {
   if (provider.id === 'demo') throw new ProviderError('No AI model is connected to this NEXUS server (demo mode), so this needs an AI model.', 'unconfigured', 503);
   const st = provider.configured(); if (!st.ok) throw new ProviderError(st.note ?? 'The AI provider is not configured.', 'unconfigured', 503);
   const messages = [{ role: 'user' as const, content: user }];
-  let text = await provider.complete({ system, messages, maxTokens, temperature: 0.3, json: true }, signal);
+  let text = await provider.complete({ system, messages, maxTokens, temperature: 0.3, json: true, ...(images ? { images } : {}) }, signal);
   let r: { value: T | null; error?: string };
   try { r = check(extractJSON(text)); } catch (e) { r = { value: null, error: (e as Error).message }; }
   if (r.value) return r.value;
-  text = await provider.complete({ system, messages: [...messages, { role: 'assistant', content: text.slice(0, 4000) }, { role: 'user', content: `Your previous output was invalid (${(r.error ?? 'unknown').slice(0, 300)}). Reply again with ONLY the JSON object described.` }], maxTokens, temperature: 0.2, json: true }, signal);
+  text = await provider.complete({ system, messages: [...messages, { role: 'assistant', content: text.slice(0, 4000) }, { role: 'user', content: `Your previous output was invalid (${(r.error ?? 'unknown').slice(0, 300)}). Reply again with ONLY the JSON object described.` }], maxTokens, temperature: 0.2, json: true, ...(images ? { images } : {}) }, signal);
   try { r = check(extractJSON(text)); } catch (e) { r = { value: null, error: (e as Error).message }; }
   if (r.value) return r.value;
   throw new ProviderError(`The AI model's answer could not be used (${(r.error ?? 'invalid output').slice(0, 160)}).`, 'malformed', 502);

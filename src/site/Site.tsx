@@ -10,7 +10,7 @@ import { DEFAULT_ROBOT_NAME, PRODUCT_NAME } from '../../shared/identity';
 import type { ServerCapabilities } from '../../shared/schema';
 import { skinFor } from '../character/tokens';
 import { useResolvedTheme } from '../themeHook';
-import { applyTheme } from '../theme';
+import { applyTheme, settledTheme } from '../theme';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { StudioLink } from '../components/StudioLink';
 import type { RobotStyle } from '../character3d/webgl';
@@ -55,7 +55,9 @@ function useSaved() {
     let live = true; let off = () => {};
     void import('../core/runtime').then(async ({ memory }) => {
       await memory.ready; if (!live) return;
-      const upd = () => { const s = memory.settings; if (!cached || cached.name !== s.robotName || cached.style !== s.robotStyle) cached = { name: s.robotName, style: s.robotStyle }; setV(cached); applyTheme(s.theme); };
+      // the first read after loading settles a toggle that was still being saved (settledTheme); later changes are applied as saved
+      let first = true;
+      const upd = () => { const s = memory.settings; if (!cached || cached.name !== s.robotName || cached.style !== s.robotStyle) cached = { name: s.robotName, style: s.robotStyle }; setV(cached); applyTheme(first ? settledTheme(s.theme, (t) => memory.updateSettings({ theme: t })) : s.theme); first = false; };
       upd(); off = memory.subscribe(upd);
     }).catch(() => { /* storage unavailable: keep the defaults */ });
     return () => { live = false; off(); };

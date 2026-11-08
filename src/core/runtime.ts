@@ -12,6 +12,7 @@ import { Companion } from './companion';
 import { ChatStore } from './chats';
 import { ReminderStore } from './reminders';
 import { LearningEngine } from '../learning/engine';
+import { visionHost } from '../vision/host';
 
 export const kv = openStore();
 export const engine = new AnimationEngine();
@@ -32,12 +33,15 @@ export const learner: LearningEngine = new LearningEngine({
 });
 export const companion = new Companion({ runtime, registry, memory, learning, api, persistent: kv.persistent, chats, reminders,
   knowledgeFor: (t) => learner.contextFor(t), onExchange: (x) => { void learner.observeExchange(x); } });
+/** Live Vision: its code loads only when the user opens it; off until they activate it; observations in memory only */
+companion.visionFor = () => visionHost.instance?.forQuestion() ?? null;
+export const loadVision = () => visionHost.load(api, companion);
 api.onWaking = () => companion.notifications.push('info', 'Waking up the NEXUS server — free hosting sleeps when nobody uses it, so this first connection can take up to a minute.', { react: false });
 learning.refinementPolicy = () => memory.settings.refinementPolicy;
 runtime.onFrameError = (e) => companion.diagnostics.log({ type: 'error', code: 'frame', detail: String(e) });
 
 // debug/test handle (no secrets live in the browser)
 (globalThis as unknown as Record<string, unknown>).nexus = {
-  engine, expressions, runtime, registry, memory, learning, learner, companion, chats, reminders,
+  engine, expressions, runtime, registry, memory, learning, learner, companion, chats, reminders, loadVision,
   step(seconds: number, dt = 1 / 30) { for (let t = 0; t < seconds; t += dt) runtime.step(dt); },
 };

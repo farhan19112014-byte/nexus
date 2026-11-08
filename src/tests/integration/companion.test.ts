@@ -515,4 +515,17 @@ describe('[A126] website redesign: motion-engine states', () => {
     expect(t.c.getSnapshot().caps?.provider).toBe('fake');
     vi.useRealTimers(); t.stop();
   });
+
+  it('[A149] with Live Vision on, a question (typed or spoken) carries the fresh frame and the observations; off, nothing about the camera is sent', async () => {
+    const t = rig(demo); await t.ready();
+    await t.c.send('hello there'); await idle(t.c);
+    expect(t.requests.at(-1)!.context?.vision).toBeUndefined();
+    let calls = 0; t.c.visionFor = () => { calls++; return { frame: 'data:image/jpeg;base64,AAAA', notes: 'Newest observation (1 s ago): a desk.', ageS: 0 }; };
+    await t.c.send('what am I looking at?'); await idle(t.c);
+    expect(calls).toBe(1); expect(t.requests.at(-1)!.context?.vision).toMatchObject({ notes: expect.stringContaining('a desk'), ageS: 0 });
+    expect(t.c.getSnapshot().messages.some((m) => /AAAA/.test(m.text))).toBe(false);          // the frame is never kept in the conversation
+    t.c.visionFor = () => null; await t.c.send('and now?'); await idle(t.c); expect(t.requests.at(-1)!.context?.vision).toBeUndefined();
+    t.stop();
+  });
 });
+

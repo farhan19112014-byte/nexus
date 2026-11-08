@@ -35,11 +35,12 @@ import { Diagnostics } from '../diagnostics/log';
 import { sanitizeUserText } from '../security/validation';
 import { SkillSandbox } from '../skills/sandbox';
 import type { ChatStore } from './chats';
-import { applyTheme } from '../theme';
+import { applyTheme, settledTheme } from '../theme';
 import { applyPalette, settledPalette } from '../theme/studio';
 import { describeDue, parseReminder, type Reminder, type ReminderStore } from './reminders';
 import type { ChatContextInput, ResponseMeta } from '../../shared/schema';
 import { isSmallTalk, topicFromText, type ImageResult, type VisualRequest } from '../../shared/visual';
+import type { VisionChatContext } from '../../shared/visionContext';
 type ChatContext = ChatContextInput;
 
 export interface Snapshot {
@@ -292,6 +293,7 @@ export class Companion {
     await this.dailyGreeting(new Date(), introduced);
     this.armRest(); this.armAmbient();
   }
+  private appearanceSettled = false;
   applySettings() {
     const s = this.settings;
     this.engine.intensity = s.animationIntensity;
@@ -300,7 +302,10 @@ export class Companion {
     this.engine.idleScale = { off: 0, calm: 0.5, normal: 1, lively: 1.6 }[s.idleLevel];
     this.engine.speechMouth = s.speakingMouth;
     this.expressions.setBaseline(s.defaultExpression);
-    applyTheme(s.theme); applyPalette(settledPalette(s.palette, (p) => this.d.memory.updateSettings({ palette: p })), { animate: true });
+    // the first time after loading: a theme or palette choice whose save was cut short by a page change wins (and is saved)
+    const first = !this.appearanceSettled; this.appearanceSettled = true;
+    applyTheme(first ? settledTheme(s.theme, (t) => this.d.memory.updateSettings({ theme: t })) : s.theme);
+    applyPalette(first ? settledPalette(s.palette, (p) => this.d.memory.updateSettings({ palette: p })) : s.palette, { animate: true });
     this.expressions.allowPlayful = s.playfulReactions && !s.quietMode;
     this.tts.rate = s.speechRate; this.tts.volume = s.speechVolume; this.tts.voiceURI = s.voiceURI; this.tts.character = s.voiceCharacter; if (this.voiceOut) this.voiceOut.allowFallback = s.voiceFallback; this.voiceOut?.configure(!!this.snap.caps?.speech?.tts.configured, s.voiceEngine); this.voiceIn?.configure(!!this.snap.caps?.speech?.stt.configured, s.voiceEngine);
     this.diagnostics.includeContent = s.diagnosticsIncludeContent;
@@ -577,7 +582,10 @@ export class Companion {
     const prevReply = [...this.snap.messages].reverse().find((m) => m.role === 'assistant' && m.id !== asst.id && m.status === 'complete')?.text ?? null;
     let knowledge: NonNullable<ReturnType<NonNullable<CompanionDeps['knowledgeFor']>>> = [];
     try { knowledge = this.d.knowledgeFor?.(text) ?? []; } catch { knowledge = []; }
-    const context = o.context || knowledge.length ? { ...(o.context ?? {}), ...(knowledge.length ? { knowledge } : {}) } : null;
+    let vision: VisionChatContext | null = null;
+    try { vision = this.visionFor?.() ?? null; } catch { vision = null; }
+    if (vision) this.smallTalk.add(asst.id);   // the camera is the picture: no reference image is looked up for this reply
+    const context = o.context || knowledge.length || vision ? { ...(o.context ?? {}), ...(knowledge.length ? { knowledge } : {}), ...(vision ? { vision } : {}) } : null;
     const t0 = performance.now();
     let streamed = '', ttsBuf = '', firstDelta = true, headApplied = false;
     let mouthTimer: ReturnType<typeof setInterval> | null = null;
@@ -843,6 +851,8 @@ export class Companion {
   }
 
   /* ---------------- voice ---------------- */
+  /** Live Vision: while the camera is on, every question carries a fresh frame + the recent observations (null = off) */
+  visionFor: (() => VisionChatContext | null) | null = null;
   /** Messages the app routes elsewhere before they reach the AI (returns true when handled). */
   intercept: ((text: string) => boolean) | null = null;
   /** A page that owns voice commands (HOLOBUILD) handles final transcripts first; returns true when it handled one. */

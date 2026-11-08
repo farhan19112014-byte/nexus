@@ -26,6 +26,7 @@ Because anyone with the link can use your server, **public mode** protects your 
 | spoken characters per day, whole server (ElevenLabs) | `DAILY_SPEECH_CHAR_LIMIT=20000` |
 | spoken characters per visitor per day | `DAILY_SPEECH_CHAR_LIMIT_PER_VISITOR=3000` |
 | voice inputs (transcriptions) per day, whole server / per visitor | `DAILY_TRANSCRIPTION_LIMIT=600` / `DAILY_TRANSCRIPTION_LIMIT_PER_VISITOR=60` |
+| Live Vision camera frames analysed per day, whole server / per visitor | `DAILY_VISION_LIMIT=3000` / `DAILY_VISION_LIMIT_PER_VISITOR=300` |
 | messages per visitor per minute | `RATE_LIMIT_PER_MIN=12` |
 | other websites that may call the server | only `ALLOWED_ORIGINS` (your GitHub Pages site) |
 | settings changes from the browser | off (model, keys and voice are set only in Render) |

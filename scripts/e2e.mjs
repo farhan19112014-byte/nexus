@@ -505,8 +505,9 @@ try {
   check('[A99] rendering pauses while the tab is hidden', hiddenStops);
   // the 3D robot (three.js, ~730 KB) is a separate chunk that only loads when the 3D style is chosen; HOLOBUILD — its page,
   // its model engine and templates (holoInstance), its three.js add-ons (orbit controls, GLTF exporter) and its scene/file
-  // helpers — loads only when the 3D workspace is opened: same category
-  const onDemand3d = /^(three\.module|Robot3D|presence-|GLTFLoader|GLTFExporter|OrbitControls|RoomEnvironment|scene-|io-|HoloBuild-|holoInstance-)/;
+  // helpers — loads only when the 3D workspace is opened: same category. Live Vision (camera code + its panel) likewise
+  // downloads only when its button is pressed.
+  const onDemand3d = /^(three\.module|Robot3D|presence-|GLTFLoader|GLTFExporter|OrbitControls|RoomEnvironment|scene-|io-|HoloBuild-|holoInstance-|VisionPanel-|liveVision-|vision-)/;
   const all = readdirSync('dist/assets').filter((f) => f.endsWith('.js'));
   const js = all.filter((f) => !onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
   const js3d = all.filter((f) => onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);

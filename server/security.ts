@@ -54,8 +54,8 @@ export function baseSecurityHeaders(publicMode: boolean): Record<string, string>
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     'x-frame-options': 'DENY',
-    // microphone only for this site (voice input); nothing else
-    'permissions-policy': 'microphone=(self), camera=(), geolocation=(), payment=(), usb=(), interest-cohort=()',
+    // microphone (voice input) and camera (Live Vision, started only by the user) for this site only; nothing else
+    'permissions-policy': 'microphone=(self), camera=(self), geolocation=(), payment=(), usb=(), interest-cohort=()',
     'cross-origin-opener-policy': 'same-origin',
     ...(publicMode ? { 'strict-transport-security': 'max-age=31536000' } : {}),
   };

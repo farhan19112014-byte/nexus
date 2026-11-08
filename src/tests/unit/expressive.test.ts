@@ -94,3 +94,17 @@ describe('[A143] Colour Studio reset', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('[A123] theme toggle', () => {
+  it('[A123] a toggle whose save was cut short by a page change wins over the older saved theme once; old or stale marks are ignored', async () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); } });
+    const { settledTheme } = await import('../../theme');
+    const saves: string[] = []; const persist = async (t: string) => { saves.push(t); };
+    expect(settledTheme('dark', persist)).toBe('dark');
+    store.set('nexus-theme-pending', `light|${Date.now()}`); expect(settledTheme('dark', persist)).toBe('light'); expect(saves).toEqual(['light']);
+    store.set('nexus-theme-pending', `light|${Date.now() - 60_000}`); expect(settledTheme('dark', persist)).toBe('dark'); expect(store.has('nexus-theme-pending')).toBe(false);
+    store.set('nexus-theme-pending', 'purple|1'); expect(settledTheme('system', persist)).toBe('system');
+    vi.unstubAllGlobals();
+  });
+});

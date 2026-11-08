@@ -1,12 +1,16 @@
 import type { ChatMessage, ErrorCode } from '../../shared/schema';
 
-export interface CompletionRequest { system: string; messages: ChatMessage[]; maxTokens: number; temperature: number; json: boolean }
+/** An image for the newest user message (base64, no data: prefix) — Live Vision camera frames. */
+export interface ImagePart { mime: string; data: string }
+export interface CompletionRequest { system: string; messages: ChatMessage[]; maxTokens: number; temperature: number; json: boolean; /** attached to the LAST user message (providers with supportsVision only) */ images?: ImagePart[] }
 
 /** Asset 41 — replaceable provider interface. */
 export interface LLMProvider {
   readonly id: string;
   readonly model: string | null;
   readonly supportsStreaming: boolean;
+  /** accepts images in a request (Live Vision); a provider without it is never sent one */
+  readonly supportsVision: boolean;
   configured(): { ok: boolean; note?: string };
   label(): string;
   complete(req: CompletionRequest, signal: AbortSignal): Promise<string>;

@@ -9,7 +9,8 @@ import { demoBrain } from '../shared/demoBrain';
 import { isLocalUrl } from './config';
 import { buildSystemPrompt, extractJSON, PROMPT_VERSION } from './prompts/system';
 import type { ServerConfig } from './config';
-import { ProviderError, type LLMProvider } from './providers/types';
+import { ProviderError, type ImagePart, type LLMProvider } from './providers/types';
+import { parseImageDataUrl } from '../shared/vision';
 import { researchQuery, type ResearchProvider } from './research';
 
 /** Asset 44 — context window policy: newest messages within count & char budgets, starting with a user turn. */
@@ -80,6 +81,8 @@ export class BrainService {
   async handle(req: ChatRequest, clientSignal: AbortSignal, emit: Emit = () => {}): Promise<{ response: BrainResponse; meta: ResponseMeta }> {
     const t0 = Date.now();
     const meta: ResponseMeta = { provider: this.provider.id, model: this.provider.model, isLLM: this.provider.id !== 'demo', latencyMs: 0, streamed: false, repaired: false, droppedFields: [], degraded: false, historySent: 0, promptVersion: PROMPT_VERSION, research: { used: false, provider: null, count: 0 } };
+    // a frame this model cannot see (or that is not a valid image) is dropped, so the prompt never claims one is attached
+    if (req.context?.vision?.frame && (!this.provider.supportsVision || !parseImageDataUrl(req.context.vision.frame))) req = { ...req, context: { ...req.context, vision: { ...req.context.vision, frame: undefined } } };
     const sources = await this.gatherSources(req, clientSignal, emit, meta);
     if (clientSignal.aborted) throw new ProviderError('Request cancelled', 'cancelled', 499);
 
@@ -125,11 +128,17 @@ export class BrainService {
     } finally { clearTimeout(timer); clientSignal.removeEventListener('abort', onAbort); }
   }
 
+  /** Live Vision: the camera frame sent with this question goes to the model with the newest user message (vision models only) */
+  private images(req: ChatRequest): { images?: ImagePart[] } {
+    const img = this.provider.supportsVision ? parseImageDataUrl(req.context?.vision?.frame) : null;
+    return img ? { images: [{ mime: img.mime, data: img.data }] } : {};
+  }
+
   private async streamed(req: ChatRequest, history: ChatMessage[], sources: Source[], signal: AbortSignal, emit: Emit, meta: ResponseMeta, onSent: () => void): Promise<BrainResponse> {
     const parser = new StreamParser();
     const system = buildSystemPrompt(req, { streaming: true, sources, compact: this.compact });
     emit({ type: 'status', stage: 'thinking' });
-    await this.provider.stream({ system, messages: history, maxTokens: this.cfg.maxTokens, temperature: this.cfg.temperature, json: false }, signal, (chunk) => {
+    await this.provider.stream({ system, messages: history, maxTokens: this.cfg.maxTokens, temperature: this.cfg.temperature, json: false, ...this.images(req) }, signal, (chunk) => {
       const { delta, headParsed } = parser.feed(chunk);
       if (headParsed) { const h = BrainHeadSchema.safeParse(parser.head); if (h.success) emit({ type: 'head', head: h.data }); }
       if (delta) { onSent(); emit({ type: 'delta', text: delta }); }
@@ -154,7 +163,7 @@ export class BrainService {
 
   private async json(req: ChatRequest, history: ChatMessage[], sources: Source[], signal: AbortSignal, meta: ResponseMeta): Promise<BrainResponse> {
     const system = buildSystemPrompt(req, { streaming: false, sources, compact: this.compact });
-    const call = (msgs: ChatMessage[]) => this.provider.complete({ system, messages: msgs, maxTokens: this.cfg.maxTokens, temperature: this.cfg.temperature, json: true }, signal);
+    const call = (msgs: ChatMessage[]) => this.provider.complete({ system, messages: msgs, maxTokens: this.cfg.maxTokens, temperature: this.cfg.temperature, json: true, ...this.images(req) }, signal);
     let text = await call(history);
     let res: ReturnType<typeof coerceBrainResponse>;
     try { res = coerceBrainResponse(extractJSON(text)); } catch (e) { res = { value: null, dropped: [], error: (e as Error).message }; }

@@ -1,6 +1,6 @@
 import { httpJSON, ProviderError, sseLines, type CompletionRequest, type LLMProvider } from './types';
 
-export interface OpenAIConfig { baseUrl: string; apiKey: string; model: string; jsonMode: boolean }
+export interface OpenAIConfig { baseUrl: string; apiKey: string; model: string; jsonMode: boolean; vision?: boolean }
 const placeholder = (s: string) => !s || /^replace|^your-|^<|^\*+$/i.test(s);
 
 /** Any OpenAI-compatible /chat/completions endpoint (OpenAI, OpenRouter, Groq, Together, Ollama, LM Studio, vLLM…). */
@@ -8,6 +8,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
   readonly id: string = 'openai';
   readonly supportsStreaming = true;
   constructor(protected cfg: OpenAIConfig) {}
+  /** hosted OpenAI-compatible services take image input in the standard content-parts format; a model on this computer
+   *  (Ollama, LM Studio) only when you say it is a vision model (OPENAI_VISION=true) — most small local models are not */
+  get supportsVision() { return this.cfg.vision ?? !this.local(); }
   get model() { return this.cfg.model || null; }
   private local() { return /localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal/.test(this.cfg.baseUrl); }
   configured() {
@@ -18,7 +21,9 @@ export class OpenAICompatibleProvider implements LLMProvider {
   }
   label() { let host = '?'; try { host = new URL(this.cfg.baseUrl).host; } catch { /* */ } return `OpenAI-compatible · ${this.cfg.model || 'no model'} @ ${host}`; }
   private body(req: CompletionRequest, stream: boolean) {
-    const b: Record<string, unknown> = { model: this.cfg.model, messages: [{ role: 'system', content: req.system }, ...req.messages], max_tokens: req.maxTokens, temperature: req.temperature, stream };
+    const msgs: unknown[] = req.messages.map((m) => ({ ...m }));
+    if (req.images?.length) { const i = msgs.length - 1; const last = req.messages[i]; msgs[i] = { role: last.role, content: [{ type: 'text', text: last.content }, ...req.images.map((im) => ({ type: 'image_url', image_url: { url: `data:${im.mime};base64,${im.data}`, detail: 'low' } }))] }; }
+    const b: Record<string, unknown> = { model: this.cfg.model, messages: [{ role: 'system', content: req.system }, ...msgs], max_tokens: req.maxTokens, temperature: req.temperature, stream };
     if (req.json && this.cfg.jsonMode && !stream) b.response_format = { type: 'json_object' };
     return JSON.stringify(b);
   }
