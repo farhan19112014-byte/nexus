@@ -148,3 +148,13 @@ describe('Timestamp lip-sync', () => {
     expect(plain.headers.get('content-type')).toBe('audio/mpeg'); expect(elevenHits.at(-1)).toBe('plain:voice-1');
   });
 });
+
+describe('[A134] independent sources', () => {
+  it('[A134] sites under a country second-level suffix are different organisations; subdomains of one site are one', async () => {
+    const { org } = await import('../../../server/learn');
+    expect(org('bbc.co.uk')).not.toBe(org('independent.co.uk'));
+    expect(org('ox.ac.uk')).toBe('ox.ac.uk'); expect(org('abc.net.au')).toBe('abc.net.au');
+    expect(org('en.wikipedia.org')).toBe(org('de.wikipedia.org'));
+    expect(org('news.bbc.co.uk')).toBe(org('bbc.co.uk'));
+  });
+});

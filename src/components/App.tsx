@@ -73,7 +73,7 @@ export default function App() {
     companion.intercept = (t) => {
       if (!isChatBuildRequest(t)) return false;
       companion.announce('Opening HOLOBUILD to build that…', { speak: false });
-      navigate(PATHS.holobuild); void import('../holobuild/instance').then(({ holo }) => holo.command(t));
+      navigate(PATHS.holobuild); void import('../holobuild/holoInstance').then(({ holo }) => holo.command(t));
       return true;
     };
     return () => { companion.intercept = null; };

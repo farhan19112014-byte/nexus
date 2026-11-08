@@ -160,7 +160,7 @@ export const Robot = forwardRef<RigHandle, RobotProps>(function Robot(props, ref
   const eye = (s: 'L' | 'R') => {
     const cx = 200 + (s === 'L' ? 1 : -1) * G.eye.dx;
     return (
-      <g key={s} data-part={`eye-${s}`}>
+      <g key={`eye-${s}`} data-part={`eye-${s}`}>
         <clipPath id={`eyeclip-${s}-${uid}`}><rect ref={r(`eyeClip${s}`)} x={cx - G.eye.w / 2} y={G.eye.y - G.eye.h / 2} width={G.eye.w} height={G.eye.h} rx={G.eye.r} /></clipPath>
         <rect ref={r(`eye${s}`)} x={cx - G.eye.w / 2} y={G.eye.y - G.eye.h / 2} width={G.eye.w} height={G.eye.h} rx={G.eye.r} fill={`url(#eyeLed-${uid})`} filter={glow} />
         <g clipPath={`url(#eyeclip-${s}-${uid})`}>
@@ -177,7 +177,7 @@ export const Robot = forwardRef<RigHandle, RobotProps>(function Robot(props, ref
     const x = 200 + (s === 'L' ? 1 : -1) * G.hip.dx;
     const thigh = G.leg.len * G.leg.knee;
     return (
-      <g key={s} ref={r(`leg${s}`)} data-part={`leg-${s}`}>
+      <g key={`leg-${s}`} ref={r(`leg${s}`)} data-part={`leg-${s}`}>
         <rect x={x - G.leg.w / 2} y={G.hip.y - 4} width={G.leg.w} height={thigh + 8} rx={RADII.limb} fill={`url(#cyl-${uid})`} stroke={K.outline} strokeWidth={STROKES.outline} />
         <rect ref={r(`shin${s}`)} x={x - G.leg.w / 2 + 2} y={G.hip.y + thigh - 2} width={G.leg.w - 4} height={G.leg.len - thigh + 6} rx={RADII.limb} fill={`url(#cylDark-${uid})`} stroke={K.outline} strokeWidth={STROKES.outline} />
         <ellipse cx={x} cy={G.hip.y + thigh + 4} rx={G.leg.w / 2 - 3} ry={4} fill={`url(#occl-${uid})`} />
@@ -194,7 +194,7 @@ export const Robot = forwardRef<RigHandle, RobotProps>(function Robot(props, ref
   const arm = (s: 'L' | 'R') => {
     const sx = 200 + (s === 'L' ? 1 : -1) * G.shoulder.dx;
     return (
-      <g key={s} ref={r(`arm${s}`)} data-part={`arm-${s}`}>
+      <g key={`arm-${s}`} ref={r(`arm${s}`)} data-part={`arm-${s}`}>
         <rect x={sx - G.upperArm.w / 2} y={G.shoulder.y} width={G.upperArm.w} height={G.upperArm.len + 4} rx={RADII.limb} fill={`url(#cyl-${uid})`} stroke={K.outline} strokeWidth={STROKES.outline} />
         <circle cx={sx} cy={G.shoulder.y} r={13} fill={`url(#sphere-${uid})`} stroke={K.outline} strokeWidth={STROKES.outline} />
         <ellipse cx={sx - 4} cy={G.shoulder.y - 5} rx={4.5} ry={3} fill={`url(#spec-${uid})`} />

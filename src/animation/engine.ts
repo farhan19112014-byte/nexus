@@ -62,6 +62,9 @@ export function seeded(seed: number): Rng {
   return () => { seed |= 0; seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
+/** where the eyes look: the user (camera), the chat box, the centre, the pointer (smoothed, limited), or a slow thinking drift */
+export type GazeMode = 'user' | 'chat' | 'center' | 'cursor' | 'think';
+
 export class AnimationEngine {
   readonly values: Record<Channel, number> = restPose();
   private target: Record<Channel, number> = restPose();
@@ -76,7 +79,7 @@ export class AnimationEngine {
   // procedural sub-controllers
   private blink = { t: 0, next: 2.5, phase: 0, double: false };
   blinkRate = 1;
-  private gaze = { x: 0, y: 0, tx: 0, ty: 0, mode: 'user' as 'user' | 'chat' | 'center' | 'idle', idleNext: 1.5 };
+  private gaze = { x: 0, y: 0, tx: 0, ty: 0, mode: 'user' as GazeMode | 'idle', idleNext: 1.5, thinkT: 0 };
   private speech = { active: false, open: 0, round: 0, pulse: 0, levelMode: false, level: 0, shapeRound: 0, shapeWide: 0, shaped: false, wide: 0 };
 
   /** user preferences / accessibility */
@@ -120,8 +123,9 @@ export class AnimationEngine {
   }
   getPose() { return this.pose; }
   /** Asset 23: gaze target in normalized [-1,1] screen space, or null for idle wandering. */
-  lookAt(x: number | null, y = 0, mode: 'user' | 'chat' | 'center' = 'user') {
+  lookAt(x: number | null, y = 0, mode: GazeMode = 'user') {
     if (x === null) { this.gaze.mode = 'idle'; return; }
+    if (mode === 'think' && this.gaze.mode !== 'think') this.gaze.thinkT = 1.5 + this.rng();
     this.gaze.mode = mode; this.gaze.tx = Math.max(-1, Math.min(1, x)); this.gaze.ty = Math.max(-1, Math.min(1, y));
   }
   getGaze() { return { x: this.gaze.x, y: this.gaze.y, mode: this.gaze.mode }; }
@@ -294,7 +298,13 @@ export class AnimationEngine {
       g.idleNext -= dt;
       if (g.idleNext <= 0) { g.idleNext = 1 + this.rng() * 2.5; g.tx = (this.rng() - 0.5) * 1.2; g.ty = (this.rng() - 0.5) * 0.6; }
     }
-    const gk = 1 - Math.exp(-dt * 16);
+    // thinking: the eyes drift slowly between up-left and up-right (never darting, never spinning); a new side every 2–4 s
+    if (g.mode === 'think') {
+      g.thinkT -= dt;
+      if (g.thinkT <= 0) { g.thinkT = 2 + this.rng() * 2; const side = g.tx < 0 ? 1 : -1; g.tx = side * (0.15 + this.rng() * 0.2); g.ty = -0.1 - this.rng() * 0.15; }   // on top of the thinking face's upward glance
+    }
+    // saccades are quick, a thinking drift and a cursor glance are smooth
+    const gk = 1 - Math.exp(-dt * (g.mode === 'think' ? 2.2 : g.mode === 'cursor' ? 7 : 16));
     g.x += (g.tx - g.x) * gk; g.y += (g.ty - g.y) * gk;
     if (!owned.has('pupil.x')) T['pupil.x'] += g.x * 0.85;
     if (!owned.has('pupil.y')) T['pupil.y'] += g.y * 0.85;

@@ -29,7 +29,8 @@ const noServer = () => new ApiError('Not available in the web demo — this page
 
 export class ApiClient {
   offline = false;
-  constructor(private base = API_BASE, private timeoutMs = 60000, readonly webDemo = WEB_DEMO, private remote = REMOTE_API) {}
+  private readonly defaultTimeoutMs: number;
+  constructor(private base = API_BASE, private timeoutMs = 60000, readonly webDemo = WEB_DEMO, private remote = REMOTE_API) { this.defaultTimeoutMs = timeoutMs; }
   private woken = false;
   /** called once if the hosted server is slow to answer the first time (free hosts sleep when idle) */
   onWaking: () => void = () => {};
@@ -44,7 +45,11 @@ export class ApiClient {
       if (slow) clearTimeout(slow);
       this.woken = true;
       if (!r.ok || !(r.headers.get('content-type') ?? '').includes('json')) throw new Error('no api');
-      this.offline = false; return await r.json() as ServerCapabilities;
+      this.offline = false;
+      const caps = await r.json() as ServerCapabilities;
+      // a local model may take up to 3 minutes for its first reply: never give up before the server itself would
+      if (typeof caps.timeoutMs === 'number' && Number.isFinite(caps.timeoutMs)) this.timeoutMs = Math.max(this.defaultTimeoutMs, caps.timeoutMs + 15000);
+      return caps;
     } catch { if (slow) clearTimeout(slow); this.offline = true; return OFFLINE_CAPS; }
   }
 

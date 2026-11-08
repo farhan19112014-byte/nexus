@@ -55,7 +55,23 @@ export function initPalette() { applyPalette(cachedPalette()); }
 /** Save to settings (the source of truth) and apply. Throws when the settings could not be saved. */
 export async function savePalette(p: Palette | null) {
   applyPalette(p, { animate: true });
+  // until the settings write below has finished, the choice is also kept here: a reload in that moment (the write waits
+  // for the storage module to load) must not bring the previous theme back from the not-yet-updated settings
+  try { localStorage.setItem(KEY_PENDING, JSON.stringify({ p })); } catch { /* storage blocked */ }
   const { memory } = await import('../core/runtime');
   await memory.ready;
   await memory.updateSettings({ palette: p });
+  try { localStorage.removeItem(KEY_PENDING); } catch { /* ignore */ }
+}
+const KEY_PENDING = 'nexus-palette-pending';
+/**
+ * The palette to show for the saved setting: a choice whose save was interrupted (see savePalette) wins over the older
+ * saved value, and is written through `persist` now; afterwards the saved setting is the truth again.
+ */
+export function settledPalette(saved: Palette | null, persist: (p: Palette | null) => Promise<unknown>): Palette | null {
+  let raw: string | null = null; try { raw = localStorage.getItem(KEY_PENDING); } catch { return saved; }
+  if (!raw) return saved;
+  let pending: Palette | null; try { const v = JSON.parse(raw) as { p?: unknown }; pending = v && 'p' in v ? (v.p === null ? null : validPalette(v.p as Palette)) : saved; } catch { pending = saved; }
+  void persist(pending).then(() => { try { localStorage.removeItem(KEY_PENDING); } catch { /* ignore */ } }, () => {});
+  return pending;
 }

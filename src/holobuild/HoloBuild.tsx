@@ -16,7 +16,7 @@ import { useSnapshot, useStore } from '../components/hooks';
 import { Link, PATHS, useTitle } from '../router';
 import { Logo } from '../site/Site';
 import { PRODUCT_NAME } from '../../shared/identity';
-import { holo } from './instance';
+import { holo } from './holoInstance';
 import { HoloViewport, fmtLen } from './HoloViewport';
 import { TEMPLATES } from './templates';
 
@@ -183,7 +183,7 @@ export default function HoloBuild() {
       <footer className="holo-bottom">
         <div className="holo-robot" aria-label={`${settings.robotName}, your robot`}>
           <ErrorBoundary area="robot" compact><Stage compact /></ErrorBoundary>
-          {(cs.activity || lastReply) && <div className="holo-bubble" role="status" aria-live="polite" data-testid="holo-bubble">
+          {(cs.activity || lastReply) && <div className="holo-bubble" role="status" aria-live="polite" tabIndex={0} data-testid="holo-bubble">
             {cs.activity ? <><span className="spinner" aria-hidden /> {cs.activity.kind === 'building' ? 'Building' : cs.activity.kind === 'editing' ? 'Editing' : cs.activity.kind === 'researching' ? 'Researching' : 'Reflecting'}: {cs.activity.label}</> : (lastReply!.text || (lastReply!.status === 'failed' ? lastReply!.error?.message : '…'))?.slice(0, 360)}
           </div>}
         </div>

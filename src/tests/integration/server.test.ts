@@ -351,6 +351,8 @@ describe('[A97] server integration', () => {
     const app = createApp(readConfig({ LLM_PROVIDER: 'demo', BUDGET_STORE: 'memory', PUBLIC_MODE: 'true' } as NodeJS.ProcessEnv), { persistRuntime: false, serveDist: true, distDir: dist });
     const sv = app.listen(0, '127.0.0.1'); servers.push(sv); await new Promise((r) => sv.once('listening', r)); const u = `http://127.0.0.1:${(sv.address() as AddressInfo).port}`;
     const { createHash } = await import('node:crypto'); const h = `'sha256-${createHash('sha256').update(inline).digest('base64')}'`;
+    // the browser waits at least as long as the server's own AI time limit (local models may take minutes)
+    expect((await (await fetch(`${u}/api/status`)).json()).timeoutMs).toBe(45000);
     for (const path of ['/', '/app', '/api/status', '/api/nope']) {
       const r = await fetch(`${u}${path}`); const csp = r.headers.get('content-security-policy') ?? '';
       expect(csp, path).toContain("default-src 'self'"); expect(csp).toContain(`script-src 'self' ${h}`); expect(csp).toContain("frame-ancestors 'none'"); expect(csp).toContain("object-src 'none'");
@@ -358,6 +360,9 @@ describe('[A97] server integration', () => {
       expect(r.headers.get('x-frame-options')).toBe('DENY'); expect(r.headers.get('x-content-type-options')).toBe('nosniff'); expect(r.headers.get('referrer-policy')).toBe('no-referrer');
       expect(r.headers.get('permissions-policy')).toContain('microphone=(self)'); expect(r.headers.get('strict-transport-security')).toContain('max-age');
     }
+    // client routes get the page; a missing asset is a real 404 (never the HTML page served as a script)
+    expect((await fetch(`${u}/learning`)).headers.get('content-type')).toContain('text/html');
+    const gone = await fetch(`${u}/assets/old-build-123.js`); expect(gone.status).toBe(404); expect(gone.headers.get('content-type')).not.toContain('html');
     // errors and refusals carry them too
     const forbidden = await post(`${u}/api/config`, {}); expect(forbidden.headers.get('content-security-policy')).toContain("default-src 'self'");
     // public server: no connection test for visitors (would be an extra AI call), /api/visitor shows what the server sees

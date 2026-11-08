@@ -17,6 +17,12 @@
   background: radial-gradient(ellipse 50% 46% at 50% 48%, rgb(var(--k-1268f5) / .26), rgb(var(--k-38d9ff) / .06) 55%, transparent 72%);
   animation: stage-breathe 9s ease-in-out infinite; }
 :root[data-theme="light"] .app:not(.hc) .robot-view .stage-box::before { background: radial-gradient(ellipse 50% 46% at 50% 48%, rgba(255, 255, 255, .95), rgb(var(--k-1268f5) / .08) 60%, transparent 74%); }
+/* no graphics hardware (software WebGL): nothing decorative is re-composited every frame — the key light holds still and the
+   glass panels drop their backdrop blur (recomputed in software for every frame of the robot beneath them) for a more opaque fill */
+:root[data-gpu="software"] .app:not(.hc) .robot-view .stage-box::before { animation: none; opacity: .92; }
+:root[data-gpu="software"] * { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+:root[data-gpu="software"] .app:not(.hc) .dock { background: rgb(var(--k-07111f) / .82); }
+:root[data-gpu="software"] .app:not(.hc) .top { background: rgb(var(--k-05080d) / .92); }
 @keyframes stage-breathe { 0%, 100% { opacity: .85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.04); } }
 
 @media (min-width: 1100px) {
@@ -152,3 +158,13 @@
 .chain-line span { color: var(--sky-text); padding: 8px 12px; border: 1px solid rgb(var(--k-7dd3fc) / .28); border-radius: 999px; background: var(--sky-soft); }
 .chain-line span + span::before { content: "→"; margin-right: 10px; color: var(--mx-text-3); letter-spacing: 0; }
 .t-holo { background: radial-gradient(ellipse 70% 80% at 85% 100%, rgb(var(--k-7dd3fc) / .14), transparent 70%), var(--mx-surface) !important; }
+
+/* micro-interactions: a sent message — a short cyan sweep along the text box (nothing under reduced motion) */
+.type-bar { position: relative; }
+.type-bar .send-flash { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; overflow: hidden; }
+.type-bar .send-flash::after { content: ""; position: absolute; top: 0; bottom: 0; width: 40%; left: -40%;
+  background: linear-gradient(90deg, transparent, rgb(var(--k-38d9ff) / .22), transparent); animation: send-sweep .55s cubic-bezier(.2, .7, .2, 1) forwards; }
+@keyframes send-sweep { to { left: 100%; } }
+/* muted spoken replies: the speaker button reads as off at a glance */
+.dock-btn[data-voice="off"] svg { opacity: .65; }
+@media (prefers-reduced-motion: reduce) { .type-bar .send-flash::after { animation: none; display: none; } }

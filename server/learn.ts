@@ -21,7 +21,12 @@ const LOW = /(^|\.)(reddit\.com|quora\.com|medium\.com|blogspot\.com|wordpress\.
 export const domainOf = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } };
 export const credibility = (domain: string): 'high' | 'medium' | 'low' => (HIGH.test(domain) ? 'high' : LOW.test(domain) ? 'low' : 'medium');
 /** sources from the same organisation count once (en.wikipedia.org and de.wikipedia.org are one source) */
-const org = (domain: string) => domain.split('.').slice(-2).join('.');
+export const org = (domain: string) => {
+  const p = domain.split('.');
+  // country second-level suffixes (bbc.co.uk, abc.net.au, ox.ac.uk) keep three labels: otherwise every .co.uk site would count as one source
+  const sld = p.length >= 3 && /^[a-z]{2}$/.test(p.at(-1)!) && /^(co|com|ac|gov|org|net|edu|or|ne|go|gob|nic|mil)$/.test(p.at(-2)!);
+  return p.slice(sld ? -3 : -2).join('.');
+};
 
 /* ------------------------------------------------------------------ research */
 export const ResearchRequestSchema = z.object({ question: z.string().trim().min(3).max(300), trigger: z.enum(['user', 'gap', 'background', 'recheck']).default('user') }).strict();

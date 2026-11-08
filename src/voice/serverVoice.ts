@@ -71,6 +71,7 @@ export class ServerSpeechOutput implements SpeechOut {
   private queue: Item[] = []; private busy = false; private gen = 0; private started = false;
   private ctl = new AbortController(); private current: HTMLAudioElement | null = null; private url: string | null = null;
   private alignment: Alignment | null = null;
+  private graphs = new WeakMap<HTMLAudioElement, { src: MediaElementAudioSourceNode; an: AnalyserNode }>();
   private ctx: AudioContext | null = null; private analyser: AnalyserNode | null = null; private raf = 0; private pulse: ReturnType<typeof setInterval> | null = null;
   /** called when one sentence could not be generated or played; the router speaks it with the fallback voice */
   onFailure: (message: string, text: string) => void = () => {};
@@ -127,8 +128,11 @@ export class ServerSpeechOutput implements SpeechOut {
     try {
       if (!this.ctx) { const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext; this.ctx = new AC(); }
       void this.ctx.resume();
-      const src = this.ctx.createMediaElementSource(a); const an = this.ctx.createAnalyser(); an.fftSize = 512;
-      src.connect(an); an.connect(this.ctx.destination); this.analyser = an;
+      // an audio element can be given to Web Audio only ONCE, and from then on it is heard only through that graph:
+      // after a pause the same nodes are reused (creating new ones would throw, and disconnecting them would mute it)
+      let g = this.graphs.get(a);
+      if (!g) { const src = this.ctx.createMediaElementSource(a); const an = this.ctx.createAnalyser(); an.fftSize = 512; src.connect(an); an.connect(this.ctx.destination); g = { src, an }; this.graphs.set(a, g); }
+      const an = g.an; this.analyser = an;
       const buf = new Uint8Array(an.fftSize); const freq = new Uint8Array(an.frequencyBinCount); const rate = this.ctx.sampleRate;
       // every frame: loudness from the waveform → how open; spectrum → rounded or wide (both from the audio actually playing)
       // with ElevenLabs timing: the character being spoken sets the mouth SHAPE and how far it opens; the measured loudness
@@ -148,8 +152,9 @@ export class ServerSpeechOutput implements SpeechOut {
       this.pulse = setInterval(() => { if (this.current && !this.current.paused) this.hooks.onLevel?.(0.55); }, 160);
     }
   }
-  private stopLevels() { levels.reset('voice'); if (this.raf) cancelAnimationFrame(this.raf); this.raf = 0; if (this.pulse) clearInterval(this.pulse); this.pulse = null; this.analyser?.disconnect(); this.analyser = null; this.hooks.onLevel?.(0); }
-  private cleanupAudio() { const a = this.current; this.current = null; if (a) { a.onended = a.onerror = a.onplaying = a.onpause = null; try { a.pause(); } catch { /* gone */ } a.removeAttribute('src'); } if (this.url) { URL.revokeObjectURL(this.url); this.url = null; } }
+  /** stops measuring only: the element's audio graph stays connected (it is how the audio reaches the speakers) */
+  private stopLevels() { levels.reset('voice'); if (this.raf) cancelAnimationFrame(this.raf); this.raf = 0; if (this.pulse) clearInterval(this.pulse); this.pulse = null; this.analyser = null; this.hooks.onLevel?.(0); }
+  private cleanupAudio() { const a = this.current; this.current = null; if (a) { a.onended = a.onerror = a.onplaying = a.onpause = null; try { a.pause(); } catch { /* gone */ } a.removeAttribute('src'); const g = this.graphs.get(a); if (g) { try { g.src.disconnect(); g.an.disconnect(); } catch { /* closed */ } this.graphs.delete(a); } } if (this.url) { URL.revokeObjectURL(this.url); this.url = null; } }
   pause() { this.current?.pause(); }
   resume() { void this.current?.play().catch(() => {}); }
   stop() {

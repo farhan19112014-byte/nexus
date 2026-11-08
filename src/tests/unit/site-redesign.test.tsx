@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 // @vitest-environment happy-dom
 /**
  * [A126] Website redesign & 3D integration: robot-style default and migration, WebGL decision, startup transition,
@@ -32,6 +33,14 @@ describe('[A126] robot style', () => {
     fake(null); expect(webglAvailable()).toBe(false); expect(effectiveStyle('auto')).toBe('2d');
     fake('ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)))'); expect(webglAvailable()).toBe(true); expect(softwareRenderer()).toBe(true); expect(effectiveStyle('auto')).toBe('3d');
     fake('ANGLE (NVIDIA GeForce RTX 3060)'); expect(effectiveStyle('auto')).toBe('3d'); expect(softwareRenderer()).toBe(false);
+  });
+  it('[A127] the page knows when there is no graphics hardware (CSS then stops re-compositing decorative layers every frame)', () => {
+    const fake = (renderer: string | null) => { _resetWebglProbe(); vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((kind: string) => renderer === null || kind === '2d' ? null : ({ getExtension: () => null, getParameter: () => renderer })) as unknown as HTMLCanvasElement['getContext']); };
+    fake('ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)))'); softwareRenderer(); expect(document.documentElement.dataset.gpu).toBe('software');
+    fake('ANGLE (NVIDIA GeForce RTX 3060)'); webglAvailable(); expect(document.documentElement.dataset.gpu).toBe('hardware');
+    fake(null); webglAvailable(); expect(document.documentElement.dataset.gpu).toBe('none');
+    const css = readFileSync('src/space/space.css', 'utf8');
+    expect(css).toMatch(/:root\[data-gpu="software"\] \* \{[^}]*backdrop-filter: none/); expect(css).toMatch(/:root\[data-gpu="software"\][^{]*stage-box::before \{ animation: none/);
   });
 });
 

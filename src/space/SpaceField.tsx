@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef } from 'react';
 import { TechScene, type Mood, type Quality } from './techScene';
+import { softwareRenderer } from '../character3d/webgl';
 
 export function initialQuality(width: number, cores = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4): Quality {
   if (width < 700 || cores <= 2) return 'low';
@@ -30,7 +31,10 @@ export function SpaceField({ focus = 'right', className = '', reducedMotion = fa
       g.setTransform(dpr, 0, 0, dpr, 0, 0); scene.resize(r.width, r.height); paint();
     };
     const paint = () => scene.draw(g);
-    const still = () => rmRef.current || sysReduce();
+    // no graphics hardware: one still frame (as under reduced motion) — a full-window canvas repainted ~40 times a second
+    // under the page's blurred glass panels costs a software compositor several times more than the 3D robot itself
+    const soft = softwareRenderer();
+    const still = () => rmRef.current || sysReduce() || soft;
     const loop = (now: number) => {
       raf = 0; if (!visible || document.hidden) return;
       const dt = (now - last) / 1000; last = now; acc += dt;

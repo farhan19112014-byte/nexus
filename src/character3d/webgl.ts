@@ -18,6 +18,8 @@ function probe() {
       gl.getExtension('WEBGL_lose_context')?.loseContext(); // give the probe context back straight away
     }
   } catch { /* no WebGL */ }
+  // for CSS: without graphics hardware every animated or blurred layer is composited in software (see space.css)
+  if (typeof document !== 'undefined') document.documentElement.dataset.gpu = !cached.ok ? 'none' : cached.software ? 'software' : 'hardware';
   return cached;
 }
 export const webglAvailable = () => probe().ok;

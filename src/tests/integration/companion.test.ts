@@ -2,7 +2,7 @@
  * [A97] Integration: the companion orchestrator with the real engine, expressions, registry, memory and
  * learning modules; only the network client and the browser speech engines are faked.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AnimationEngine, seeded } from '../../animation/engine';
 import { ExpressionController } from '../../expressions/expressionController';
 import { BUILTIN_EXPRESSIONS } from '../../expressions/presets';
@@ -51,7 +51,7 @@ function rig(script: Script = demo, o: { greeted?: boolean; restAfterMs?: number
   const states: CompanionState[] = []; c.sm.on((s) => states.push(s));
   const started: string[] = []; engine.on('start', (e) => started.push(e.skillId));
   const timer = setInterval(() => runtime.step(0.1), 2);
-  return { c, engine, expressions, registry, memory, learning, chats, reminders, kv, states, started, requests, calls: () => calls, stop: () => { clearInterval(timer); reminders?.stop(); },
+  return { c, api, engine, expressions, registry, memory, learning, chats, reminders, kv, states, started, requests, calls: () => calls, stop: () => { clearInterval(timer); reminders?.stop(); c.dispose(); },
     async ready() { await memory.ready; if (o.greeted !== false) await memory.updateSettings({ greeted: true }); await c.init(); } };
 }
 const until = async (f: () => boolean, ms = 5000) => { const t0 = Date.now(); while (!f()) { if (Date.now() - t0 > ms) throw new Error('timeout'); await new Promise((r) => setTimeout(r, 5)); } };
@@ -320,6 +320,17 @@ describe('[A97] companion integration', () => {
     expect(b.chats!.chats).toHaveLength(1);
     expect(await b.c.openChat(b.chats!.chats[0].id)).toBe(true);
     expect(b.c.getSnapshot().messages.filter((m) => m.role === 'user').map((m) => m.text)).toEqual(['hello', 'nod']);
+    // a message typed while "New chat" is still summarising the old conversation belongs to the NEW chat
+    const oldId = b.chats!.currentId; const oldTexts = b.chats!.chats.find((c) => c.id === oldId)!.messages.map((m) => m.text);
+    let release!: () => void; const slow = new Promise<void>((r) => { release = r; });
+    const realSummarize = b.api.summarize.bind(b.api); b.api.summarize = async (m) => { await slow; return realSummarize(m); };
+    await b.memory.updateSettings({ memoryEnabled: true });
+    const nc = b.c.newChat(); await new Promise((r) => setTimeout(r, 20));
+    await b.c.send('dance'); await idle(b.c); await b.c.persistNow();
+    release(); await nc;
+    expect(b.chats!.chats.find((c) => c.id === oldId)!.messages.map((m) => m.text)).toEqual(oldTexts);
+    expect(b.chats!.currentId).not.toBe(oldId);
+    b.api.summarize = realSummarize;
     await b.memory.updateSettings({ saveChats: false });
     await b.c.send('clap'); await idle(b.c); await b.c.persistNow();
     expect(b.chats!.chats[0].messages.some((m) => m.text === 'clap')).toBe(false); // saving off → nothing new stored
@@ -461,5 +472,47 @@ describe('[A126] website redesign: motion-engine states', () => {
     expect(t.c.getSnapshot().messages.at(-1)!.notes?.some((n) => /1 note\(s\) from NEXUS's knowledge base with this message \(1 verified\)/.test(n))).toBe(true);
     t.stop();
   });
-});
 
+  it('[A148] setExpression: one API, aliases, unknown names refused, and never above an urgent state face', async () => {
+    const t = rig(demo); await t.ready();
+    expect(t.c.setExpression('curious')).toBe(true); expect(t.expressions.current()).toBe('curious');
+    expect(t.c.setExpression('sleeping')).toBe(true); expect(t.expressions.current()).toBe('resting');
+    expect(t.c.setExpression('focused')).toBe(true); expect(t.expressions.current()).toBe('focused');
+    expect(t.c.setExpression('calm')).toBe(true); expect(t.expressions.current()).toBe('calm');
+    expect(t.c.setExpression('no-such-face')).toBe(false);
+    t.expressions.set('system', 'error', 1, null, 5); t.c.setExpression('focused'); expect(t.expressions.current()).toBe('error');
+    t.expressions.release('system'); expect(t.expressions.current()).toBe('focused');
+    t.c.setExpression(null); expect(t.expressions.current()).not.toBe('focused');
+    t.stop();
+  });
+  it('[A148] while a request is processed the eyes drift in "thinking" gaze, and give it up when the reply starts', async () => {
+    let release!: () => void; const gate = new Promise<void>((r) => { release = r; });
+    const slow: Script = async (req, s, h) => { await gate; return demo(req, s, h); };
+    const t = rig(slow); await t.ready();
+    const p = t.c.send('tell me something'); await until(() => t.c.sm.state === 'processing');
+    expect(t.engine.getGaze().mode).toBe('think');
+    release(); await p; await idle(t.c);
+    expect(t.engine.getGaze().mode).not.toBe('think');
+    t.stop();
+  });
+  it('[A148] muting spoken replies is acknowledged (a notice, a small nod) without touching an ongoing reply', async () => {
+    const t = rig(demo); await t.ready();
+    t.c.acknowledgeVoice(false);
+    expect(t.c.notifications.notices.some((n) => /muted/.test(n.text))).toBe(true);
+    await until(() => t.started.includes('nod'), 1500);
+    t.c.acknowledgeVoice(true); expect(t.c.notifications.notices.some((n) => /on\./.test(n.text))).toBe(true);
+    t.stop();
+  });
+
+  it('[A148] a server that was unreachable at startup is checked again: the app does not stay "offline" until a reload', async () => {
+    const t = rig(demo); await t.ready();
+    const { OFFLINE_CAPS } = await import('../../ai/apiClient');
+    let up = false; const online = await (t.api as unknown as { status: () => Promise<unknown> }).status();
+    (t.api as unknown as { status: () => Promise<unknown> }).status = async () => (up ? online : OFFLINE_CAPS);
+    vi.useFakeTimers();
+    await t.c.refreshStatus(); expect(t.c.getSnapshot().caps?.provider).toBe('local-demo');
+    up = true; await vi.advanceTimersByTimeAsync(5100);
+    expect(t.c.getSnapshot().caps?.provider).toBe('fake');
+    vi.useRealTimers(); t.stop();
+  });
+});

@@ -10,6 +10,8 @@ import { Icon } from './Icon';
 import { VoiceScope } from '../space/VoiceScope';
 import { companion, memory } from '../core/runtime';
 import { useSnapshot, useStore } from './hooks';
+import { attachCursorGaze } from '../core/cursorGaze';
+import { engine } from '../core/runtime';
 
 export const COMPOSE_EVENT = 'nexus:compose';
 
@@ -22,22 +24,30 @@ export default function RobotView({ onOpenConversation }: { onOpenConversation: 
   const [focusTick, setFocusTick] = useState(0);
   useEffect(() => { const o = () => { setTyping(true); setFocusTick((n) => n + 1); }; window.addEventListener(COMPOSE_EVENT, o); return () => window.removeEventListener(COMPOSE_EVENT, o); }, []);
   useEffect(() => { if (typing) input.current?.focus(); }, [typing, focusTick]);
+  // the eyes glance toward the pointer while idle (limited, smoothed; off under reduced motion / quiet mode)
+  const view = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = view.current; if (!el) return;
+    return attachCursorGaze(el, { engine, state: () => companion.sm.state, allowed: () => !memory.settings.reducedMotion && !memory.settings.quietMode && memory.settings.idleLevel !== 'off' && (typeof matchMedia !== 'function' || !matchMedia('(prefers-reduced-motion: reduce)').matches) });
+  }, []);
+  // a sent message gets a short visual acknowledgement on the text box
+  const [sent, setSent] = useState(0);
   // a reviewed voice transcript opens the text box with the words, ready to edit or send
   useEffect(() => { if (snap.draft !== null) { setText(snap.draft); companion.clearDraft(); setTyping(true); setFocusTick((n) => n + 1); } }, [snap.draft]);
 
   const lastUser = [...snap.messages].reverse().find((m) => m.role === 'user');
   const lastAsst = [...snap.messages].reverse().find((m) => m.role === 'assistant' || m.role === 'system');
   const showAsst = lastAsst && (!lastUser || lastAsst.at >= lastUser.at) ? lastAsst : null;
-  const submit = () => { const t = text.trim(); if (!t) return; setText(''); void companion.send(t); };
+  const submit = () => { const t = text.trim(); if (!t) return; setText(''); setSent((n) => n + 1); void companion.send(t); };
   const micUnavailable = !companion.stt.supported || snap.mic === 'unsupported';
   const state = snap.state;
   const canPause = state === 'speaking' && !!companion.tts.pause;
   const busyish = snap.busy || snap.speaking || state === 'acting' || state === 'paused';
   const stopAll = () => { if (snap.listening) companion.cancelListening(); companion.stopSpeaking(); companion.stopAction(); if (snap.busy) companion.cancel(); };
-  const toggleVoice = () => void memory.updateSettings({ voiceOutput: !s.voiceOutput }).then(() => { companion.applySettings(); if (s.voiceOutput) companion.stopSpeaking(); });
+  const toggleVoice = () => void memory.updateSettings({ voiceOutput: !s.voiceOutput }).then(() => { companion.applySettings(); if (s.voiceOutput) companion.stopSpeaking(); companion.acknowledgeVoice(!s.voiceOutput); });
 
   return (
-    <div className="robot-view" data-testid="robot-view">
+    <div className="robot-view" data-testid="robot-view" ref={view}>
       <Stage compact />
       <p className="maker-plate" data-testid="maker-plate"><span aria-hidden>◆</span> Made by Farhan</p>
       <div className="captions" aria-live="polite" data-testid="captions">
@@ -50,12 +60,13 @@ export default function RobotView({ onOpenConversation }: { onOpenConversation: 
         {snap.messages.length > 2 && <button className="link small" onClick={onOpenConversation}>Show the whole conversation</button>}
       </div>
       {typing && (
-        <form className="type-bar" onSubmit={(e) => { e.preventDefault(); submit(); }}>
+        <form className="type-bar" data-sent={sent} onSubmit={(e) => { e.preventDefault(); submit(); }}>
           <label className="sr-only" htmlFor="composer">Message</label>
           <input id="composer" ref={input} value={text} maxLength={4000} autoComplete="off" placeholder={`Message ${s.robotName}`}
             onChange={(e) => { setText(e.target.value); companion.noteTyping(e.target.value.length > 0, e.target.value); }} onBlur={() => companion.noteTyping(false)}
             onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setTyping(false); } }} />
           <button type="submit" className="primary" disabled={!text.trim()} aria-label="Send"><Icon name="send" /></button>
+          {sent > 0 && <span className="send-flash" key={sent} aria-hidden />}
         </form>
       )}
       <div className="dock" role="toolbar" aria-label="Voice controls">
@@ -66,7 +77,7 @@ export default function RobotView({ onOpenConversation }: { onOpenConversation: 
           ? <button className="mic-btn listening" onClick={() => companion.stopListening()} aria-pressed="true" aria-label="Stop listening"><Icon name="stop" size={28} /></button>
           : <button className="mic-btn" onClick={() => companion.startListening()} disabled={micUnavailable} aria-label={micUnavailable ? 'Voice input unavailable' : 'Talk'} title={micUnavailable ? (companion.voiceIn?.isDesktop ? 'Voice input in the desktop app needs a transcription service (Settings → Voice)' : 'This browser has no speech recognition') : snap.mic === 'denied' ? 'Microphone blocked — allow it in settings' : 'Talk (asks for microphone permission the first time)'}><Icon name="mic" size={28} /></button>}
         {busyish && <button className="dock-btn" onClick={stopAll} aria-label="Stop" title="Stop (Esc)"><Icon name="close" size={20} /></button>}
-        <button className={`dock-btn${s.voiceOutput ? ' on' : ''}`} onClick={toggleVoice} disabled={!companion.tts.supported} aria-pressed={s.voiceOutput} aria-label={s.voiceOutput ? 'Spoken replies on — mute' : 'Spoken replies off — unmute'} title={companion.tts.supported ? 'Spoken replies' : 'No voice available on this system'}><Icon name={s.voiceOutput ? 'speaker' : 'mute'} size={20} /></button>
+        <button className={`dock-btn${s.voiceOutput ? ' on' : ''}`} data-voice={s.voiceOutput ? 'on' : 'off'} onClick={toggleVoice} disabled={!companion.tts.supported} aria-pressed={s.voiceOutput} aria-label={s.voiceOutput ? 'Spoken replies on — mute' : 'Spoken replies off — unmute'} title={companion.tts.supported ? 'Spoken replies' : 'No voice available on this system'}><Icon name={s.voiceOutput ? 'speaker' : 'mute'} size={20} /></button>
       </div>
     </div>
   );

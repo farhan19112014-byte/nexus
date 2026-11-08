@@ -170,7 +170,7 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     const rs = research?.configured();
     return {
       provider: provider.id, label: provider.label(), model: provider.model, isLLM: provider.id !== 'demo', configured: st.ok,
-      streaming: provider.supportsStreaming, promptVersion: PROMPT_VERSION, runtimeConfig: cfg.allowRuntimeConfig, hosted: cfg.publicMode, note: st.note,
+      streaming: provider.supportsStreaming, promptVersion: PROMPT_VERSION, timeoutMs: cfg.timeoutMs, runtimeConfig: cfg.allowRuntimeConfig, hosted: cfg.publicMode, note: st.note,
       speech: { tts: ttsStatus(cfg.speech.tts), stt: sttStatus(cfg.speech.stt) },
       research: { provider: research?.id ?? 'none', configured: !!rs?.ok, note: research ? rs?.note : 'Set RESEARCH_PROVIDER (wikipedia, searxng or tavily) to enable live research.' },
     };
@@ -465,7 +465,14 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   app.use('/api', (_q, r) => { r.status(404).json({ error: 'Not found' }); });
   if (opts.serveDist) {
     const dist = distDir;
-    if (existsSync(dist)) { app.use(express.static(dist)); app.use((_q, r) => r.sendFile(resolve(dist, 'index.html'))); }
+    if (existsSync(dist)) {
+      app.use(express.static(dist));
+      // client-side routes (/app, /learning…) get the page; a missing file (/assets/old-hash.js) is a real 404, not HTML
+      app.use((q, r, next) => {
+        if ((q.method !== 'GET' && q.method !== 'HEAD') || /\.[a-z0-9]{1,8}$/i.test(q.path)) { r.status(404).type('text/plain').send('Not found'); return; }
+        r.sendFile(resolve(dist, 'index.html'), (e) => { if (e) next(e); });
+      });
+    }
   }
   app.use(errorHandler(opts.log));
   return app;

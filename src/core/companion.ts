@@ -36,7 +36,7 @@ import { sanitizeUserText } from '../security/validation';
 import { SkillSandbox } from '../skills/sandbox';
 import type { ChatStore } from './chats';
 import { applyTheme } from '../theme';
-import { applyPalette } from '../theme/studio';
+import { applyPalette, settledPalette } from '../theme/studio';
 import { describeDue, parseReminder, type Reminder, type ReminderStore } from './reminders';
 import type { ChatContextInput, ResponseMeta } from '../../shared/schema';
 import { isSmallTalk, topicFromText, type ImageResult, type VisualRequest } from '../../shared/visual';
@@ -72,6 +72,9 @@ export interface CompanionDeps {
 
 /** Meta for replies produced on this device without any AI (reminders, greetings). */
 export const ON_DEVICE_META: ResponseMeta = { provider: 'on-device', model: null, isLLM: false, latencyMs: 0, streamed: false, repaired: false, droppedFields: [], degraded: false, historySent: 0, promptVersion: 'local', research: { used: false, provider: null, count: 0 } };
+
+/** names people use for expressions → the preset that shows them */
+export const EXPRESSION_ALIASES: Record<string, string> = { sleeping: 'resting', inactive: 'resting', asleep: 'sleepy', idle: 'neutral', speak: 'speaking', listen: 'listening', think: 'thinking', worried: 'concerned', focus: 'focused', relaxed: 'calm' };
 
 const REMEMBER_RE = /\b(remember|note|keep in mind|don'?t forget|save (this|that))\b/i;
 
@@ -145,8 +148,10 @@ export class Companion {
     if (this.persistTimer) clearTimeout(this.persistTimer);
     this.interrupt('new chat'); // marks a streaming reply as cancelled so it is saved, not dropped
     await this.persistNow();
-    await this.resetConversation();
+    // the new chat gets its own id BEFORE the (slow, up to 30 s) summary request: a message typed meanwhile must be
+    // saved as the new chat, never over the one that was just closed
     await this.d.chats?.startNew();
+    await this.resetConversation();
   }
   async openChat(id: string): Promise<boolean> {
     const chats = this.d.chats; if (!chats) return false;
@@ -295,12 +300,30 @@ export class Companion {
     this.engine.idleScale = { off: 0, calm: 0.5, normal: 1, lively: 1.6 }[s.idleLevel];
     this.engine.speechMouth = s.speakingMouth;
     this.expressions.setBaseline(s.defaultExpression);
-    applyTheme(s.theme); applyPalette(s.palette, { animate: true });
+    applyTheme(s.theme); applyPalette(settledPalette(s.palette, (p) => this.d.memory.updateSettings({ palette: p })), { animate: true });
     this.expressions.allowPlayful = s.playfulReactions && !s.quietMode;
     this.tts.rate = s.speechRate; this.tts.volume = s.speechVolume; this.tts.voiceURI = s.voiceURI; this.tts.character = s.voiceCharacter; if (this.voiceOut) this.voiceOut.allowFallback = s.voiceFallback; this.voiceOut?.configure(!!this.snap.caps?.speech?.tts.configured, s.voiceEngine); this.voiceIn?.configure(!!this.snap.caps?.speech?.stt.configured, s.voiceEngine);
     this.diagnostics.includeContent = s.diagnosticsIncludeContent;
   }
-  async refreshStatus() { const caps = await this.d.api.status(); this.set({ caps }); this.configureVoice(); this.refreshCaps(); return caps; }
+  async refreshStatus() {
+    const caps = await this.d.api.status(); this.set({ caps }); this.configureVoice(); this.refreshCaps();
+    this.scheduleStatusRetry(caps.provider === 'local-demo');
+    return caps;
+  }
+  /**
+   * The server could not be reached when the status was checked (it was still starting, the page was busy loading, a
+   * sleeping host was waking up): check again — 5 s, 10 s, 20 s… up to once a minute — instead of staying "offline"
+   * (and on the browser voice instead of the configured voice service) until the page is reloaded.
+   */
+  private statusRetry: { timer: ReturnType<typeof setTimeout> | null; delay: number } = { timer: null, delay: 5000 };
+  private scheduleStatusRetry(offline: boolean) {
+    if (this.statusRetry.timer) { clearTimeout(this.statusRetry.timer); this.statusRetry.timer = null; }
+    if (!offline || this.d.api.webDemo) { this.statusRetry.delay = 5000; return; }
+    const delay = this.statusRetry.delay; this.statusRetry.delay = Math.min(60000, delay * 2);
+    this.statusRetry.timer = setTimeout(() => { this.statusRetry.timer = null; void this.refreshStatus().catch(() => {}); }, delay);
+  }
+  /** stops background checks (tests, teardown) */
+  dispose() { if (this.statusRetry.timer) clearTimeout(this.statusRetry.timer); this.statusRetry.timer = null; }
   /** choose voice engines from the server's real speech status and the user's preference */
   configureVoice() {
     const c = this.snap.caps; const pref = this.settings.voiceEngine;
@@ -331,6 +354,9 @@ export class Companion {
     if (s === 'resting') this.engine.setPose('resting');
     if (s === 'responding') this.engine.lookAt(0.6, 0.1, 'chat');
     if (s === 'idle') this.engine.lookAt(null);
+    // thinking: a slow, controlled drift up and to the side while the request is processed (back to the user afterwards)
+    if (s === 'processing' && !this.settings.reducedMotion) this.engine.lookAt(-0.2, -0.15, 'think');
+    if (prev === 'processing' && s !== 'processing' && this.engine.getGaze().mode === 'think') this.engine.lookAt(s === 'idle' ? null : 0, 0, 'user');
     this.diagnostics.log({ type: 'state', code: `${prev}->${s}` });
     this.set({});
   }
@@ -585,9 +611,10 @@ export class Companion {
           if (voiceOn) { ttsBuf += t; const [sent, rest] = takeSentences(ttsBuf); ttsBuf = rest; for (const x of sent) this.tts.enqueue(x, 'warm'); }
         },
       });
+      // the approximate text-mouth stops whatever happens next (a superseded turn must not leave it pulsing forever)
+      if (mouthTimer) { clearInterval(mouthTimer); mouthTimer = null; if (token === this.token) this.engine.setSpeaking(false); }
       if (token !== this.token) return;
       this.reqAbort = null;
-      if (mouthTimer) { clearInterval(mouthTimer); mouthTimer = null; this.engine.setSpeaking(false); }
       const resp = BrainResponseSchema.parse(result.response);   // client-side re-validation (Asset 93)
       if (voiceOn && ttsBuf.trim()) this.tts.enqueue(ttsBuf, resp.speakingStyle);
       if (voiceOn && !streamed) this.tts.enqueue(resp.reply, resp.speakingStyle);
@@ -595,6 +622,7 @@ export class Companion {
       const notes: string[] = [];
       if (result.offline) notes.push('You chose the offline demo: this answer is scripted (not an AI) because the NEXUS server was unreachable.');
       if (!result.offline) this.recordConnection(result.meta.isLLM ? 'ok' : 'demo', result.meta.isLLM ? `${result.meta.model ?? result.meta.provider} answered` : 'Demo brain answered (not an LLM)');
+      if (!result.offline && this.snap.caps?.provider === 'local-demo') void this.refreshStatus().catch(() => {});   // the server answered: it is not offline
       if (result.meta.degraded) notes.push('The model output did not follow the format; showing text only and running no actions.');
       if (result.meta.droppedFields.length) notes.push(`Ignored invalid fields from the model: ${[...new Set(result.meta.droppedFields)].join(', ')}.`);
       if (research && result.meta.research.error) notes.push(result.meta.research.error);
@@ -619,7 +647,7 @@ export class Companion {
       if (token !== this.token) return;
       await this.performPlan(resp, token, asst.id, voiceOn);
     } catch (e) {
-      if (mouthTimer) { clearInterval(mouthTimer); this.engine.setSpeaking(false); }
+      if (mouthTimer) { clearInterval(mouthTimer); mouthTimer = null; if (token === this.token) this.engine.setSpeaking(false); }
       if (token !== this.token) return;
       const err = e instanceof ApiError ? e : new ApiError((e as Error).message, 'internal', false);
       if (err.code === 'cancelled') { this.patch(asst.id, { status: 'cancelled', stage: undefined }); return; }
@@ -896,6 +924,23 @@ export class Companion {
     return r === 'missing' ? 'unavailable' : 'played';
   }
   setPose(p: Pose) { this.wake(); this.engine.setPose(p); }
+  /**
+   * The one public way to show an expression (pages, voice commands, tests): setExpression('curious'),
+   * setExpression('thinking', { seconds: 3 }), setExpression(null) to clear. Requests go through the same priority-ordered
+   * expression controller as the system and the AI reply, so an urgent state face (error, listening) is never overridden.
+   */
+  setExpression(id: string | null, o: { intensity?: number; seconds?: number | null } = {}): boolean {
+    if (id === null) { this.expressions.release('user'); return true; }
+    const name = EXPRESSION_ALIASES[id.toLowerCase()] ?? id.toLowerCase();
+    if (!this.expressions.has(name)) return false;
+    this.wake();
+    return this.expressions.set('user', name, o.intensity ?? 1, o.seconds === undefined ? 4 : o.seconds, 2);
+  }
+  /** Spoken replies were switched off or on: say so (screen + screen reader) and acknowledge it with a small nod. */
+  acknowledgeVoice(on: boolean) {
+    this.notifications.push('info', on ? 'Spoken replies on.' : 'Spoken replies muted — replies are shown as text.', { react: false });
+    if (!this.settings.quietMode && !this.snap.busy && this.sm.state === 'idle') { this.expressions.set('reaction', on ? 'happy' : 'calm', 0.7, 1.2, 1); void this.runner.run({ skillId: 'nod', amplitude: 0.5 }, { tag: 'reaction' }).catch(() => {}); }
+  }
   showExpression(id: string) { this.wake(); return this.expressions.set('user', id, 1, 4); }
 
   /* ---------------- skills (preview → approve/reject) ---------------- */

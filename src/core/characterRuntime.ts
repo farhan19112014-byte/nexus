@@ -106,7 +106,7 @@ export class CharacterRuntime {
       this.body.channelGesture = this.walkId === null && gesturingFrom(v);
       // the chat box (the user typing, the reply streaming in) — never over a spoken reply or a visual/model it is attending
       const g = this.engine.getGaze(); const f = P.attending();
-      if (g.mode === 'chat' && !this.engine.isSpeaking() && (f === 'user' || f === 'aside')) P.lookScreen(g.x, g.y);
+      if ((g.mode === 'chat' || g.mode === 'cursor') && !this.engine.isSpeaking() && (f === 'user' || f === 'aside')) P.lookScreen(g.x, g.y);
     }
     const b = this.body.update(dt);
     for (const r of this.rigs) { r.setBody?.(b); r.apply(v); }

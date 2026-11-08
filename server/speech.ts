@@ -249,7 +249,7 @@ export async function synthesize(c: TtsConfig, text: string, signal: AbortSignal
 
 export async function transcribe(c: SttConfig, audio: Buffer, mime: string, signal: AbortSignal): Promise<string> {
   const st = sttStatus(c); if (!st.configured) throw new SpeechError(st.note, 503, 'not_configured');
-  const ext = /webm/.test(mime) ? 'webm' : /ogg/.test(mime) ? 'ogg' : /wav/.test(mime) ? 'wav' : /mp4|m4a|aac/.test(mime) ? 'm4a' : 'webm';
+  const ext = /webm/.test(mime) ? 'webm' : /ogg/.test(mime) ? 'ogg' : /wav/.test(mime) ? 'wav' : /mp4|m4a|aac/.test(mime) ? 'm4a' : /mpeg|mp3/.test(mime) ? 'mp3' : /flac/.test(mime) ? 'flac' : 'webm';
   const form = new FormData();
   form.append('file', new Blob([new Uint8Array(audio)], { type: mime }), `speech.${ext}`);
   form.append('model', c.model);

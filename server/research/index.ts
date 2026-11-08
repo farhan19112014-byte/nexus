@@ -10,7 +10,8 @@ import { SourceSchema, LIMITS, type Source } from '../../shared/schema';
 export interface ResearchProvider { id: string; configured(): { ok: boolean; note?: string }; search(q: string, signal: AbortSignal): Promise<Source[]> }
 export interface ResearchConfig { provider: 'none' | 'wikipedia' | 'searxng' | 'tavily'; searxngUrl: string; tavilyKey: string; wikipediaLang: string; wikipediaBase?: string; tavilyBase?: string }
 
-const strip = (s: string) => s.replace(/<[^>]*>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#0?39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim();
+/** tags out, then entities decoded once (&amp; last, so "&amp;lt;" stays the text "&lt;") */
+const strip = (s: string) => s.replace(/<[^>]*>/g, '').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 const UA = { 'user-agent': 'NEXUS-companion/2.0 (local app; research adapter)' };
 
 async function getJSON(url: string, init: RequestInit, signal: AbortSignal): Promise<unknown> {

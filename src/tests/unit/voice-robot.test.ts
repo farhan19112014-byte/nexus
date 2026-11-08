@@ -95,6 +95,21 @@ describe('[A119] server voice output', () => {
     const o = new ServerSpeechOutput('', okFetch([])); o.enqueue('Hello.'); await flush();
     o.pause(); expect(FakeAudio.all[0].paused).toBe(true); o.resume(); expect(FakeAudio.all[0].paused).toBe(false);
   });
+  it('[A119] resuming after a pause keeps the audio audible: the element\'s Web Audio graph is reused, never rebuilt or cut', async () => {
+    // like the browser: an element can get ONE media source, and once it has one it is heard only through the graph
+    const sources = new Map<unknown, number>(); let toSpeakers = 0;
+    class Node { out = new Set<Node>(); connect(n: Node | object) { if (n instanceof Node) this.out.add(n); else toSpeakers++; return n; } disconnect() { if (this.out.size === 0) toSpeakers = Math.max(0, toSpeakers - 1); this.out.clear(); } }
+    class An extends Node { fftSize = 512; get frequencyBinCount() { return this.fftSize / 2; } getByteTimeDomainData(b: Uint8Array) { b.fill(128); } getByteFrequencyData(b: Uint8Array) { b.fill(0); } }
+    class Ctx { sampleRate = 48000; destination = {}; resume() { return Promise.resolve(); } createAnalyser() { return new An(); }
+      createMediaElementSource(el: unknown) { if (sources.has(el)) throw new DOMException('already connected', 'InvalidStateError'); sources.set(el, 1); return new Node(); } }
+    vi.stubGlobal('AudioContext', Ctx);
+    const o = new ServerSpeechOutput('', okFetch([])); o.enqueue('Hello there.'); await flush();
+    expect(o.lipSync).toMatch(/loudness/); expect(toSpeakers).toBe(1);
+    o.pause(); await flush(); o.resume(); await flush();
+    expect(toSpeakers).toBe(1);                                    // still routed to the speakers after the pause
+    expect(o.lipSync).toMatch(/loudness/);                         // and still measured from the real audio (no fallback timer)
+    o.stop();
+  });
   it('[A119] when the user allows the fallback, a failed sentence is spoken by the browser voice, with one notice; the queue continues', async () => {
     let n = 0;
     const flaky = (async () => { n++; return n === 1 ? new Response(JSON.stringify({ error: 'rate limited' }), { status: 429 }) : new Response(new Uint8Array(500), { status: 200 }); }) as unknown as typeof fetch;

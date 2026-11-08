@@ -328,6 +328,8 @@ export interface ServerCapabilities {
   speech?: { tts: { configured: boolean; note: string }; stt: { configured: boolean; note: string } };
   promptVersion: string;
   runtimeConfig: boolean;
+  /** the server's own time limit for one AI reply (ms); the browser waits a little longer than this. Absent on older servers. */
+  timeoutMs?: number;
   /** a public server set up by its owner: the model and voice cannot be changed from the browser */
   hosted?: boolean;
   note?: string;
