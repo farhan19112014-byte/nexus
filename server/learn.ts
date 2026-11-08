@@ -8,7 +8,7 @@
  */
 import { z } from 'zod';
 import type { Source } from '../shared/schema';
-import { CATEGORIES, LEARN_LIMITS, ReflectionSchema, SkillBodySchema, terms, type Verification } from '../shared/learning';
+import { CATEGORIES, LEARN_LIMITS, orgOf, ReflectionSchema, SkillBodySchema, terms, type Verification } from '../shared/learning';
 import { aiJSON } from './aiTasks';
 import { ProviderError, type LLMProvider } from './providers/types';
 import { researchQuery, type ResearchProvider } from './research';
@@ -20,13 +20,8 @@ const HIGH = /(\.gov|\.gov\.[a-z]{2}|\.edu|\.ac\.[a-z]{2}|\.mil)$|(^|\.)(who\.in
 const LOW = /(^|\.)(reddit\.com|quora\.com|medium\.com|blogspot\.com|wordpress\.com|tiktok\.com|youtube\.com|facebook\.com|instagram\.com|x\.com|twitter\.com|pinterest\.com|fandom\.com|answers\.com)$/i;
 export const domainOf = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } };
 export const credibility = (domain: string): 'high' | 'medium' | 'low' => (HIGH.test(domain) ? 'high' : LOW.test(domain) ? 'low' : 'medium');
-/** sources from the same organisation count once (en.wikipedia.org and de.wikipedia.org are one source) */
-export const org = (domain: string) => {
-  const p = domain.split('.');
-  // country second-level suffixes (bbc.co.uk, abc.net.au, ox.ac.uk) keep three labels: otherwise every .co.uk site would count as one source
-  const sld = p.length >= 3 && /^[a-z]{2}$/.test(p.at(-1)!) && /^(co|com|ac|gov|org|net|edu|or|ne|go|gob|nic|mil)$/.test(p.at(-2)!);
-  return p.slice(sld ? -3 : -2).join('.');
-};
+/** sources from the same organisation count once (shared with the browser's knowledge merging) */
+export const org = orgOf;
 
 /* ------------------------------------------------------------------ research */
 export const ResearchRequestSchema = z.object({ question: z.string().trim().min(3).max(300), trigger: z.enum(['user', 'gap', 'background', 'recheck']).default('user') }).strict();

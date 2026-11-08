@@ -195,3 +195,13 @@ export function similarity(a: string, b: string): number {
   const A = new Set(terms(a)), B = new Set(terms(b)); if (!A.size || !B.size) return 0;
   let i = 0; for (const x of A) if (B.has(x)) i++; return i / (A.size + B.size - i);
 }
+
+/**
+ * The organisation behind a web domain, for "independent sources": subdomains count once (en./de.wikipedia.org), and
+ * country second-level suffixes keep three labels (bbc.co.uk and independent.co.uk are different organisations).
+ */
+export const orgOf = (domain: string) => {
+  const p = domain.split('.');
+  const sld = p.length >= 3 && /^[a-z]{2}$/.test(p.at(-1)!) && /^(co|com|ac|gov|org|net|edu|or|ne|go|gob|nic|mil)$/.test(p.at(-2)!);
+  return p.slice(sld ? -3 : -2).join('.');
+};

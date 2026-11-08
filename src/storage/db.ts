@@ -16,11 +16,14 @@ function req<T>(r: IDBRequest<T>): Promise<T> {
 }
 
 class IDBStore implements KV {
-  readonly persistent = true;
+  /** false once IndexedDB turned out to be unusable here (private mode, blocked storage): then nothing persists */
+  get persistent() { return !this.fallback; }
   private dbp: Promise<IDBDatabase>;
-  constructor(factory: IDBFactory, name: string) {
-    this.dbp = new Promise((res, rej) => {
-      const open = factory.open(name, DB_VERSION);
+  private fallback: MemoryKV | null = null;
+  constructor(private factory: IDBFactory, private name: string) { this.dbp = this.open(); }
+  private open(): Promise<IDBDatabase> {
+    const p = new Promise<IDBDatabase>((res, rej) => {
+      const open = this.factory.open(this.name, DB_VERSION);
       open.onupgradeneeded = () => {
         const db = open.result;
         if (!db.objectStoreNames.contains('skills')) db.createObjectStore('skills', { keyPath: 'id' });
@@ -35,17 +38,28 @@ class IDBStore implements KV {
         if (!db.objectStoreNames.contains('holoFiles')) db.createObjectStore('holoFiles');
         if (!db.objectStoreNames.contains('audit')) db.createObjectStore('audit', { keyPath: 'id', autoIncrement: true });
       };
-      open.onsuccess = () => { const db = open.result; db.onversionchange = () => db.close(); res(db); };
+      // another tab upgrading the database closes this connection: the next operation opens it again
+      open.onsuccess = () => { const db = open.result; db.onversionchange = () => { db.close(); this.dbp = this.open(); }; db.onclose = () => { this.dbp = this.open(); }; res(db); };
       open.onblocked = () => console.warn('[nexus] storage upgrade is waiting for another NEXUS tab to close.');
       open.onerror = () => rej(open.error);
     });
+    // IndexedDB exists but cannot be opened (private mode, blocked site data): keep working in memory and say so
+    p.catch(() => { if (!this.fallback) { this.fallback = new MemoryKV(); console.warn('[nexus] IndexedDB could not be opened — using in-memory storage (nothing will persist).'); } });
+    return p;
   }
-  private async tx(store: StoreName, mode: IDBTransactionMode) { return (await this.dbp).transaction(store, mode).objectStore(store); }
-  async get<T>(store: StoreName, key: IDBValidKey) { return req((await this.tx(store, 'readonly')).get(key)) as Promise<T | undefined>; }
-  async put<T>(store: StoreName, value: T, key?: IDBValidKey) { await req((await this.tx(store, 'readwrite')).put(value, key)); }
-  async del(store: StoreName, key: IDBValidKey) { await req((await this.tx(store, 'readwrite')).delete(key)); }
-  async all<T>(store: StoreName) { return req((await this.tx(store, 'readonly')).getAll()) as Promise<T[]>; }
-  async clear(store: StoreName) { await req((await this.tx(store, 'readwrite')).clear()); }
+  private async db(): Promise<IDBDatabase | null> { try { return await this.dbp; } catch { return null; } }
+  /** a write counts as saved only when its transaction has COMMITTED (a quota error aborts the transaction after the request itself succeeded) */
+  private async write(store: StoreName, f: (s: IDBObjectStore) => IDBRequest): Promise<void> {
+    const db = (await this.db())!;
+    const t = db.transaction(store, 'readwrite');
+    const done = new Promise<void>((res, rej) => { t.oncomplete = () => res(); t.onabort = () => rej(t.error ?? new Error('storage transaction aborted')); t.onerror = () => rej(t.error ?? new Error('storage write failed')); });
+    f(t.objectStore(store)); await done;
+  }
+  async get<T>(store: StoreName, key: IDBValidKey) { const db = await this.db(); if (!db) return this.fallback!.get<T>(store, key); return req(db.transaction(store, 'readonly').objectStore(store).get(key)) as Promise<T | undefined>; }
+  async put<T>(store: StoreName, value: T, key?: IDBValidKey) { const db = await this.db(); if (!db) return this.fallback!.put(store, value, key); await this.write(store, (s) => s.put(value, key)); }
+  async del(store: StoreName, key: IDBValidKey) { const db = await this.db(); if (!db) return this.fallback!.del(store, key); await this.write(store, (s) => s.delete(key)); }
+  async all<T>(store: StoreName) { const db = await this.db(); if (!db) return this.fallback!.all<T>(store); return req(db.transaction(store, 'readonly').objectStore(store).getAll()) as Promise<T[]>; }
+  async clear(store: StoreName) { const db = await this.db(); if (!db) return this.fallback!.clear(store); await this.write(store, (s) => s.clear()); }
 }
 
 export class MemoryKV implements KV {

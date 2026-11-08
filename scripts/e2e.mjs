@@ -506,8 +506,8 @@ try {
   // the 3D robot (three.js, ~730 KB) is a separate chunk that only loads when the 3D style is chosen; HOLOBUILD — its page,
   // its model engine and templates (holoInstance), its three.js add-ons (orbit controls, GLTF exporter) and its scene/file
   // helpers — loads only when the 3D workspace is opened: same category. Live Vision (camera code + its panel) likewise
-  // downloads only when its button is pressed.
-  const onDemand3d = /^(three\.module|Robot3D|presence-|GLTFLoader|GLTFExporter|OrbitControls|RoomEnvironment|scene-|io-|HoloBuild-|holoInstance-|VisionPanel-|liveVision-|vision-)/;
+  // downloads only when its button is pressed. The Motion Lab (/motions) is the 3D robot's full-body animation lab: same category.
+  const onDemand3d = /^(three\.module|Robot3D|presence-|GLTFLoader|GLTFExporter|OrbitControls|RoomEnvironment|scene-|io-|HoloBuild-|holoInstance-|VisionPanel-|liveVision-|vision-|MotionLab-)/;
   const all = readdirSync('dist/assets').filter((f) => f.endsWith('.js'));
   const js = all.filter((f) => !onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
   const js3d = all.filter((f) => onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
@@ -728,7 +728,9 @@ try {
   await rmHome.close();
   const mvHome = await ctx.newPage(); await mvHome.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' });
   const mvSamples = [];
-  for (let i = 0; i < 6; i++) { mvSamples.push(await mvHome.evaluate(() => document.querySelector('.hero [data-part="arm-R"]')?.getAttribute('transform') ?? '')); await mvHome.waitForTimeout(250); }
+  // the arm moves only during the greeting (which may be over by "network idle" on a busy machine); the idle sway of the head
+  // and body never stops — so the same parts are sampled as in the reduced-motion case above
+  for (let i = 0; i < 6; i++) { mvSamples.push(await mvHome.evaluate(() => { const g = document.querySelector('.hero [data-part="arm-R"]'); const h = document.querySelector('.hero [data-part="head"]') ?? g; const b = document.querySelector('.hero [data-part="body"]'); return `${g?.getAttribute('transform')}|${g?.style.transform}|${h?.getAttribute('transform')}|${b?.getAttribute('transform')}`; })); await mvHome.waitForTimeout(250); }
   await mvHome.close();
   check('[A101] [A88] reduced motion: the landing robot stays still (no automatic greeting or idle sway); without it, it moves', new Set(armSamples).size === 1 && /rotate|translate/.test(armSamples[0]) && new Set(mvSamples).size > 1, `${armSamples[0]} · moving samples: ${new Set(mvSamples).size}`);
 

@@ -27,10 +27,12 @@ export class SpeechInput {
     const rec = new this.C(); this.rec = rec; this.delivered = false;
     rec.lang = lang; rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
     let final = '';
-    rec.onstart = () => { this.listening = true; cb.onState(true); };
-    rec.onresult = (e) => { let interim = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) final += r[0].transcript; else interim += r[0].transcript; } cb.onInterim(`${final} ${interim}`.trim()); };
-    rec.onerror = (e) => { if (e.error !== 'aborted') cb.onError(e.error === 'network' && isDesktopApp() ? DESKTOP_NETWORK : ERR[e.error] ?? `Speech recognition error: ${e.error}`, e.error); };
-    rec.onend = () => { this.listening = false; cb.onState(false); if (this.rec === rec) this.rec = null; const t = final.trim(); if (t && !this.delivered) { this.delivered = true; cb.onFinal(t); } };
+    // an aborted or replaced recogniser may still fire its late events: they never reach the new session
+    const mine = () => this.rec === rec;
+    rec.onstart = () => { if (!mine()) return; this.listening = true; cb.onState(true); };
+    rec.onresult = (e) => { if (!mine()) return; let interim = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) final += r[0].transcript; else interim += r[0].transcript; } cb.onInterim(`${final} ${interim}`.trim()); };
+    rec.onerror = (e) => { if (!mine()) return; if (e.error !== 'aborted') cb.onError(e.error === 'network' && isDesktopApp() ? DESKTOP_NETWORK : ERR[e.error] ?? `Speech recognition error: ${e.error}`, e.error); };
+    rec.onend = () => { if (!mine()) return; this.rec = null; this.listening = false; cb.onState(false); const t = final.trim(); if (t && !this.delivered) { this.delivered = true; cb.onFinal(t); } };
     try { rec.start(); } catch (err) { cb.onError(`Could not start listening: ${(err as Error).message}`, 'start'); }
   }
   stop() { this.rec?.stop(); }

@@ -121,11 +121,13 @@ export class HoloController {
       this.status('ok', msg); this.d.announce?.(msg);
       return { kind: 'build', message: msg };
     } catch (e) {
-      end?.(ctl.signal.aborted ? 'cancelled' : 'failed');
+      // cancelled (Cancel, or a newer build replaced this one): no error, and the newer build keeps the status
+      if (ctl.signal.aborted) { end?.('cancelled'); return { kind: 'none', message: 'Cancelled.' }; }
+      end?.('failed');
       const msg = `Couldn't design “${subject}”: ${(e as Error).message}`;
       this.status('error', msg); this.d.experience?.({ type: 'build-failed', text: subject, detail: (e as Error).message });
       return { kind: 'error', message: msg };
-    } finally { if (this.abort === ctl) this.abort = null; this.set({ busy: false }); }
+    } finally { if (this.abort === ctl) { this.abort = null; this.set({ busy: false }); } }
   }
   cancel() { this.abort?.abort(); this.abort = null; this.set({ busy: false }); this.status('info', 'Cancelled.'); }
 
@@ -163,6 +165,8 @@ export class HoloController {
     const targets = [...new Set([...m.parts.map((p) => p.id), ...m.parts.map((p) => p.group).filter(Boolean)])].slice(0, HOLO_LIMITS.parts + 40);
     try {
       const res = await this.d.task('/api/holo/edit', { command: text.slice(0, 300), model: describeForAI(m, this.snap.selected), targets, selected: this.snap.selected }, ctl.signal) as { ops?: unknown[]; reply?: string; clarify?: string };
+      // the answer belongs to the model it was asked about: never apply it to another model opened meanwhile
+      if (ctl.signal.aborted || this.snap.model?.id !== m.id) { end?.('cancelled'); if (this.snap.model?.id !== m.id && !ctl.signal.aborted) this.status('info', 'The edit was for a model that is no longer open, so it was not applied.'); return { kind: 'none', message: 'Cancelled.' }; }
       if (res?.clarify) { end?.('done'); this.set({ clarify: { message: res.clarify, candidates: [] } }); this.status('info', res.clarify); return { kind: 'clarify', message: res.clarify }; }
       // re-validated on this side too (applyOps also ignores unknown targets)
       const { HoloOpSchema } = await import('../../shared/holo');
@@ -170,11 +174,12 @@ export class HoloController {
       if (!ops.length) throw new Error('the AI model returned no valid operations');
       const out = this.apply(ops, text); end?.('done'); return out;
     } catch (e) {
-      end?.(ctl.signal.aborted ? 'cancelled' : 'failed');
+      if (ctl.signal.aborted) { end?.('cancelled'); return { kind: 'none', message: 'Cancelled.' }; }
+      end?.('failed');
       const msg = `Couldn't apply that edit: ${(e as Error).message}`; this.status('error', msg);
       this.d.experience?.({ type: 'edit-failed', text, detail: (e as Error).message });
       return { kind: 'error', message: msg };
-    } finally { if (this.abort === ctl) this.abort = null; this.set({ busy: false }); }
+    } finally { if (this.abort === ctl) { this.abort = null; this.set({ busy: false }); } }
   }
   undo() { const prev = this.undoStack.pop(); if (!prev || !this.snap.model) return; this.redoStack.push(this.snap.model); this.set({ model: prev, dirty: true }); this.status('info', 'Undid the last change.'); }
   redo() { const next = this.redoStack.pop(); if (!next || !this.snap.model) return; this.undoStack.push(this.snap.model); this.set({ model: next, dirty: true }); this.status('info', 'Redid the change.'); }

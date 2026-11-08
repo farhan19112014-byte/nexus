@@ -11,7 +11,7 @@
  */
 import {
   AuditSchema, ExperienceSchema, KnowledgeSchema, LEARN_LIMITS, LearningSettingsSchema, ReflectionSchema, ResearchReportSchema, SkillBodySchema, WorkflowSkillSchema,
-  evaluateTest, retrieve, similarity, terms,
+  evaluateTest, orgOf, retrieve, similarity, terms,
   type Audit, type Experience, type Knowledge, type LearningSettings, type Reflection, type ResearchReport, type SkillBody, type SkillVersion, type TestResult, type Verification, type WorkflowSkill,
 } from '../../shared/learning';
 import type { KV } from '../storage/db';
@@ -180,7 +180,7 @@ export class LearningEngine {
       if (same && same.status !== 'rejected') {
         // the same claim found again: merge sources; it can move up to verified (never down without a contradiction)
         const merged = [...same.sources, ...sources.filter((s) => !same.sources.some((x) => x.url === s.url))].slice(0, 6).map((s, i) => ({ ...s, id: i + 1 }));
-        const orgs = new Set(merged.filter((s) => s.credibility !== 'low').map((s) => s.domain.split('.').slice(-2).join('.')));
+        const orgs = new Set(merged.filter((s) => s.credibility !== 'low').map((s) => orgOf(s.domain)));
         const status: Verification = c.status === 'conflicting' ? 'conflicting' : orgs.size >= 2 ? 'verified' : same.status === 'outdated' ? 'pending' : same.status;
         const upd = KnowledgeSchema.parse({ ...same, sources: merged, status, basis: status === 'verified' ? `Stated by ${orgs.size} independent sources (re-checked ${new Date(now).toLocaleDateString()}).` : c.basis, updatedAt: now, reviewAfter: review });
         this.knowledge = this.knowledge.map((k) => (k.id === same.id ? upd : k)); await this.d.kv.put('knowledge', upd); count[status === 'verified' ? 'verified' : status === 'conflicting' ? 'conflicting' : 'pending']++;
@@ -294,7 +294,7 @@ export class LearningEngine {
       const r = await this.d.task('/api/learn/skill/draft', { goal: base.body.description, current: base.body, problems: problems.slice(0, 6) }) as { body: unknown };
       const body = SkillBodySchema.parse(r.body); body.tests = [...base.body.tests, ...body.tests.filter((t) => !base.body.tests.some((b) => b.input === t.input))].slice(0, 6);   // old tests must still pass
       const v: SkillVersion = { version: Math.max(...s.versions.map((x) => x.version)) + 1, body, status: 'draft', createdAt: this.now(), createdBy: 'nexus', note: `Improvement for: ${problems.join('; ').slice(0, 250)}`, tests: null };
-      s.versions = [...s.versions, v].slice(-LEARN_LIMITS.versions); await this.saveSkill(s); await this.log('nexus', 'propose skill version', `${s.name} v${v.version}`, v.note);
+      s.versions = keepVersions([...s.versions, v], s.active); await this.saveSkill(s); await this.log('nexus', 'propose skill version', `${s.name} v${v.version}`, v.note);
       this.busy = null; this.changed(); return v;
     } catch (e) { this.busy = null; this.lastError = `Improvement failed: ${(e as Error).message}`; this.changed(); return null; }
   }
@@ -365,3 +365,10 @@ export class LearningEngine {
 }
 
 export const topicOf = (s: string) => terms(s).slice(0, 5).join(' ').slice(0, 80);
+
+/** At most LEARN_LIMITS.versions versions: the oldest go first, but never the active one (rollback and runs need it). */
+export function keepVersions<V extends { version: number }>(versions: V[], active: number | null | undefined): V[] {
+  const out = [...versions];
+  while (out.length > LEARN_LIMITS.versions) { const i = out.findIndex((v) => v.version !== active); if (i < 0) break; out.splice(i, 1); }
+  return out;
+}

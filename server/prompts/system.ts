@@ -168,16 +168,20 @@ Then, only if you have any other fields, a line containing exactly <<<META>>> fo
 
 /** Extract the first JSON object from model text (tolerates fences/prose). */
 export function extractJSON(text: string): unknown {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/.exec(text);
-  const body = fenced ? fenced[1] : text;
-  const start = body.indexOf('{');
-  if (start < 0) throw new Error('no JSON object in model output');
-  let depth = 0, inStr = false, esc = false;
-  for (let i = start; i < body.length; i++) {
-    const c = body[i];
-    if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
-    if (c === '"') inStr = true; else if (c === '{') depth++;
-    else if (c === '}' && --depth === 0) return JSON.parse(body.slice(start, i + 1));
+  // the whole output first (a JSON reply may itself contain ``` code blocks inside its strings), then each fenced block
+  const candidates = [text, ...[...text.matchAll(/```(?:json)?\s*([\s\S]*?)```/g)].map((m) => m[1])];
+  let lastErr: Error = new Error('no JSON object in model output');
+  for (const body of candidates) {
+    const start = body.indexOf('{');
+    if (start < 0) continue;
+    let depth = 0, inStr = false, esc = false, done = false;
+    for (let i = start; i < body.length && !done; i++) {
+      const c = body[i];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true; else if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) { done = true; try { return JSON.parse(body.slice(start, i + 1)); } catch (e) { lastErr = e as Error; } }
+    }
+    if (!done) lastErr = new Error('unterminated JSON object in model output');
   }
-  throw new Error('unterminated JSON object in model output');
+  throw lastErr;
 }

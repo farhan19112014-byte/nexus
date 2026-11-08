@@ -23,8 +23,13 @@ let seq = 0;
 export const msgId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
 
 export function buildContext(messages: UIMessage[], maxMessages: number, maxChars = 20000): ChatMessage[] {
-  const usable = messages.filter((m) => (m.role === 'user' || m.role === 'assistant') && (m.status === 'complete' || (m.role === 'user' && m.status !== 'cancelled')) && m.text.trim());
-  // drop user turns whose assistant reply failed/cancelled (except the newest pending user turn)
+  // drop user turns whose reply FAILED (an error; the newest, pending user turn always stays): otherwise an unanswered
+  // question is glued onto the next message and the model answers both. An interrupted turn stays — the next message
+  // often builds on it ("tell me a story" → "actually, a short one").
+  const unanswered = new Set(messages.filter((m) => m.role === 'assistant' && m.status === 'failed' && m.replyTo).map((m) => m.replyTo!));
+  const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.id;
+  const usable = messages.filter((m) => (m.role === 'user' || m.role === 'assistant') && (m.status === 'complete' || (m.role === 'user' && m.status !== 'cancelled')) && m.text.trim()
+    && !(m.role === 'user' && m.id !== lastUser && unanswered.has(m.id)));
   const out: ChatMessage[] = [];
   let chars = 0;
   for (let i = usable.length - 1; i >= 0 && out.length < maxMessages; i--) {

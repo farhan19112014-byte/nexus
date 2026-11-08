@@ -37,13 +37,20 @@ export function titleFor(messages: { role: string; text: string }[]): string {
 
 /** Converts live messages to their storable form (in-flight messages are saved as cancelled, never as complete). */
 export function toStored(messages: UIMessage[]): StoredMessage[] {
-  return messages.slice(-CHAT_LIMITS.messagesPerChat).map((m) => StoredMessageSchema.parse({
+  return messages.slice(-CHAT_LIMITS.messagesPerChat).map((m) => {
+    const full = StoredMessageSchema.safeParse(storable(m));
+    // one odd optional detail (an unusual source, a long error code) must not stop the whole chat from being saved
+    return full.success ? full.data : StoredMessageSchema.parse({ ...storable(m), sources: undefined, meta: undefined, error: m.error ? { message: m.error.message.slice(0, 500), code: String(m.error.code).slice(0, 40), retryable: !!m.error.retryable } : undefined });
+  });
+}
+function storable(m: UIMessage) {
+  return ({
     reminderId: m.reminderId, id: m.id, role: m.role, text: m.text.slice(0, CHAT_LIMITS.textChars), at: m.at, replyTo: m.replyTo,
     status: m.status === 'sending' || m.status === 'streaming' ? 'cancelled' : m.status,
     error: m.error ? { ...m.error, message: m.error.message.slice(0, 500) } : undefined,
     meta: m.meta ? { provider: m.meta.provider, model: m.meta.model, isLLM: m.meta.isLLM, latencyMs: m.meta.latencyMs, streamed: m.meta.streamed } : undefined,
     sources: m.sources?.slice(0, 10),
-  }));
+  });
 }
 
 export class ChatStore {
@@ -111,7 +118,7 @@ export class ChatStore {
     if (id === this.currentId) this.currentId = newId();
     this.changed();
   }
-  async removeAll() { for (const c of this.chats) await this.kv.del('chats', c.id); this.chats = []; this.currentId = newId(); this.changed(); }
+  async removeAll() { for (const c of this.chats) { this.deleted.add(c.id); await this.kv.del('chats', c.id); } this.deleted.add(this.currentId); this.chats = []; this.currentId = newId(); this.changed(); }
 
   /** Case-insensitive search over titles and message text; every word must appear somewhere in the chat. */
   search(q: string): ChatHit[] {
@@ -123,6 +130,7 @@ export class ChatStore {
       if (!words.every((w) => hay.includes(w))) continue;
       let matches = 0; for (const w of words) matches += hay.split(w).length - 1;
       const m = chat.messages.find((x) => x.text.toLowerCase().includes(words[0])) ?? chat.messages[0];
+      if (!m) { hits.push({ chat, snippet: '', matches }); continue; }   // a title-only match in an empty chat
       const at = Math.max(0, m.text.toLowerCase().indexOf(words[0]) - 40);
       hits.push({ chat, snippet: `${at ? '…' : ''}${m.text.slice(at, at + 120).replace(/\s+/g, ' ')}${m.text.length > at + 120 ? '…' : ''}`, matches });
     }

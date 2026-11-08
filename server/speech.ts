@@ -14,7 +14,9 @@ export interface TtsConfig { provider: 'none' | 'openai' | 'gemini' | 'elevenlab
 export interface SttConfig { provider: 'none' | 'openai'; baseUrl: string; apiKey: string; model: string; language: string }
 /** ElevenLabs values from the environment, used whenever ElevenLabs is (or becomes) the voice service */
 export interface ElevenEnv { apiKey: string; voice: string; model: string; baseUrl: string }
-export interface SpeechConfig { tts: TtsConfig; stt: SttConfig; eleven: ElevenEnv; /** shared secret the voice-clone notebook uses to register its (changing) link: VOICE_CLONE_KEY */ cloneKey: string }
+/** the OpenAI-compatible and voice-clone values from the environment, used when Settings switches to that service */
+export interface AltTtsEnv { openai: Pick<TtsConfig, 'baseUrl' | 'apiKey' | 'model' | 'voice' | 'format'>; clone: Pick<TtsConfig, 'baseUrl' | 'apiKey'> }
+export interface SpeechConfig { tts: TtsConfig; stt: SttConfig; eleven: ElevenEnv; alt?: AltTtsEnv; /** shared secret the voice-clone notebook uses to register its (changing) link: VOICE_CLONE_KEY */ cloneKey: string }
 
 /**
  * ElevenLabs voice configuration — the one place for model and delivery settings.
@@ -52,8 +54,12 @@ export function readSpeechConfig(env: NodeJS.ProcessEnv): SpeechConfig {
     : gem
     ? { provider: 'gemini', baseUrl: strip(env.TTS_BASE_URL || GEMINI_API_BASE), apiKey: env.TTS_API_KEY || env.GEMINI_API_KEY || env.GOOGLE_API_KEY || '', model: env.TTS_MODEL || GEMINI_TTS_DEFAULTS.model, voice: env.TTS_VOICE || GEMINI_TTS_DEFAULTS.voice, format: 'wav', style: env.TTS_STYLE ?? GEMINI_TTS_DEFAULTS.style }
     : { provider: tp === 'openai' ? 'openai' : 'none', baseUrl: ttsBase, apiKey: keyFor(env.TTS_API_KEY, ttsBase), model: env.TTS_MODEL ?? '', voice: env.TTS_VOICE ?? '', format: (['mp3', 'wav', 'opus'].includes(fmt) ? fmt : 'mp3') as TtsConfig['format'], style: env.TTS_STYLE ?? '' };
+  const alt: AltTtsEnv = {
+    openai: { baseUrl: ttsBase, apiKey: keyFor(env.TTS_API_KEY, ttsBase), model: env.TTS_MODEL ?? '', voice: env.TTS_VOICE ?? '', format: (['mp3', 'wav', 'opus'].includes(fmt) ? fmt : 'mp3') as TtsConfig['format'] },
+    clone: { baseUrl: strip(env.VOICE_CLONE_URL ?? ''), apiKey: env.VOICE_CLONE_CODE ?? '' },
+  };
   return {
-    eleven, tts, cloneKey: (env.VOICE_CLONE_KEY ?? '').trim(),
+    eleven, tts, alt, cloneKey: (env.VOICE_CLONE_KEY ?? '').trim(),
     stt: { provider: (env.STT_PROVIDER ?? 'none').toLowerCase() === 'openai' ? 'openai' : 'none', baseUrl: sttBase, apiKey: keyFor(env.STT_API_KEY, sttBase), model: env.STT_MODEL ?? '', language: env.STT_LANGUAGE ?? '' },
   };
 }
@@ -71,6 +77,11 @@ export function applySpeechRuntime(base: SpeechConfig, r: SpeechRuntime | undefi
   set(c.tts, 'provider', r.ttsProvider);
   if (c.tts.provider === 'gemini' && !wasGemini) Object.assign(c.tts, { baseUrl: GEMINI_API_BASE, model: GEMINI_TTS_DEFAULTS.model, voice: GEMINI_TTS_DEFAULTS.voice, style: GEMINI_TTS_DEFAULTS.style, format: 'wav', apiKey: '' });
   if (c.tts.provider === 'elevenlabs' && base.tts.provider !== 'elevenlabs' && r.ttsProvider === 'elevenlabs') Object.assign(c.tts, { baseUrl: base.eleven.baseUrl, model: base.eleven.model, voice: base.eleven.voice, apiKey: base.eleven.apiKey, format: 'mp3', style: '' });
+  // switching to another service starts from THAT service's settings (never the previous service's URL, key or model)
+  if (r.ttsProvider && r.ttsProvider !== base.tts.provider && base.alt) {
+    if (c.tts.provider === 'openai') Object.assign(c.tts, { ...base.alt.openai, style: '' });
+    if (c.tts.provider === 'clone') Object.assign(c.tts, { ...base.alt.clone, model: 'chatterbox', voice: 'your voice', format: 'wav', style: '' });
+  }
   set(c.tts, 'style', r.ttsStyle);
   set(c.tts, 'baseUrl', r.ttsBaseUrl && strip(r.ttsBaseUrl)); set(c.tts, 'model', r.ttsModel); set(c.tts, 'voice', r.ttsVoice); set(c.tts, 'apiKey', r.ttsApiKey);
   set(c.stt, 'provider', r.sttProvider); set(c.stt, 'baseUrl', r.sttBaseUrl && strip(r.sttBaseUrl)); set(c.stt, 'model', r.sttModel); set(c.stt, 'apiKey', r.sttApiKey); set(c.stt, 'language', r.sttLanguage);
