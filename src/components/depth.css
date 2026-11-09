@@ -64,7 +64,7 @@ input:not([type=checkbox]):not([type=range]):not([type=radio]):focus, textarea:f
 kbd { box-shadow: inset 0 1px 0 var(--d-edge), 0 1px 0 rgba(0, 0, 0, .4); }
 
 /* ---- surfaces: cards and list items sit above the page ---- */
-.card, .skill, .mem-list li, .caps li, .chat-list li, .rem, .brain, .sheet-cell, fieldset.field {
+.card, .skill, .mem-list li, .caps li, .chat-list li, .rem, .brain, fieldset.field {
   background-image: var(--d-sheen);
   box-shadow: var(--d-raise-1);
 }

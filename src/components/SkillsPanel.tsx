@@ -1,7 +1,8 @@
 /** Assets 39, 61, 67–70 — skill library, preview with validation details, approval, versions/rollback, feedback, lab, import/export. */
 import { Icon } from './Icon';
 import { useEffect, useRef, useState } from 'react';
-import { Robot, type RigHandle } from '../character/Robot';
+import type { RigHandle } from '../character/Robot';
+import { RobotAuto } from '../character3d/RobotAuto';
 import { companion, learning, memory, registry } from '../core/runtime';
 import { download, fmtDate, useSnapshot, useStore } from './hooks';
 import { USABLE, type SkillRecord, type FailureLog } from '../skills/registry';
@@ -35,7 +36,7 @@ export function PreviewStage() {
     <div className="card preview" role="dialog" aria-label={`Preview of ${p.name}`}>
       <div className="row"><b>Sandbox preview: {p.name}</b> <span className={`badge b-${v?.status}`}>{statusLabel(v?.status, v?.report?.ok)}</span><span className="spacer" /><button onClick={() => companion.closePreview()} aria-label="Close preview"><Icon name="close" /></button></div>
       <div className="preview-body">
-        <div className="preview-robot"><Robot ref={rig} environment="grid" effects={false} title={`Preview of ${p.name}`} /></div>
+        <div className="preview-robot"><RobotAuto ref={rig} environment="grid" effects={false} title={`Preview of ${p.name}`} /></div>
         <div className="preview-info">
           <div className="muted">Runs on an isolated copy of the character — no access to network, storage or secrets.</div>
           {def && v?.kind !== 'expression' && <div>Duration {def.duration}s · {def.tracks.length} tracks · speed ×{def.params.speed.default} · size ×{def.params.amplitude.default}</div>}

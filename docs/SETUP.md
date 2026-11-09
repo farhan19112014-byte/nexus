@@ -42,4 +42,3 @@ Microphone input uses the browser's Web Speech recognition (Chrome/Edge; Safari 
 | `npm test` | unit + integration tests (Vitest) |
 | `npm run test:e2e` | browser end-to-end tests (needs `npm run build`; set `CHROMIUM=/path/to/chrome` if Playwright's browser is not installed — `npx playwright install chromium`) |
 | `npm run report` | runs everything and regenerates `docs/RELEASE_REPORT.md` + the asset status shown in Status → Asset registry |
-| `/?sheet=1` | character sheet: every expression, pose and motion side by side |

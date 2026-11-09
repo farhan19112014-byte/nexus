@@ -22,7 +22,7 @@ export function About() {
           The aim is not to make the AI seem alive — it is to make the conversation easier to follow and more pleasant to have.</p>
         <h2>Robot, interface, server</h2>
         <ul>
-          <li><b>The robot</b> is a 3D model rendered in your browser with three.js (the classic 2D drawing appears only where 3D cannot run). An animation engine and a motion engine move it.</li>
+          <li><b>The robot</b> is a 3D model rendered in your browser with three.js. An animation engine and a motion engine move it.</li>
           <li><b>The interface</b> runs the conversation, the microphone and speech, and decides which state the robot is in from what is really happening.</li>
           <li><b>The server</b> keeps API keys private, applies usage limits and asks the configured AI service for each reply.</li>
         </ul>
@@ -110,7 +110,7 @@ export function NotFound() {
   return (
     <SitePage className="doc-page">
       <section className="site-wrap notfound">
-        <PreviewRobot face="confused" mode="auto" title={`${name} looking confused`} className="nf-robot" />
+        <PreviewRobot face="confused" title={`${name} looking confused`} className="nf-robot" />
         <div>
           <p className="eyebrow">404</p>
           <h1>This page doesn’t exist</h1>

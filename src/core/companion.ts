@@ -123,7 +123,7 @@ export class Companion {
     this.engine.on('recovered', (e) => this.diagnostics.log({ type: 'skill', code: 'watchdog_recovery', detail: `${e.skillId}: ${e.reason}` }));
   }
 
-  /** the 3D robot's presence layer — only while the 3D robot is on screen (the 2D robot has its own body language) */
+  /** the 3D robot's presence layer — only while the 3D robot is on screen */
   private pres() { return this.d.runtime.body.presence; }
   get settings(): Settings { return this.d.memory.settings; }
   subscribe = (f: () => void) => { this.listeners.add(f); return () => { this.listeners.delete(f); }; };
@@ -806,7 +806,7 @@ export class Companion {
     const run = async (steps: PlannedStep[], tag?: string) => { for (const s of steps) { if (seq.signal.aborted || token !== this.token) return; const r = await this.runner.run(s, { tag, signal: seq.signal }); this.set({ lastSkillId: this.runner.lastSkillId }); if (r === 'missing') this.notifications.push('info', `"${s.skillId}" is unavailable.`, { react: false }); } };
     if (plan.before.length) { this.go('acting'); await run(plan.before); }
     // 3D: pointing at the visual is done by the presence layer at the panel's REAL position — the canned fixed-angle
-    // point clips are dropped while a visual is on screen or on its way (2D keeps them)
+    // point clips are dropped while a visual is on screen or on its way
     // the generic speaking-gesture clips likewise give way to the presence layer's gestures planned from the words
     const P = this.pres(); const POINTS = ['point_right', 'point_left', 'point']; const TALK = ['explain', 'speak_beat'];
     const visualComing = !!resp.visual || !!this.snap.visual || this.settings.visuals === 'always';

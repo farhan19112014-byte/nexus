@@ -1,10 +1,8 @@
 /**
  * Asset 03 — Character Proportion System.
- * All geometry is in a fixed 400×480 viewBox. Anchor points (joints) are defined once
- * and reused by every pose, expression and animation; renderers never invent coordinates.
+ * Reference proportions in a fixed 400×480 front-view frame, used by the pose/skill consistency checks
+ * (Asset 08: hand over the eyes, unsupported stances) that every proposed animation is validated against.
  */
-export const VIEWBOX = { w: 400, h: 480 } as const;
-
 export const GEOMETRY = {
   groundY: 452,
   head: { w: 196, h: 160, cx: 200, cy: 138, neckAnchorY: 214 },
@@ -25,7 +23,7 @@ export const GEOMETRY = {
   cheek: { dx: 58, y: 166, rx: 11, ry: 6 },
 } as const;
 
-/** Permitted deformation ranges (Asset 03 / 08). The renderer clamps to these. */
+/** Permitted deformation ranges (Asset 03 / 08). */
 export const DEFORMATION = {
   squash: { min: -0.12, max: 0.12 },      // body vertical squash/stretch
   facingCompress: 0.18,                    // max horizontal compression at full 3/4 facing
@@ -39,7 +37,7 @@ export function armChain(side: 'L' | 'R') {
   return { sign: s, shoulder: { x: GEOMETRY.torso.cx + s * GEOMETRY.shoulder.dx, y: GEOMETRY.shoulder.y } };
 }
 
-/** SVG rotation (deg, clockwise) for an arm segment given the side-independent channel value. */
+/** Rotation (deg, clockwise, front view) for an arm segment given the side-independent channel value. */
 export const armAngle = (side: 'L' | 'R', deg: number) => (side === 'L' ? -deg : deg);
 
 /**

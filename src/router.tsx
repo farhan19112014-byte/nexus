@@ -5,11 +5,10 @@
 import { useEffect, useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from 'react';
 import { stripBase, withBase } from './webDemo';
 
-export type Route = 'home' | 'app' | 'holobuild' | 'learning' | 'about' | 'creator' | 'studio' | 'motions' | 'privacy' | 'sheet' | 'notfound';
+export type Route = 'home' | 'app' | 'holobuild' | 'learning' | 'about' | 'creator' | 'studio' | 'motions' | 'privacy' | 'notfound';
 export const PATHS = { home: '/', app: '/app', holobuild: '/holobuild', learning: '/learning', about: '/about', creator: '/creator', studio: '/studio', motions: '/motions', privacy: '/privacy' } as const;
 
-export function routeFor(pathname: string, search = ''): Route {
-  if (new URLSearchParams(search).has('sheet')) return 'sheet'; // character sheet (dev/reference)
+export function routeFor(pathname: string): Route {
   const p = pathname.replace(/\/+$/, '') || '/';
   if (p === '/') return 'home';
   if (p === '/app' || p === '/settings') return 'app';

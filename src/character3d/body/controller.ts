@@ -37,15 +37,7 @@ const maskW = (m: Mask, k: number): LayerWeights => { const w = zeroW(); for (co
 export const COMMIT: Record<string, [number, number]> = {
   backflip: [0.35, 1.7], forward_roll: [0.55, 1.6], jump: [0.35, 1.15], celebrate: [0.3, 1.2], surprised: [0.05, 0.4],
 };
-/** the engine's motion skills that have a full-body clip (skill id → clip id) */
-export const CLIP_FOR_SKILL: Record<string, string> = {
-  clap: 'clap', wave: 'wave', greeting: 'wave', farewell: 'wave', nod: 'nod', agree: 'nod', shake_head: 'shake_head', disagree: 'shake_head',
-  shrug: 'shrug', point: 'point', thumbs_up: 'thumbs_up', success: 'thumbs_up', speak_gestures: 'speak_gestures', look_around: 'look_around',
-  excited: 'excited', celebrate: 'celebrate', confused: 'confused', curious: 'curious', disappointed: 'disappointed', think_chin: 'think', think: 'think',
-  laugh: 'laugh', surprised: 'surprised', backflip: 'backflip', forward_roll: 'forward_roll', dance_sway: 'dance_sway', dance: 'dance',
-  jump: 'jump', squat: 'squat', balance: 'balance', turn_around: 'turn_around', sit: 'sit',
-  point_right: 'point_right', point_left: 'point_left', compare: 'compare', explain: 'explain',
-};
+export { CLIP_FOR_SKILL } from './clipMap';
 /** states whose gestures follow the voice: arms rest in pauses, move with the words */
 const SPEECH_STATES = new Set<BodyState>(['SPEAKING', 'EXPLAINING']);
 /** with the presence layer attached, these states gesture from meaning (presence) instead of a looping clip */

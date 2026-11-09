@@ -1,19 +1,17 @@
 /**
- * The real NEXUS robot (the 3D model where WebGL works, else the 2D rig — same engine, expressions and built-in
- * motions as the workspace) for the public pages. It runs its OWN small engine so the homepage never disturbs the companion's state, pauses
+ * The real 3D NEXUS robot (same engine, expressions and built-in motions as the workspace) for the public pages. It runs its OWN small engine so the homepage never disturbs the companion's state, pauses
  * when scrolled off-screen or when the tab is hidden, and plays nothing automatically under reduced motion.
  */
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { Indicator, RigHandle } from '../character/Robot';
 import { RobotAuto } from '../character3d/RobotAuto';
-import { effectiveStyle, type RobotStyle } from '../character3d/webgl';
 import { AnimationEngine, seeded } from '../animation/engine';
 import { ExpressionController } from '../expressions/expressionController';
 import { BUILTIN_EXPRESSIONS } from '../expressions/presets';
 import { BUILTIN_MOTIONS } from '../animation/builtinMotions';
 
 export interface PreviewHandle { play(motionId: string): Promise<boolean>; express(id: string, seconds?: number): boolean; state(id: DemoState): void; reset(): void; busy(): boolean }
-interface Props { title: string; greet?: boolean; face?: string; className?: string; mode?: RobotStyle; orbit?: number; onActivity?: (label: string | null) => void; onReady?: () => void }
+interface Props { title: string; greet?: boolean; face?: string; className?: string; orbit?: number; onActivity?: (label: string | null) => void; onReady?: () => void }
 
 /** The companion's states, shown on the public page with the same faces, lights and poses the app uses for them. */
 export const DEMO_STATES = [
@@ -34,7 +32,7 @@ export type DemoState = (typeof DEMO_STATES)[number]['id'];
 export const reducedMotionPreferred = () => typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 const MOTIONS = new Map(BUILTIN_MOTIONS.map((m) => [m.id, m]));
 
-export const PreviewRobot = forwardRef<PreviewHandle, Props>(function PreviewRobot({ title, greet, face, className, mode = 'auto', orbit, onActivity, onReady }, ref) {
+export const PreviewRobot = forwardRef<PreviewHandle, Props>(function PreviewRobot({ title, greet, face, className, orbit, onActivity, onReady }, ref) {
   const rig = useRef<RigHandle>(null);
   const box = useRef<HTMLDivElement>(null);
   const [parts] = useState(() => {
@@ -70,9 +68,8 @@ export const PreviewRobot = forwardRef<PreviewHandle, Props>(function PreviewRob
       if (d.face) expressions.set('system', d.face, 1, null, 3); else expressions.release('system');
       if (id === 'speaking') engine.setSpeaking(true);                    // procedural mouth movement — no audio on this page
       if (id === 'greeting' && !engine.reducedMotion) { const w = MOTIONS.get('wave'); if (w) void engine.play(w).done; }
-      // the 3D robot's motion engine gives each state its body language; the 2D fallback keeps the old waiting loop
+      // the 3D robot's motion engine gives each state its body language
       rig.current?.setMotion?.(id, engine.reducedMotion);
-      if (id === 'thinking' && !engine.reducedMotion && !is3d.current) { const w = MOTIONS.get('waiting'); if (w) void engine.play(w).done; }
       rig.current?.setIndicator(d.light);
       playing.current = null; onActivity?.(d.label);
     },
@@ -99,15 +96,13 @@ export const PreviewRobot = forwardRef<PreviewHandle, Props>(function PreviewRob
     const vis = () => (document.hidden ? stop() : start());
     document.addEventListener('visibilitychange', vis);
     start();
-    let greetT: ReturnType<typeof setTimeout> | null = null;
-    // hello: on the 2D fallback the classic greeting motion; the 3D robot greets with its own motion engine when ready
-    if (greet && !reduce && effectiveStyle(mode) === '2d') greetT = setTimeout(() => { const g = MOTIONS.get('greeting'); if (g) void engine.play(g).done; expressions.set('reaction', 'happy', 0.8, 2.4); }, 600);
-    return () => { stop(); io?.disconnect(); document.removeEventListener('visibilitychange', vis); if (greetT) clearTimeout(greetT); engine.stopAll(); };
-  }, [engine, expressions, greet, face, mode]);
+    // hello: the 3D robot greets with its own motion engine when ready (onReady3d)
+    return () => { stop(); io?.disconnect(); document.removeEventListener('visibilitychange', vis); engine.stopAll(); };
+  }, [engine, expressions, greet, face]);
 
   return (
     <div ref={box} className={className} onPointerMove={(e) => { const r = box.current!.getBoundingClientRect(); engine.lookAt(((e.clientX - r.left) / r.width) * 2 - 1, ((e.clientY - r.top) / r.height) * 2 - 1.1, 'user'); }} onPointerLeave={() => engine.lookAt(null)}>
-      <RobotAuto ref={rig} mode={mode} orbit={orbit} onReady3d={() => { is3d.current = true; engine.bodyIdle = false; const r = engine.reducedMotion; rig.current?.setMotion?.(greet && !r ? 'curious' : 'idle', r); if (greet && !r) { expressions.set('reaction', 'happy', 0.8, 2.6); const w = MOTIONS.get('wave'); if (w) setTimeout(() => { if (!picked.current) void engine.play(w).done; }, 500); setTimeout(() => { if (!picked.current) rig.current?.setMotion?.('idle', r); }, 2600); } onReady?.(); }} environment="transparent" effects accessories={{ antenna: true, sidePanels: true, chestLight: true, cheekLights: true, foreheadIndicator: true }} title={title} className="preview-svg" />
+      <RobotAuto ref={rig} orbit={orbit} onReady3d={() => { is3d.current = true; engine.bodyIdle = false; const r = engine.reducedMotion; rig.current?.setMotion?.(greet && !r ? 'curious' : 'idle', r); if (greet && !r) { expressions.set('reaction', 'happy', 0.8, 2.6); const w = MOTIONS.get('wave'); if (w) setTimeout(() => { if (!picked.current) void engine.play(w).done; }, 500); setTimeout(() => { if (!picked.current) rig.current?.setMotion?.('idle', r); }, 2600); } onReady?.(); }} environment="transparent" effects accessories={{ antenna: true, sidePanels: true, chestLight: true, cheekLights: true, foreheadIndicator: true }} title={title} className="preview-svg" />
     </div>
   );
 });

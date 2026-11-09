@@ -53,9 +53,9 @@ Materials (named, so they can be recoloured): `NX_Shell`, `NX_Limb`, `NX_Joint`,
 
 ## In the NEXUS app and website
 
-NEXUS is 3D wherever the browser has WebGL — on the home page and the robot page. three.js and the model load on demand.
-The classic 2D robot is kept only as a fallback: no WebGL at all (decided before three.js is downloaded), or the model fails
-to load (with a notice). Without graphics hardware (software WebGL) the 3D view draws fewer pixels so the page stays usable.
+NEXUS is 3D only — on the home page and the robot page. three.js and the model load on demand. The classic 2D robot
+has been removed: without WebGL (decided before three.js is downloaded) the robot's place shows a short note, and if the
+model fails to load a notice and "Retry 3D" are shown. Without graphics hardware (software WebGL) the 3D view draws fewer pixels so the page stays usable.
 While the model downloads, the stage says "Loading the 3D NEXUS…".
 
 ## Motion engine (`src/character3d/motion3d.ts`)

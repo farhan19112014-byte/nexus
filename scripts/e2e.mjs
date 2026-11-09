@@ -2,8 +2,9 @@
 // Usage: npm run build && npm run test:e2e   (set CHROMIUM=/path/to/chrome if Playwright's browser isn't installed)
 // Writes test-results/e2e.json, consumed by scripts/report.mjs.
 import { spawn } from 'node:child_process';
-import { mkdirSync, writeFileSync, readdirSync, statSync, rmSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readdirSync, rmSync, readFileSync } from 'node:fs';
 import { chromium } from 'playwright-core';
+import { measure as measureBundle, LIMITS as BUDGET } from './bundle-budget.mjs';
 import http from 'node:http';
 
 // Mock OpenAI-compatible streaming LLM + mock Wikipedia (no external network needed)
@@ -71,7 +72,8 @@ const check = (name, ok, detail = '') => { results.push({ name, ok: !!ok, detail
 const rc = 'test-results/e2e-runtime-config.json'; rmSync(rc, { force: true });
 const server = spawn(process.execPath, ['dist-server/index.js', '--serve-dist'], { env: { ...process.env, PORT: String(PORT), LLM_PROVIDER: 'demo', RUNTIME_CONFIG_PATH: rc, LOG_REQUESTS: 'false' }, stdio: ['ignore', 'pipe', 'pipe'] });
 await new Promise((res, rej) => { server.stdout.on('data', (d) => String(d).includes('listening') && res()); server.on('exit', (c) => rej(new Error(`server exited ${c}`))); setTimeout(() => rej(new Error('server start timeout')), 30000); });
-// the main browser has WebGL switched off, so it exercises the 2D FALLBACK path (DOM-inspectable rig); the 3D robot is tested in WebGL browsers below
+// the main browser has WebGL switched off: it exercises the app without the robot (NEXUS is 3D only; the robot's place
+// explains that WebGL is needed); the 3D robot itself is tested in WebGL browsers below
 const NO_GL = ['--disable-3d-apis'];
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM ?? '/opt/pw-browsers/chromium', args: NO_GL });
 const ctx = await browser.newContext({ viewport: { width: 1360, height: 860 } });
@@ -109,12 +111,13 @@ try {
   await fresh.close();
 
   await page.goto(URL, { waitUntil: 'networkidle' });
-  await page.waitForSelector('svg[role="img"]');
+  await page.waitForSelector('.stage .robot3d');
   await N(() => nexus.memory.updateSettings({ setupDone: true }));
   await N(() => nexus.memory.updateSettings({ greeted: true, voiceOutput: false, setupDone: true, layout: 'workspace' }));
   // A85 workspace
-  check('[A85] workspace: robot, conversation, composer and body controls are present', await page.locator('.stage svg[role=img]').count() === 1 && await page.locator('#composer').count() === 1 && await page.getByRole('toolbar', { name: 'Body controls' }).count() === 1);
-  check('[A01] [A98] journey: app opens and the 2D robot renders', await page.locator('[data-part="face"]').count() === 1);
+  check('[A85] workspace: robot, conversation, composer and body controls are present', await page.locator('.stage .robot3d').count() === 1 && await page.locator('#composer').count() === 1 && await page.getByRole('toolbar', { name: 'Body controls' }).count() === 1);
+  // this browser has no WebGL: NEXUS is 3D only, so the robot's place says why instead of drawing a 2D stand-in
+  check('[A01] [A98] journey: app opens; without WebGL the robot area explains that the 3D robot needs WebGL (no 2D robot)', await page.getByTestId('robot-unavailable').count() === 1 && /needs WebGL/.test(await page.getByTestId('robot-unavailable').textContent()) && await page.locator('.stage svg[role=img]').count() === 0);
   check('[A49] capability chip shows the demo brain honestly', (await page.locator('.top .badge').first().textContent()).toLowerCase().includes('not an llm'));
 
   // journey: send a message, receive a response, gestures + expression
@@ -129,8 +132,8 @@ try {
   const ex = await N(() => { nexus.companion.showExpression('surprised'); nexus.step(0.5); return nexus.expressions.current(); });
   check('[A98] journey: change an expression', ex === 'surprised');
   // the robot blinks at random moments: read the eye three times 0.3 s apart and use the widest (a blink lasts ~0.15 s)
-  const eyeH = await N(() => { const h = () => Number(document.querySelector('.stage [data-part="eye-L"] > rect:not([data-part])').getAttribute('height')); let m = 0; for (let i = 0; i < 3; i++) { nexus.step(0.3); m = Math.max(m, h()); } return m; });
-  check('[A04] facial components update in the DOM', eyeH > 40, `eye height ${eyeH}`);
+  const eyeH = await N(() => { let m = 0; for (let i = 0; i < 3; i++) { nexus.step(0.3); m = Math.max(m, nexus.engine.values['eyeL.open']); } return m; });
+  check('[A04] facial channels update (eye openness driven by the engine)', eyeH > 0.8, `eye open ${eyeH}`);
 
   // journey: interrupt a response (slow server)
   await page.route('**/api/chat', async (route) => { await new Promise((r) => setTimeout(r, 2500)); try { await route.continue(); } catch { /* aborted */ } });
@@ -158,7 +161,7 @@ try {
   check('[A63] proposal card appears for an invented motion', await page.locator('.card.proposal').last().isVisible());
   await page.locator('.card.proposal').last().getByRole('button', { name: 'Preview', exact: true }).click();
   await page.waitForTimeout(600);
-  check('[A67] preview shows the sandbox robot with parameters and validation', await page.locator('.card.preview svg[role=img]').count() === 1 && (await page.locator('.card.preview').textContent()).includes('passed validation'));
+  check('[A67] preview shows the sandbox robot with parameters and validation', await page.locator('.card.preview .robot3d').count() === 1 && (await page.locator('.card.preview').textContent()).includes('passed validation'));
   const pid = await N(() => nexus.companion.getSnapshot().preview.id);
   check('[A118] while previewing, the stage says so and the proposal is labelled "awaiting approval"', /previewing/.test(await page.getByTestId('previewing').textContent().catch(() => '')) && /awaiting approval/.test(await page.locator('.card.preview .badge').first().textContent()));
   await page.locator('.card.preview').getByRole('button', { name: 'Approve' }).click(); await page.waitForTimeout(400);
@@ -199,7 +202,7 @@ try {
   await page.getByLabel(/Quiet mode/).check();
   check('[A87] [A89] quiet mode persists and is applied', await N(() => nexus.memory.settings.quietMode && !nexus.expressions.allowPlayful));
   await page.getByLabel('Environment').selectOption('transparent');
-  check('[A09] [A87] environment setting changes the stage', await page.locator('.stage svg [data-part="env"]').count() === 0);
+  check('[A09] [A87] environment setting changes the stage', await page.locator('.stage-box.env-transparent').count() === 1);
   await page.getByLabel('High contrast').uncheck(); await page.getByLabel('Larger text').uncheck(); await page.getByLabel(/Quiet mode/).uncheck();
 
   // keyboard accessibility
@@ -227,14 +230,14 @@ try {
   // light mode: one click on the home page turns the site and the robot light; it is remembered; dark is the classic look
   {
     const tp = await ctx.newPage(); await tp.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await tp.waitForTimeout(600);
-    const look = () => tp.evaluate(() => ({ theme: document.documentElement.dataset.theme, skin: document.querySelector('.hero svg[role=img], svg[data-skin]')?.getAttribute('data-skin'), bg: getComputedStyle(document.body).backgroundColor, label: document.querySelector('[data-testid=theme-toggle]')?.getAttribute('aria-label') }));
+    const look = () => tp.evaluate(() => ({ theme: document.documentElement.dataset.theme, bg: getComputedStyle(document.body).backgroundColor, label: document.querySelector('[data-testid=theme-toggle]')?.getAttribute('aria-label') }));
     const before = await look();
     await tp.getByTestId('theme-toggle').first().click(); await tp.waitForTimeout(500); const lightNow = await look();
     await tp.reload({ waitUntil: 'networkidle' }); await tp.waitForTimeout(800); const afterReload = await look();
     await injectAxe(tp);
     const serious = await tp.evaluate(async () => (await (async () => { document.querySelectorAll('.reveal').forEach((e) => e.classList.add('in')); await new Promise((r) => setTimeout(r, 1000)); })(), await window.axe.run(document, { resultTypes: ['violations'] })).violations.filter((x) => x.impact === 'serious' || x.impact === 'critical').map((x) => `${x.id}: ${x.nodes[0]?.target}`));
     await tp.getByTestId('theme-toggle').first().click(); await tp.waitForTimeout(400); const backDark = await look();
-    check('[A123] light mode: the toggle switches the site and the robot to the white/light-blue version, is remembered after reload, and switches back', before.theme === 'dark' && before.skin === 'dark' && lightNow.theme === 'light' && lightNow.skin === 'light' && lightNow.bg !== before.bg && afterReload.theme === 'light' && afterReload.skin === 'light' && backDark.theme === 'dark' && backDark.skin === 'dark' && before.label === 'Switch to light mode', JSON.stringify({ before, lightNow, afterReload, backDark }));
+    check('[A123] light mode: the toggle switches the site to the white/light-blue version, is remembered after reload, and switches back', before.theme === 'dark' && lightNow.theme === 'light' && lightNow.bg !== before.bg && afterReload.theme === 'light' && backDark.theme === 'dark' && before.label === 'Switch to light mode', JSON.stringify({ before, lightNow, afterReload, backDark }));
     check('[A123] the light home page passes the axe audit (no serious/critical issues)', serious.length === 0, serious.join(' | '));
     await tp.close();
   }
@@ -249,6 +252,8 @@ try {
     await gp.waitForSelector('.robot3d[data-ready="1"]', { timeout: 40000 }).catch(() => null);
     const st = await gp.evaluate(() => ({ ready: document.querySelector('.robot3d')?.getAttribute('data-ready'), canvas: !!document.querySelector('.robot3d canvas'), svg: !!document.querySelector('.stage-box svg[role=img]'), toggle: !!document.querySelector('[data-testid=style-toggle]'), is3d: nexus.runtime.is3d, bodyIdle: nexus.engine.bodyIdle }));
     check('[A125] [A127] the robot page shows the 3D NEXUS by default (model loaded, WebGL canvas, no 2D robot, no 2D/3D switch)', st.ready === '1' && st.canvas && !st.svg && !st.toggle && st.is3d && !st.bodyIdle, JSON.stringify(st));
+    const lazyBody = await gp.evaluate(async () => { for (let i = 0; i < 50 && !nexus.runtime.bodyReady; i++) await new Promise((r) => setTimeout(r, 100)); return { ready: nexus.runtime.bodyReady, chunks: performance.getEntriesByType('resource').filter((e) => /\/body3d-/.test(e.name)).length }; });
+    check('[A99] [A125] the 3D body animation is downloaded once the 3D robot is shown, and drives it', lazyBody.ready && lazyBody.chunks >= 1, JSON.stringify(lazyBody));
     const box = await gp.locator('.robot3d').boundingBox();
     const shot = async () => (await gp.screenshot({ clip: box })).toString('base64');
     const still = await shot(); await gp.waitForTimeout(300);
@@ -443,16 +448,8 @@ try {
 
   // responsive layout
   const mobile = await browser.newPage({ viewport: { width: 375, height: 760 } }); await mobile.goto(URL, { waitUntil: 'networkidle' }); await mobile.evaluate(() => nexus.memory.updateSettings({ setupDone: true, layout: 'workspace' })); await mobile.waitForTimeout(600);
-  const ratio = (p) => p.evaluate(() => { const r = document.querySelector('.stage [data-part="torso"]').getBoundingClientRect(); const h = document.querySelector('.stage [data-part="head"]').getBoundingClientRect(); return { torso: r.width / r.height, head: h.width / h.height }; });
-  // compare proportions at rest (a gesture or head tilt in progress changes the bounding boxes)
-  // freeze both robots in the neutral pose (this check is about layout proportions, not animation)
-  const calm = (p) => p.evaluate(async () => { nexus.engine.idleEnabled = false; nexus.engine.reset(); for (const s of ['user', 'reaction', 'attention', 'system']) nexus.expressions.release(s); await new Promise((r) => setTimeout(r, 900)); });
-  await calm(page); await calm(mobile);
-  const desk = await ratio(page);
   const m = await mobile.evaluate(() => ({ overflow: document.documentElement.scrollWidth - window.innerWidth, composer: (document.querySelector('#composer')?.getBoundingClientRect().width ?? 0) > 200 }));
-  const mr = await ratio(mobile);
-  for (const p of [page, mobile]) await p.evaluate(() => { nexus.engine.idleEnabled = true; });
-  check('[A90] mobile width: no horizontal scroll, robot keeps its proportions, composer usable', m.overflow <= 1 && Math.abs(mr.torso - desk.torso) < 0.05 && Math.abs(mr.head - desk.head) < 0.12 && m.composer, JSON.stringify({ overflow: m.overflow, desk, mobile: mr }));
+  check('[A90] mobile width: no horizontal scroll, composer usable', m.overflow <= 1 && m.composer, JSON.stringify(m));
   await mobile.screenshot({ path: 'test-results/e2e-mobile.png' }); await mobile.close();
   const tablet = await browser.newPage({ viewport: { width: 820, height: 1100 } }); await tablet.goto(URL, { waitUntil: 'networkidle' });
   check('[A90] tablet width: no horizontal scroll', await tablet.evaluate(() => document.documentElement.scrollWidth - window.innerWidth) <= 1); await tablet.close();
@@ -465,7 +462,7 @@ try {
     await lp.waitForFunction(() => document.getAnimations().every((a) => a.playState !== 'running' || a.effect?.getTiming().iterations === Infinity), null, { timeout: 5000 }).catch(() => {});
     const r = await lp.evaluate(() => {
       const b = (s) => { const e = document.querySelector(s); return e ? e.getBoundingClientRect() : null; };
-      const robot = document.querySelector('.stage svg[role=img]').getBoundingClientRect(), msgs = b('.messages'), comp = b('#composer'), send = [...document.querySelectorAll('.composer button')].find((x) => x.textContent === 'Send').getBoundingClientRect();
+      const robot = document.querySelector('.stage .robot3d').getBoundingClientRect(), msgs = b('.messages'), comp = b('#composer'), send = [...document.querySelectorAll('.composer button')].find((x) => x.textContent === 'Send').getBoundingClientRect();
       const inView = (x) => x.top >= 0 && x.bottom <= innerHeight + 0.5 && x.left >= 0 && x.right <= innerWidth + 0.5;
       return { overflowX: document.documentElement.scrollWidth - innerWidth, overflowY: document.documentElement.scrollHeight - innerHeight, robotH: robot.height, robotW: robot.width, msgsH: msgs.height, composer: inView(comp) && inView(send), side: !!document.querySelector('.side'), drawer: !!document.querySelector('.side.drawer') };
     });
@@ -503,17 +500,12 @@ try {
   check('[A99] animation frame work stays small (avg < 4 ms, one loop)', perf.avgFrameMs < 4 && perf.frames > 30, `avg ${perf.avgFrameMs.toFixed(2)}ms max ${perf.maxFrameMs.toFixed(2)}ms`);
   const hiddenStops = await N(async () => { const f0 = nexus.runtime.frames; Object.defineProperty(document, 'hidden', { configurable: true, get: () => true }); document.dispatchEvent(new Event('visibilitychange')); await new Promise((r) => setTimeout(r, 400)); const f1 = nexus.runtime.frames; Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); document.dispatchEvent(new Event('visibilitychange')); return f1 - f0 <= 1; });
   check('[A99] rendering pauses while the tab is hidden', hiddenStops);
-  // the 3D robot (three.js, ~730 KB) is a separate chunk that only loads when the 3D style is chosen; HOLOBUILD — its page,
-  // its model engine and templates (holoInstance), its three.js add-ons (orbit controls, GLTF exporter) and its scene/file
-  // helpers — loads only when the 3D workspace is opened: same category. Live Vision (camera code + its panel) likewise
-  // downloads only when its button is pressed. The Motion Lab (/motions) is the 3D robot's full-body animation lab: same category.
-  const onDemand3d = /^(three\.module|Robot3D|presence-|GLTFLoader|GLTFExporter|OrbitControls|RoomEnvironment|scene-|io-|HoloBuild-|holoInstance-|VisionPanel-|liveVision-|vision-|MotionLab-)/;
-  const all = readdirSync('dist/assets').filter((f) => f.endsWith('.js'));
-  const js = all.filter((f) => !onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
-  const js3d = all.filter((f) => onDemand3d.test(f)).reduce((n, f) => n + statSync(`dist/assets/${f}`).size, 0);
-  check('[A99] bundle size is modest (< 900 KB of JS before gzip, excluding the on-demand 3D chunks)', js < 900 * 1024, `${Math.round(js / 1024)} KB (+ ${Math.round(js3d / 1024)} KB on-demand 3D)`);   // one unit (KiB) for the limit and the report
-  const loaded3d = await N(() => performance.getEntriesByType('resource').filter((e) => /three\.module|Robot3D/.test(e.name)).map((e) => e.name));
-  check('[A99] [A125] the 2D robot never downloads three.js', loaded3d.length === 0, loaded3d.join(', '));
+  // JS budget (scripts/bundle-budget.mjs): the total outside the on-demand chunks (3D robot, HOLOBUILD, Live Vision,
+  // Motion Lab), and the initial JS each main page really downloads (gzip) — the one that protects load time
+  const budget = measureBundle();
+  check(`[A99] bundle size is modest (< ${BUDGET.totalKiB} KB of JS before gzip excluding on-demand chunks; each main page's initial JS within its gzip budget)`, budget.ok, `${Math.round(budget.totalKiB)} KB (+ ${Math.round(budget.onDemandKiB)} KB on-demand) · ${Object.entries(budget.pages).map(([n, p]) => `${n} ${p ? Math.round(p.gzipKiB) : '?'}/${BUDGET.pageGzipKiB[n]} KB gz`).join(', ')}${budget.ok ? '' : ` · ${budget.problems.join('; ')}`}`);
+  const loaded3d = await N(() => performance.getEntriesByType('resource').filter((e) => /three\.module|Robot3D|body3d-/.test(e.name)).map((e) => e.name));
+  check('[A99] [A125] without WebGL, three.js and the 3D body animation are never downloaded', loaded3d.length === 0, loaded3d.join(', '));
   const bundle = readdirSync('dist/assets').filter((f) => f.endsWith('.js')).map((f) => readFileSync(`dist/assets/${f}`, 'utf8')).join('\n');
   // env-var NAMES may appear in help text; secret VALUES, auth-header code or .env contents must not
   const leaks = ['x-api-key', 'Bearer ', 'authorization', 'replace-me', 'process.env'].filter((k) => bundle.toLowerCase().includes(k.toLowerCase()));
@@ -558,7 +550,7 @@ try {
   const steps = {};
   await jp.goto(`${LLM}/`, { waitUntil: 'networkidle' }); await jp.waitForTimeout(500);                                     // 1
   steps.s2_identity = await jp.evaluate(() => getComputedStyle(document.body).backgroundColor) === 'rgb(5, 8, 13)';  // 2 (dark palette)
-  steps.s3_robot = await jp.locator('.hero svg[role=img] [data-part="face"]').count() === 1;                                  // 3
+  steps.s3_robot = await jp.locator('.hero .robot3d').count() === 1;                                  // 3
   await jp.getByRole('link', { name: /^Meet / }).first().click(); await jp.waitForSelector('#composer');                      // 4–5
   await J(() => nexus.memory.updateSettings({ setupDone: true, greeted: true, layout: 'workspace', voiceOutput: false }));
   steps.s6_name = (await jp.getByTestId('robot-name').textContent()) === 'NEXUS';                                              // 6
@@ -575,7 +567,7 @@ try {
   const prop = jp.locator('.card.proposal').last();
   steps.s19_validated = await prop.isVisible() && /proposed/.test(await prop.textContent()) && await J(() => nexus.registry.getRecord('casual_wave')?.versions.at(-1)?.report?.ok !== false);
   await prop.getByRole('button', { name: /Preview/ }).click(); await jp.waitForTimeout(400);                                   // 20
-  steps.s20_preview = await jp.locator('.card.preview svg[role=img]').count() === 1 && (await jp.locator('.card.preview').textContent()).includes('passed validation');
+  steps.s20_preview = await jp.locator('.card.preview .robot3d').count() === 1 && (await jp.locator('.card.preview').textContent()).includes('passed validation');
   await prop.getByRole('button', { name: 'Approve' }).click(); await jp.waitForTimeout(400);                                   // 21–22
   steps.s22_saved = await J(() => { const r = nexus.registry.getRecord('casual_wave'); return !!r && r.versions.some((v) => v.status === 'approved'); });
   await J(() => { void nexus.companion.playSkill('casual_wave'); });
@@ -654,16 +646,16 @@ try {
   // landing page (same browser profile → same saved name)
   const home = await ctx.newPage(); const homeErrors = []; home.on('pageerror', (e) => homeErrors.push(e.message));
   await home.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' }); await home.waitForTimeout(700);
-  const hero = await home.evaluate(() => ({ h1: document.querySelector('h1')?.textContent, robots: document.querySelectorAll('.hero svg[role=img] [data-part="face"]').length, pill: document.querySelector('.status-pill')?.textContent ?? '', cta: [...document.querySelectorAll('.hero a')].map((a) => a.textContent?.trim()), lead: document.querySelector('.lead')?.textContent ?? '' }));
-  check('[A101] landing: headline, the real robot rig, live status from /api/status, and the custom name', /Intelligence, with a presence/.test(hero.h1) && hero.robots === 1 && /Demo brain — not an LLM/.test(hero.pill) && hero.cta.includes('Meet Nova') && hero.lead.includes('Nova is your NEXUS robot'), JSON.stringify(hero));
+  const hero = await home.evaluate(() => ({ h1: document.querySelector('h1')?.textContent, robots: document.querySelectorAll('.hero .robot3d').length, pill: document.querySelector('.status-pill')?.textContent ?? '', cta: [...document.querySelectorAll('.hero a')].map((a) => a.textContent?.trim()), lead: document.querySelector('.lead')?.textContent ?? '' }));
+  check('[A101] landing: headline, the robot area, live status from /api/status, and the custom name', /Intelligence, with a presence/.test(hero.h1) && hero.robots === 1 && /Demo brain — not an LLM/.test(hero.pill) && hero.cta.includes('Meet Nova') && hero.lead.includes('Nova is your NEXUS robot'), JSON.stringify(hero));
   await home.getByRole('button', { name: 'Listening' }).click(); await home.waitForTimeout(400);
-  check('[A101] the state preview works on the 2D fallback too (no WebGL in this browser)', (await home.getByRole('status').filter({ hasText: 'Now showing' }).textContent().catch(() => '')).includes('Listening') && await home.evaluate(() => document.querySelector('#robot svg[role=img]')?.getAttribute('data-core') === 'listening'));
+  check('[A101] the state preview still explains each state without WebGL (no 2D robot in this browser)', (await home.getByRole('status').filter({ hasText: 'Now showing' }).textContent().catch(() => '')).includes('Listening') && await home.evaluate(() => !document.querySelector('#robot svg[role=img]') && !!document.querySelector('#robot [data-testid=robot-unavailable]')));
   await home.getByRole('button', { name: 'Reset' }).click();
   await home.getByRole('link', { name: 'Explore the technology' }).click(); await home.waitForTimeout(1600);
   check('[A102] "Explore the technology" scrolls to the How NEXUS works section and moves focus there', await home.evaluate(() => document.activeElement?.id === 'technology' && document.getElementById('technology').getBoundingClientRect().top < 140));
   await home.evaluate(() => { window.__noReload = true; });
   await home.getByRole('link', { name: 'Meet Nova' }).first().click(); await home.waitForSelector('#composer');
-  check('[A101] [A102] hero CTA opens the robot workspace without a page reload', home.url().endsWith('/app') && await home.evaluate(() => window.__noReload === true && !!document.querySelector('.stage svg[role=img]')));
+  check('[A101] [A102] hero CTA opens the robot workspace without a page reload', home.url().endsWith('/app') && await home.evaluate(() => window.__noReload === true && !!document.querySelector('.stage .robot3d')));
   await home.locator('#composer').fill('wave'); await home.locator('#composer').press('Enter');
   await home.waitForFunction(() => document.querySelectorAll('.msg.assistant').length > 0 && !nexus.companion.getSnapshot().busy, null, { timeout: 15000 });
   const msgCount = await home.locator('.msg').count();
@@ -696,7 +688,7 @@ try {
   {
     const bp = await browser.newPage(); await bp.goto(`${ORIGIN}/`); const seen = await bp.evaluate(() => !!document.getElementById('boot'));
     await bp.waitForSelector('#boot', { state: 'detached', timeout: 10000 }).catch(() => {});
-    const r = await bp.evaluate(() => ({ ms: Number(document.documentElement.dataset.bootMs), robot: !!document.querySelector('.hero svg[role=img], .hero .robot3d[data-ready]') }));
+    const r = await bp.evaluate(() => ({ ms: Number(document.documentElement.dataset.bootMs), robot: !!document.querySelector('.hero .robot3d[data-ready]') }));
     await bp.reload(); await bp.waitForSelector('#boot', { state: 'detached', timeout: 10000 }).catch(() => {});
     const again = await bp.evaluate(() => Number(document.documentElement.dataset.bootMs));
     check('[A126] startup transition: shown on a first visit and cleared once the page is ready (about 0.6–1.5 s); a reload in the same tab is not held', seen && r.robot && r.ms >= 500 && r.ms <= 2200 && again < r.ms, `first ${r.ms} ms · reload ${again} ms`);
@@ -720,19 +712,6 @@ try {
     await rp.close();
   }
   check('[A101] [A90] public pages have no horizontal scroll from 320 to 1440 px', over.length === 0, over.join(' '));
-
-  // reduced motion: the hero robot does not greet or sway
-  const rmHome = await ctx.newPage(); await rmHome.emulateMedia({ reducedMotion: 'reduce' }); await rmHome.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' });
-  const armSamples = [];
-  for (let i = 0; i < 6; i++) { armSamples.push(await rmHome.evaluate(() => { const g = document.querySelector('.hero [data-part="arm-R"]'); const h = document.querySelector('.hero [data-part="head"]') ?? g; return `${g?.getAttribute('transform')}|${g?.style.transform}|${h?.getAttribute('transform')}`; })); await rmHome.waitForTimeout(250); }
-  await rmHome.close();
-  const mvHome = await ctx.newPage(); await mvHome.goto(`${ORIGIN}/`, { waitUntil: 'networkidle' });
-  const mvSamples = [];
-  // the arm moves only during the greeting (which may be over by "network idle" on a busy machine); the idle sway of the head
-  // and body never stops — so the same parts are sampled as in the reduced-motion case above
-  for (let i = 0; i < 6; i++) { mvSamples.push(await mvHome.evaluate(() => { const g = document.querySelector('.hero [data-part="arm-R"]'); const h = document.querySelector('.hero [data-part="head"]') ?? g; const b = document.querySelector('.hero [data-part="body"]'); return `${g?.getAttribute('transform')}|${g?.style.transform}|${h?.getAttribute('transform')}|${b?.getAttribute('transform')}`; })); await mvHome.waitForTimeout(250); }
-  await mvHome.close();
-  check('[A101] [A88] reduced motion: the landing robot stays still (no automatic greeting or idle sway); without it, it moves', new Set(armSamples).size === 1 && /rotate|translate/.test(armSamples[0]) && new Set(mvSamples).size > 1, `${armSamples[0]} · moving samples: ${new Set(mvSamples).size}`);
 
   // reset personalization (with confirmation) brings the default name back
   await page.getByRole('tab', { name: 'Settings' }).click();
@@ -806,9 +785,9 @@ try {
     const R = (fn, arg) => rv.evaluate(fn, arg);
     await rv.goto(`http://127.0.0.1:${LLM_PORT}/app`, { waitUntil: 'networkidle' });
     await R(() => nexus.memory.updateSettings({ setupDone: true, greeted: true })); await rv.reload({ waitUntil: 'networkidle' }); await rv.waitForTimeout(800);
-    const fit = async (pg) => pg.evaluate(() => { const svg = document.querySelector('.robot-view svg[role=img]'); const head = svg?.querySelector('[data-part="antenna"]')?.getBoundingClientRect(); const feet = [...svg.querySelectorAll('[data-part^="leg-"]')].map((l) => l.getBoundingClientRect().bottom); return { layout: nexus.memory.settings.layout, top: head?.top ?? -1, bottom: Math.max(...feet), vh: innerHeight, overflow: document.documentElement.scrollWidth - innerWidth, feed: !!document.querySelector('.messages'), mic: !!document.querySelector('.mic-btn'), voice: nexus.companion.voiceOut?.engineName, input: nexus.companion.voiceIn?.kind }; });
+    const fit = async (pg) => pg.evaluate(() => { const box = document.querySelector('.robot-view .robot3d')?.getBoundingClientRect(); return { layout: nexus.memory.settings.layout, top: box?.top ?? -1, bottom: box?.bottom ?? Infinity, vh: innerHeight, overflow: document.documentElement.scrollWidth - innerWidth, feed: !!document.querySelector('.messages'), mic: !!document.querySelector('.mic-btn'), voice: nexus.companion.voiceOut?.engineName, input: nexus.companion.voiceIn?.kind }; });
     const f1 = await fit(rv);
-    check('[A119] robot view is the default: the whole robot (antenna to feet) is visible, voice controls only, no chat feed or side panel', f1.layout === 'robot' && f1.top >= 0 && f1.bottom <= f1.vh && f1.overflow <= 1 && !f1.feed && f1.mic && !(await rv.locator('aside.side').count()), JSON.stringify(f1));
+    check('[A119] robot view is the default: the whole robot area is visible, voice controls only, no chat feed or side panel', f1.layout === 'robot' && f1.top >= 0 && f1.bottom <= f1.vh && f1.overflow <= 1 && !f1.feed && f1.mic && !(await rv.locator('aside.side').count()), JSON.stringify(f1));
     check('[A119] with a speech service configured, replies use the server voice and voice input uses server transcription', f1.voice === 'server' && f1.input === 'server', `${f1.voice} / ${f1.input}`);
     // spoken reply: real audio from the (mock) speech API; the mouth follows the audio level, including the silent gap
     const samples = [];

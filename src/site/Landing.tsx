@@ -120,7 +120,7 @@ export default function Landing() {
               <span className="ring r1" aria-hidden /><span className="ring r2" aria-hidden />
               <div className="stage-light" aria-hidden />
               <div className="stage-floor" aria-hidden />
-              <PreviewRobot greet mode="auto" title={`${name}, the 3D NEXUS robot, waving hello`} className="hero-robot" />
+              <PreviewRobot greet title={`${name}, the 3D NEXUS robot, waving hello`} className="hero-robot" />
               <span className="hud hud-a" aria-hidden><i />Live 3D render</span>
               <span className="hud hud-b" aria-hidden>{BUILTIN_EXPRESSIONS.length} expressions · {BUILTIN_MOTIONS.length} motions</span>
             </div>
@@ -143,7 +143,7 @@ export default function Landing() {
             <div className="stage-floor" aria-hidden />
             <span className="tag tag-tl" aria-hidden>NEXUS · live 3D</span>
             <span className="tag tag-tr" aria-hidden>{(activity ?? 'Idle').toUpperCase()}</span>
-            <PreviewRobot ref={preview} mode="auto" orbit={orbit} onActivity={onActivity} title={`${name} in 3D, showing its states`} className="hero-robot" />
+            <PreviewRobot ref={preview} orbit={orbit} onActivity={onActivity} title={`${name} in 3D, showing its states`} className="hero-robot" />
             <ul className="callouts" aria-hidden={!front}>
               {CALLOUTS.map((c) => <li key={c.k} className={`co co-${c.side}`} style={{ '--x': `${c.x}%`, '--y': `${c.y}%` } as CSSProperties}><i /><span><b>{c.k}</b>{c.d}</span></li>)}
             </ul>

@@ -6,7 +6,7 @@ Made by Muhammad Farhan Khan.
 
 <p align="center"><img src="docs/images/robot-view.png" alt="NEXUS: the robot fills the window, with captions and a voice dock below" width="760"></p>
 
-NEXUS is a voice-first AI companion. The interface **is** an original, fully articulated robot — a 3D model where the browser supports it, the classic 2D drawing elsewhere: it listens, thinks,
+NEXUS is a voice-first AI companion. The interface **is** an original, fully articulated 3D robot: it listens, thinks,
 speaks and gestures in step with what the AI is actually doing. Conversation comes from a real language model through
 a small local server that keeps every API key out of the browser.
 

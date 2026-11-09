@@ -7,11 +7,32 @@ import { ExpressionController } from '../expressions/expressionController';
 import type { RigHandle, Indicator } from '../character/Robot';
 import type { Channel } from '../../shared/channels';
 import type { MotionState } from '../character3d/motion3d';
-import { BodyController, CLIP_FOR_SKILL } from '../character3d/body/controller';
+import type { BodyController, BodyOutput } from '../character3d/body/controller';
+import { CLIP_FOR_SKILL } from '../character3d/body/clipMap';
 import type { BodyState } from '../character3d/body/clips';
 import type { Presence } from '../character3d/body/presence';
-import { gesturingFrom } from '../character3d/motion3d';
 import { attention } from '../character3d/attention';
+
+/** What the runtime and the Motion Lab use of the 3D body controller. */
+export type BodyLike = Pick<BodyController, 'play' | 'release' | 'stop' | 'setState' | 'setSpeech' | 'update' | 'busy' | 'current' | 'presence' | 'reduced' | 'channelGesture'>;
+/**
+ * Stands in for the 3D body controller until its code has loaded (it is a separate chunk that only the 3D robot needs).
+ * It moves nothing, and it remembers clips the engine started meanwhile so they can still play once the real one is in.
+ */
+export class PendingBody implements BodyLike {
+  presence: Presence | null = null; reduced = false; channelGesture = false;
+  readonly pending: { clip: string; o: { engineId?: number; speed?: number; hold?: boolean } }[] = [];
+  private state: BodyState = 'IDLE';
+  play(clip: string, o: { engineId?: number; speed?: number; hold?: boolean } = {}) { this.pending.push({ clip, o }); if (this.pending.length > 8) this.pending.shift(); return true; }
+  release(engineId?: number) { this.drop(engineId); }
+  stop(engineId?: number) { this.drop(engineId); }
+  private drop(engineId?: number) { for (let i = this.pending.length - 1; i >= 0; i--) if (engineId === undefined || this.pending[i].o.engineId === engineId) this.pending.splice(i, 1); }
+  setState(s: BodyState) { this.state = s; }
+  setSpeech() { /* nothing to animate yet */ }
+  update(): BodyOutput { return { layers: [], active: false, action: null, state: this.state, accent: 0 } as unknown as BodyOutput; }
+  busy() { return false; }
+  current() { return null; }
+}
 
 /** NEXUS's interaction state → the full-body state loop (the expression adds HAPPY / SURPRISED while otherwise idle) */
 export function bodyStateFor(m: MotionState, expression: string | null): BodyState {
@@ -40,10 +61,32 @@ export class CharacterRuntime {
   private lastIdle: string | null = null;
   onFrameError: ((e: unknown) => void) | null = null;
 
-  /** the 3D robot's full-body animation controller (states + explicit actions); the 2D rig ignores its output */
-  readonly body = new BodyController();
+  /**
+   * the 3D robot's full-body animation controller (states + explicit actions).
+   * A PendingBody until loadBody() has fetched the real one (only when the 3D robot is shown).
+   */
+  body: BodyLike = new PendingBody();
+  private gesturing: ((v: Record<string, number>) => boolean) | null = null;
+  private bodyLoad: Promise<boolean> | null = null;
+  /** true once the real body controller is in place */
+  get bodyReady() { return !(this.body instanceof PendingBody); }
+  /**
+   * Loads the 3D body-animation chunk once (later calls share the same promise) and swaps it in, carrying over the
+   * presence layer, the settings and any clip the engine started while it was loading. A failed download leaves the
+   * placeholder in place (the robot simply has no full-body clips) and can be tried again.
+   */
+  loadBody(): Promise<boolean> {
+    return (this.bodyLoad ??= import('../character3d/body3d').then((m) => {
+      const old = this.body as PendingBody; const real = new m.BodyController();
+      real.presence = old.presence; real.reduced = old.reduced; real.channelGesture = old.channelGesture;
+      const live = new Set(this.engine.active().filter((a) => a.phase !== 'out').map((a) => a.id));
+      for (const p of old.pending) if (p.o.engineId === undefined || live.has(p.o.engineId)) real.play(p.clip, p.o);
+      this.body = real; this.gesturing = m.gesturingFrom; this.kick();
+      return true;
+    }).catch((e) => { this.bodyLoad = null; console.warn('[body] the 3D body animation could not be loaded', e); return false; }));
+  }
   /** the 3D robot's presence layer (idle life, attention, meaningful gestures, walking); attached while 3D is shown */
-  /** loaded with the 3D view (its own chunk: the 2D robot never downloads it) */
+  /** loaded with the 3D view (its own chunk: pages without the 3D robot never download it) */
   presence: Presence | null = null;
   private presenceLoad: Promise<void> | null = null;
   private loadPresence() {
@@ -71,13 +114,13 @@ export class CharacterRuntime {
   }
   attach(r: RigHandle) { this.rigs.add(r); r.setIndicator(this.indicator); r.setMotion?.(this.motion, this.engine.reducedMotion); r.apply(this.engine.values); return () => { this.rigs.delete(r); }; }
   setIndicator(i: Indicator) { this.indicator = i; this.rigs.forEach((r) => r.setIndicator(i)); }
-  /** body-language state for the 3D robot's motion engine (ignored by the 2D rig) */
+  /** body-language state for the 3D robot's motion engine */
   motion: MotionState = 'idle';
   private motionKey = '';
   setMotion(m: MotionState) { const key = `${m}|${this.engine.reducedMotion}`; if (key === this.motionKey) return; this.motionKey = key; this.motion = m; this.rigs.forEach((r) => r.setMotion?.(m, this.engine.reducedMotion)); this.kick(); }
   /** true while the 3D robot is on screen: its motion engine replaces the 2D-style idle sway of the animation engine */
   is3d = false;
-  set3d(on: boolean) { this.is3d = on; this.engine.bodyIdle = !on; this.body.presence = on ? this.presence : null; if (on && !this.presence) void this.loadPresence(); this.motionKey = ''; this.rigs.forEach((r) => r.setMotion?.(this.motion, this.engine.reducedMotion)); }
+  set3d(on: boolean) { this.is3d = on; this.engine.bodyIdle = !on; this.body.presence = on ? this.presence : null; if (on) void this.loadBody(); if (on && !this.presence) void this.loadPresence(); this.motionKey = ''; this.rigs.forEach((r) => r.setMotion?.(this.motion, this.engine.reducedMotion)); }
 
   private targetT = 0;
   /** a page target asked for attention (a new visual, a selected HOLOBUILD part): look — and present it while speaking */
@@ -103,7 +146,7 @@ export class CharacterRuntime {
         for (const r of this.rigs) { const t = r.attentionTargets?.(); if (!t) continue; for (const id of ['user', 'visual', 'holo'] as const) P.setTarget(id, t[id] ?? null); break; }
       }
       if (this.pendingFocus && P.hasTarget(this.pendingFocus)) { P.attend(this.pendingFocus, 2.6, this.engine.isSpeaking()); this.pendingFocus = null; }
-      this.body.channelGesture = this.walkId === null && gesturingFrom(v);
+      this.body.channelGesture = this.walkId === null && !!this.gesturing?.(v);
       // the chat box (the user typing, the reply streaming in) — never over a spoken reply or a visual/model it is attending
       const g = this.engine.getGaze(); const f = P.attending();
       if ((g.mode === 'chat' || g.mode === 'cursor') && !this.engine.isSpeaking() && (f === 'user' || f === 'aside')) P.lookScreen(g.x, g.y);

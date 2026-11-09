@@ -24,7 +24,6 @@ const Landing = lazy(() => import('./site/Landing'));
 const App = lazy(() => import('./components/App'));
 const HoloBuild = lazy(() => import('./holobuild/HoloBuild'));
 const LearningPage = lazy(() => import('./learning/LearningPage'));
-const CharacterSheet = lazy(() => import('./components/CharacterSheet'));
 const About = lazy(() => import('./site/Pages').then((m) => ({ default: m.About })));
 const ColourStudio = lazy(() => import('./site/ColourStudio'));
 const MotionLab = lazy(() => import('./site/MotionLab'));
@@ -34,9 +33,9 @@ const NotFound = lazy(() => import('./site/Pages').then((m) => ({ default: m.Not
 
 function Root() {
   const loc = useLocation();
-  const [path, search = ''] = loc.split('#')[0].split('?');
-  const route = routeFor(path, search ? `?${search}` : '');
-  const Page = { home: Landing, app: App, holobuild: HoloBuild, learning: LearningPage, about: About, creator: Creator, studio: ColourStudio, motions: MotionLab, privacy: Privacy, sheet: CharacterSheet, notfound: NotFound }[route];
+  const [path] = loc.split('#')[0].split('?');
+  const route = routeFor(path);
+  const Page = { home: Landing, app: App, holobuild: HoloBuild, learning: LearningPage, about: About, creator: Creator, studio: ColourStudio, motions: MotionLab, privacy: Privacy, notfound: NotFound }[route];
   // keyed by route: each destination fades in (CSS .route, nothing under reduced motion); history and refresh are unaffected
   return <ErrorBoundary area="page"><Suspense fallback={<div className="boot" role="status">Starting NEXUS…</div>}><div className={`route route-${route}`} key={route}><Page /></div></Suspense></ErrorBoundary>;
 }

@@ -142,10 +142,12 @@ describe('[A144] connected to NEXUS: explicit commands and AI intent go through 
     for (const c of CLIPS.filter((x) => x.kind !== 'state')) expect(Object.values(CLIP_FOR_SKILL), c.id).toContain(c.id);
   });
 
-  it('[A144] a skill started by the engine plays its body clip; its end releases it (loops finish their outro)', () => {
+  it('[A144] a skill started by the engine plays its body clip; its end releases it (loops finish their outro)', async () => {
     const engine = new AnimationEngine(); const rt = new CharacterRuntime(engine, new ExpressionController(BUILTIN_EXPRESSIONS));
     const clap = BUILTIN_MOTIONS.find((m) => m.id === 'clap')!; engine.play(clap);
-    rt.step(1 / 60); expect(rt.body.current()).toBe('clap');
+    rt.step(1 / 60); expect(rt.bodyReady).toBe(false); expect(rt.body.current()).toBe(null);   // 3D body code not loaded yet: the play waits
+    expect(await rt.loadBody()).toBe(true); expect(rt.bodyReady).toBe(true);
+    rt.step(1 / 60); expect(rt.body.current()).toBe('clap');                                   // the queued play started once loaded
     for (let i = 0; i < 60 * 8; i++) rt.step(1 / 60);
     expect(rt.body.current()).toBe(null); expect(rt.body.busy()).toBe(false);
     expect(bodyStateFor('thinking', null)).toBe('THINKING'); expect(bodyStateFor('listening', null)).toBe('LISTENING'); expect(bodyStateFor('speaking', null)).toBe('SPEAKING');

@@ -17,7 +17,7 @@ export function finishBoot(doc: Document = document) {
     if (!doc.getElementById('main') && !doc.querySelector('.app, #composer')) return false;            // the page itself hasn't rendered yet
     const robot = doc.querySelector('.hero-robot, .stage-box, .nf-robot');
     if (!robot) return true;                                                                              // page without a robot
-    return !!robot.querySelector('.robot3d[data-ready], svg[role=img]');
+    return !!robot.querySelector('.robot3d[data-ready]');
   };
   const done = () => { const r = doc.documentElement; r.dataset.bootMs = String(Math.round(performance.now())); r.classList.remove('booting'); r.classList.add('booted'); el.classList.add('done'); el.addEventListener('transitionend', () => el.remove(), { once: true }); setTimeout(() => el.remove(), reduce ? 0 : 500); };
   const tick = () => {

@@ -18,7 +18,7 @@
 ```
 
 ## Character (Assets 01–10)
-An original chibi robot drawn as one SVG (`character/Robot.tsx`) from a single geometry file (`geometry.ts`) and token file (`tokens.ts`). Everything that moves is a **channel** in `shared/channels.ts` (range, rest, max speed, exclusive group). React renders the structure once; `RigHandle.apply(values)` updates attributes via refs each frame, so animation causes no React re-renders. `character/consistency.ts` encodes visual rules used by the validator; `/?sheet=1` renders all states for visual review.
+An original chibi robot, rendered as a 3D model (`character3d/Robot3D.tsx`, rig contract in `character/Robot.ts`) with colours from one token file (`tokens.ts`); `geometry.ts` holds the reference proportions used by the consistency checks. Everything that moves is a **channel** in `shared/channels.ts` (range, rest, max speed, exclusive group). React renders the structure once; `RigHandle.apply(values)` updates attributes via refs each frame, so animation causes no React re-renders. `character/consistency.ts` encodes visual rules used by the validator; `/?sheet=1` renders all states for visual review.
 
 ## Animation (21–30)
 `animation/engine.ts` is the only writer of channel values. Per frame: pose base → expression face targets → idle breathing → skill actions (arbitrated per channel *group* and priority: interrupt / queue / reject, never silent overwrite) → gaze → blink (single state machine) → speech mouth → clamp → per-channel speed limit. Recovery: watchdog budget fixed at start, `stopAll`, `reset`, queue/active limits. `animation/timeline.ts` holds pure keyframe math; everything is deterministic for a given dt sequence (seeded RNG).

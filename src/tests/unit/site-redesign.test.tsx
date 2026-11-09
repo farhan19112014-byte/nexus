@@ -9,7 +9,7 @@ import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { MemoryKV } from '../../storage/db';
 import { MemoryStore, DEFAULT_SETTINGS } from '../../memory/store';
-import { _resetWebglProbe, effectiveStyle, softwareRenderer, webglAvailable } from '../../character3d/webgl';
+import { _resetWebglProbe, softwareRenderer, webglAvailable } from '../../character3d/webgl';
 import { finishBoot } from '../../boot';
 import { DEMO_STATES } from '../../site/PreviewRobot';
 import { BUILTIN_EXPRESSIONS } from '../../expressions/presets';
@@ -19,20 +19,16 @@ import { About, Privacy } from '../../site/Pages';
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); _resetWebglProbe(); document.body.innerHTML = ''; });
 
 describe('[A126] robot style', () => {
-  it('[A126] the default is "auto" (3D where it works); an old saved "2d" default is migrated, an explicit "3d" is kept', async () => {
-    expect(DEFAULT_SETTINGS.robotStyle).toBe('auto');
-    const kv = new MemoryKV(); await kv.put('kv', { ...DEFAULT_SETTINGS, robotStyle: '2d', settingsVersion: 3 }, 'settings');
-    const m = new MemoryStore(kv); await m.ready; expect(m.settings.robotStyle).toBe('auto');
-    const kv2 = new MemoryKV(); await kv2.put('kv', { ...DEFAULT_SETTINGS, robotStyle: '3d', settingsVersion: 3 }, 'settings');
-    const m2 = new MemoryStore(kv2); await m2.ready; expect(m2.settings.robotStyle).toBe('3d');
-    const kv3 = new MemoryKV(); await kv3.put('kv', { ...DEFAULT_SETTINGS, robotStyle: '2d', settingsVersion: 4 }, 'settings');
-    const m3 = new MemoryStore(kv3); await m3.ready; expect(m3.settings.robotStyle).toBe('2d');   // chosen after v4: respected
+  it('[A126] NEXUS is 3D only: there is no robot-style setting; an old saved "2d" style is dropped, other settings kept', async () => {
+    expect('robotStyle' in DEFAULT_SETTINGS).toBe(false);
+    const kv = new MemoryKV(); await kv.put('kv', { ...DEFAULT_SETTINGS, robotName: 'Bolt', robotStyle: '2d', settingsVersion: 3 }, 'settings');
+    const m = new MemoryStore(kv); await m.ready; expect('robotStyle' in m.settings).toBe(false); expect(m.settings.robotName).toBe('Bolt'); expect(m.loadErrors).toEqual([]);
   });
-  it('[A127] the 3D robot is shown wherever WebGL exists (also software WebGL); 2D only without WebGL', () => {
+  it('[A127] WebGL is detected without loading three.js (also software WebGL)', () => {
     const fake = (renderer: string | null) => { _resetWebglProbe(); vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((kind: string) => renderer === null || kind === '2d' ? null : ({ getExtension: () => null, getParameter: () => renderer, RENDERER: 0 })) as never); };
-    fake(null); expect(webglAvailable()).toBe(false); expect(effectiveStyle('auto')).toBe('2d');
-    fake('ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)))'); expect(webglAvailable()).toBe(true); expect(softwareRenderer()).toBe(true); expect(effectiveStyle('auto')).toBe('3d');
-    fake('ANGLE (NVIDIA GeForce RTX 3060)'); expect(effectiveStyle('auto')).toBe('3d'); expect(softwareRenderer()).toBe(false);
+    fake(null); expect(webglAvailable()).toBe(false);
+    fake('ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero)))'); expect(webglAvailable()).toBe(true); expect(softwareRenderer()).toBe(true);
+    fake('ANGLE (NVIDIA GeForce RTX 3060)'); expect(webglAvailable()).toBe(true); expect(softwareRenderer()).toBe(false);
   });
   it('[A127] the page knows when there is no graphics hardware (CSS then stops re-compositing decorative layers every frame)', () => {
     const fake = (renderer: string | null) => { _resetWebglProbe(); vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(((kind: string) => renderer === null || kind === '2d' ? null : ({ getExtension: () => null, getParameter: () => renderer })) as unknown as HTMLCanvasElement['getContext']); };

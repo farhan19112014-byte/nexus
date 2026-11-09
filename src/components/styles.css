@@ -129,7 +129,7 @@ textarea { resize: vertical; }
 .versions { display: flex; flex-direction: column; gap: 2px; font-size: .88em; } .versions .cur { color: var(--c-cyan); }
 .lab textarea { font-family: ui-monospace, Menlo, monospace; font-size: 12px; margin: 6px 0; }
 .preview-body { display: grid; grid-template-columns: 150px 1fr; gap: 10px; }
-.preview-robot { background: var(--c-bg); border-radius: 10px; } .preview-robot svg { width: 100%; height: auto; display: block; }
+.preview-robot { background: var(--c-bg); border-radius: 10px; aspect-ratio: 5 / 6; position: relative; } .preview-robot .robot3d { position: absolute; inset: 0; }
 .floating-preview { position: fixed; right: 16px; bottom: 16px; width: min(460px, calc(100vw - 32px)); z-index: 30; }
 .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; } fieldset.field { border: 1px solid var(--c-panel2); border-radius: 10px; }
 .settings .toggle { display: flex; margin: 5px 0; }
@@ -178,9 +178,6 @@ kbd { font: 12px ui-monospace, Menlo, Consolas, monospace; background: var(--c-p
 }
 
 /* character sheet */
-.sheet { padding: 16px; } .sheet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-.sheet-cell { margin: 0; background: var(--c-bg2); border: 1px solid var(--c-panel); border-radius: 10px; padding: 6px; text-align: center; font-size: 12px; }
-.sheet-cell svg { width: 100%; height: auto; display: block; }
 
 /* ---- v4: markdown replies, quick actions, chats & reminders ---- */
 .app { background: var(--c-bg); color: var(--c-text); }

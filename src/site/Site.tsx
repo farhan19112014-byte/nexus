@@ -13,7 +13,6 @@ import { useResolvedTheme } from '../themeHook';
 import { applyTheme, settledTheme } from '../theme';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { StudioLink } from '../components/StudioLink';
-import type { RobotStyle } from '../character3d/webgl';
 
 /** Original NEXUS mark: the robot's rounded head with its two happy eyes, shaded like the robot (same artwork as build/icon.svg). */
 export function Logo({ size = 28 }: { size?: number }) {
@@ -47,17 +46,17 @@ export function Wordmark() {
   return <Link to={PATHS.home} className="wordmark" aria-label={`${PRODUCT_NAME} home`}><Logo /><span>{PRODUCT_NAME}</span></Link>;
 }
 
-/** The robot's display name and style, read from the same saved settings the workspace uses (single source of truth). */
-let cached: { name: string; style: RobotStyle } | null = null;
+/** The robot's display name, read from the same saved settings the workspace uses (single source of truth). */
+let cached: { name: string } | null = null;
 function useSaved() {
-  const [v, setV] = useState(cached ?? { name: DEFAULT_ROBOT_NAME, style: 'auto' as RobotStyle });
+  const [v, setV] = useState(cached ?? { name: DEFAULT_ROBOT_NAME });
   useEffect(() => {
     let live = true; let off = () => {};
     void import('../core/runtime').then(async ({ memory }) => {
       await memory.ready; if (!live) return;
       // the first read after loading settles a toggle that was still being saved (settledTheme); later changes are applied as saved
       let first = true;
-      const upd = () => { const s = memory.settings; if (!cached || cached.name !== s.robotName || cached.style !== s.robotStyle) cached = { name: s.robotName, style: s.robotStyle }; setV(cached); applyTheme(first ? settledTheme(s.theme, (t) => memory.updateSettings({ theme: t })) : s.theme); first = false; };
+      const upd = () => { const s = memory.settings; if (!cached || cached.name !== s.robotName) cached = { name: s.robotName }; setV(cached); applyTheme(first ? settledTheme(s.theme, (t) => memory.updateSettings({ theme: t })) : s.theme); first = false; };
       upd(); off = memory.subscribe(upd);
     }).catch(() => { /* storage unavailable: keep the defaults */ });
     return () => { live = false; off(); };
@@ -65,7 +64,6 @@ function useSaved() {
   return v;
 }
 export const useRobotName = (): string => useSaved().name;
-export const useRobotStyle = (): RobotStyle => useSaved().style;
 
 export type LiveStatus = { kind: 'checking' } | { kind: 'offline' } | { kind: 'demo' } | { kind: 'web' } | { kind: 'llm'; model: string | null; configured: boolean; note?: string };
 /** Real server status (GET /api/status) — never inferred from the page having loaded. */

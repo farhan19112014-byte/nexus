@@ -45,6 +45,14 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        // the 3D robot's body animation (clips, IK, foot locking, controller) is loaded only when the 3D robot is shown;
+        // its chunks get one recognisable prefix so the bundle budget and the e2e checks can tell them apart
+        chunkFileNames: (c) => (c.moduleIds.length > 0 && c.moduleIds.every((id) => /\/src\/character3d\/(body\/(?!clipMap\.)|motion3d\.|body3d\.)/.test(id.replace(/\\/g, '/')))
+          ? 'assets/body3d-[name]-[hash].js' : 'assets/[name]-[hash].js'),
+      },
+    },
   },
   test: {
     environment: 'node',

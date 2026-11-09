@@ -29,7 +29,7 @@ for them.
 | UAT-08 | Status indicators | Watch the status line through UAT-03/06/07 | Ready → Listening → Waiting for the AI → Speaking → Ready, never stuck | `[A122] robot events fire in order` |
 | UAT-09 | Expressions | Home page → change states and faces in the showcase | Live robot changes face and body; no 2D stand-in | `[A126] the state demo drives the live 3D robot`, `[A128] expression tiles` |
 | UAT-10 | 3D experience | Drag to rotate; use Front / ¾ / Side / Rear | Robot turns smoothly; nothing clips or flickers | human (look and feel) |
-| UAT-11 | 3D fallback | Open in a browser with WebGL off | The 2D NEXUS appears with a "Retry 3D" option; everything else works | `[A101] the state preview works on the 2D fallback` |
+| UAT-11 | No WebGL | Open in a browser with WebGL off | The robot area explains that 3D needs WebGL; chat, voice and everything else work | `[A01] [A98] journey: app opens; without WebGL`, `[A101] the state preview still explains each state without WebGL` |
 | UAT-12 | Interrupt | Ask for a long answer, press Stop while it speaks | Audio, mouth and text stop at once; nothing resumes later | `[A119] interrupting speech…`, `[A46] [A98] journey: interrupt a response` |
 | UAT-13 | Slow / failed AI | (tester device offline, or AI quota used up) send a message | Plain error face and message with Retry; no invented answer | `[A35] [A47] failure shows an explanation…`, `[A98] journey: recover from an error via retry` |
 | UAT-14 | Voice quota | Use up the voice allowance (or ask the owner to lower it) | Reply still shown as text; message says why; no other voice pretends to be NEXUS without saying so | `[UAT-Q1] voice quota reached…` |

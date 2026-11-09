@@ -12,7 +12,6 @@ import { SitePage } from './Site';
 import { Icon } from '../components/Icon';
 import type { RigHandle } from '../character/Robot';
 import { RobotAuto } from '../character3d/RobotAuto';
-import { effectiveStyle } from '../character3d/webgl';
 import { AnimationEngine, seeded } from '../animation/engine';
 import { ExpressionController } from '../expressions/expressionController';
 import { BUILTIN_EXPRESSIONS } from '../expressions/presets';
@@ -51,7 +50,7 @@ export default function MotionLab() {
   useTitle(`Motion Lab — ${PRODUCT_NAME}`);
   const rig = useRef<RigHandle>(null);
   const box = useRef<HTMLDivElement>(null);
-  const [rt] = useState(() => { const e = new AnimationEngine(seeded(11)); return new CharacterRuntime(e, new ExpressionController(BUILTIN_EXPRESSIONS)); });
+  const [rt] = useState(() => { const e = new AnimationEngine(seeded(11)); const r = new CharacterRuntime(e, new ExpressionController(BUILTIN_EXPRESSIONS)); void r.loadBody(); return r; });
   const [is3d, setIs3d] = useState(false);
   const [sel, setSel] = useState<string | null>(null);
   const [hold, setHold] = useState(false);
@@ -65,7 +64,6 @@ export default function MotionLab() {
   const [all, setAll] = useState<ClipReport[] | null>(null);
   const seqTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const reduced = useMemo(() => reducedMotionPreferred(), []);
-  const flat = effectiveStyle('auto') === '2d';
   const marker = useRef<HTMLDivElement>(null);
   const [pi, setPi] = useState<PresenceInfo | null>(null);
   const [markerOn, setMarkerOn] = useState(false);
@@ -137,7 +135,6 @@ export default function MotionLab() {
           <p className="eyebrow">NEXUS · full-body motion</p>
           <h1>Motion Lab</h1>
           <p className="lede">Every full-body animation of the 3D NEXUS, one at a time, measured live from the rendered model. The same clips play when you ask NEXUS in chat (“do a backflip”, “clap”, “dance”).</p>
-          {flat && <p className="ml-note" role="note">This browser shows the 2D robot (no WebGL): the buttons play the 2D version of each move. The full-body clips and live measurements need the 3D robot.</p>}
           {reduced && <p className="ml-note" role="note">Reduced motion is on: body states are not looped; explicit moves still play when you press them.</p>}
         </header>
 
@@ -145,7 +142,7 @@ export default function MotionLab() {
           <section className="ml-stage" aria-label="Robot">
             {markerOn && <div ref={marker} className="ml-marker" aria-label="A target for NEXUS to look at" data-testid="ml-marker-dot">Look here</div>}
             <div ref={box} className="ml-robot">
-              <RobotAuto ref={rig} mode="auto" onReady3d={() => { rt.set3d(true); setIs3d(true); }} environment="transparent" effects accessories={{ antenna: true, sidePanels: true, chestLight: true, cheekLights: true, foreheadIndicator: true }} title={`${PRODUCT_NAME} in 3D, previewing full-body animations`} className="preview-svg" />
+              <RobotAuto ref={rig} onReady3d={() => { rt.set3d(true); setIs3d(true); }} environment="transparent" effects accessories={{ antenna: true, sidePanels: true, chestLight: true, cheekLights: true, foreheadIndicator: true }} title={`${PRODUCT_NAME} in 3D, previewing full-body animations`} className="preview-svg" />
             </div>
             <dl className="ml-metrics" data-testid="ml-metrics" aria-live="off">
               <div><dt>Playing</dt><dd>{m?.action ?? (sel && rt.body.busy() ? sel : '—')}</dd></div>
@@ -218,7 +215,7 @@ export default function MotionLab() {
             {all && <p className="small" data-testid="ml-all">{all.filter((r) => r.ok).length} / {all.length} clips pass every check{all.some((r) => !r.ok) && ` — failing: ${all.filter((r) => !r.ok).map((r) => r.id).join(', ')}`}</p>}
           </section>
         </div>
-        <p className="small muted ml-foot">Limitations: NEXUS has ball hands with one thumb and no finger joints (pointing, open palms and thumbs up are whole-hand poses; the thumb opens and closes), one torso joint (no spine or clavicles), the face is a screen (mouth shapes follow the voice's loudness and, with ElevenLabs, its letters — not phonemes), and the model is rigid parts on joints (no skin deformation). The 2D robot shows simplified versions. <Link to={PATHS.app}>Back to the robot</Link></p>
+        <p className="small muted ml-foot">Limitations: NEXUS has ball hands with one thumb and no finger joints (pointing, open palms and thumbs up are whole-hand poses; the thumb opens and closes), one torso joint (no spine or clavicles), the face is a screen (mouth shapes follow the voice's loudness and, with ElevenLabs, its letters — not phonemes), and the model is rigid parts on joints (no skin deformation). <Link to={PATHS.app}>Back to the robot</Link></p>
       </div>
     </SitePage>
   );

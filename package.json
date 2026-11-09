@@ -12,6 +12,7 @@
     "start": "npm run build && node dist-server/index.js --serve-dist",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "check:bundle": "node scripts/bundle-budget.mjs",
     "test:e2e": "node scripts/e2e.mjs",
     "test:e2e:vision": "node scripts/e2e-vision.mjs",
     "report": "node --import tsx scripts/report.mjs",
