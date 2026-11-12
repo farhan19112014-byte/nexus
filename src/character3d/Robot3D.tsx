@@ -320,5 +320,22 @@ export const Robot3D = forwardRef<RigHandle, Robot3DProps>(function Robot3D(prop
     return () => clearInterval(id);
   }, [env, effects, skin, palKey]); // eslint-disable-line react-hooks/exhaustive-deps  
 
+  // clothing for the active mode (its own small chunk per outfit): added to the model's nodes, never replacing them
+  const outfitId = props.outfit?.id ?? 'default'; const outfitAcc = props.outfit?.accessories ?? true; const outfitReduced = props.outfit?.reduced ?? false;
+  const onOutfit = useRef(props.onOutfit); onOutfit.current = props.onOutfit;
+  useEffect(() => {
+    let off = false;
+    const id = setInterval(() => {
+      const c = ctx.current; if (!c) return; clearInterval(id);
+      // the original NEXUS needs no outfit code at all
+      if (outfitId === 'default' && (host.current?.dataset.outfit ?? 'default') === 'default') { if (host.current) host.current.dataset.outfit = 'default'; onOutfit.current?.('default'); return; }
+      import('./outfits/manager')
+        .then(({ wearOutfit }) => wearOutfit({ THREE: c.THREE, scene: c.scene, render: () => { c.renderer.render(c.scene, c.camera); } }, outfitId, outfitAcc, outfitReduced))
+        .then((worn) => { if (off) return; if (host.current) host.current.dataset.outfit = worn; onOutfit.current?.(worn); })
+        .catch((e) => { if (!off) onOutfit.current?.((host.current?.dataset.outfit as typeof outfitId | undefined) ?? 'default', `The outfit could not be loaded (${(e as Error).message})`); });
+    }, 30);
+    return () => { off = true; clearInterval(id); };
+  }, [outfitId, outfitAcc, outfitReduced]);
+
   return <div ref={host} className={`robot3d ${props.className ?? ''}`} role="img" data-skin={skin} aria-label={props.title ?? (skin === 'light' ? 'NEXUS in 3D, a small white and light-blue robot' : 'NEXUS in 3D, a small blue and black robot')} />;
 });

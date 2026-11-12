@@ -9,6 +9,7 @@ import { api, companion, memory } from '../core/runtime';
 import { useSnapshot, useStore } from './hooks';
 import type { Settings } from '../memory/store';
 import { Link, PATHS } from '../router';
+import { OutfitSettings } from '../modes/OutfitSettings';
 
 /** Gemini's prebuilt voices that suit a small robot (mirrors server/speech.ts; Google's docs list them all). */
 const GEMINI_VOICES: Record<string, string> = { Leda: 'Youthful', Puck: 'Upbeat', Zephyr: 'Bright', Autonoe: 'Bright', Laomedeia: 'Upbeat', Achird: 'Friendly', Sadachbia: 'Lively', Aoede: 'Breezy', Achernar: 'Soft', Vindemiatrix: 'Gentle', Sulafat: 'Warm', Fenrir: 'Excitable', Kore: 'Firm', Charon: 'Informative', Despina: 'Smooth', Callirrhoe: 'Easy-going' };
@@ -244,6 +245,7 @@ export default function SettingsPanel() {
       <label className="field">Environment<select value={s.environment} onChange={(e) => up({ environment: e.target.value as Settings['environment'] })}><option value="lab">Dark lab</option><option value="grid">Grid</option><option value="transparent">Transparent</option></select></label>
       <T k="effects" label="Glow & ambient effects" />
       <fieldset className="field"><legend>Accessories</legend>{(Object.keys(s.accessories) as (keyof Settings['accessories'])[]).map((k) => <label key={k} className="toggle"><input type="checkbox" checked={s.accessories[k]} onChange={(e) => up({ accessories: { ...s.accessories, [k]: e.target.checked } })} /> {k.replace(/([A-Z])/g, ' $1').toLowerCase()}</label>)}</fieldset>
+      <OutfitSettings />
       <h4>Voice</h4>
       <T k="voiceOutput" label={`Spoken replies${companion.tts.supported ? '' : ' (unsupported in this browser)'}`} disabled={!companion.tts.supported} />
       <label className="field">Voice<select value={s.voiceURI ?? ''} onChange={(e) => up({ voiceURI: e.target.value || null })} disabled={!voices.length}><option value="">Automatic</option>{voices.map((v) => <option key={v.voiceURI} value={v.voiceURI}>{v.name} ({v.lang})</option>)}</select></label>

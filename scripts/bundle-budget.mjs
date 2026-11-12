@@ -12,8 +12,9 @@ import { gzipSync } from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 
 /** Chunks that download only when their feature is opened: the 3D robot (three.js, model code, body animation), HOLOBUILD,
- *  Live Vision and the Motion Lab. Rollup names chunks after their first module; vite.config.ts names body3d-*. */
-export const ON_DEMAND = /^(three\.module|Robot3D|presence-|body3d-|GLTFLoader|GLTFExporter|OrbitControls|RoomEnvironment|scene-|io-|HoloBuild-|holoInstance-|VisionPanel-|liveVision-|vision-|MotionLab-)/;
+ *  Live Vision, the Motion Lab, the mode outfits (outfit-*) and the mode selector panel (ModeLauncher). Rollup names chunks
+ *  after their first module; vite.config.ts names body3d-* and outfit-*. */
+export const ON_DEMAND = /^(three\.module|Robot3D|presence-|body3d-|outfit-|ModeLauncher-|GLTFLoader|GLTFExporter|OrbitControls|RoomEnvironment|scene-|io-|HoloBuild-|holoInstance-|VisionPanel-|liveVision-|vision-|MotionLab-)/;
 export const LIMITS = {
   /** raised from 900 KiB (Nov 2026): the old figure was set when the app was smaller; per-page caps below now guard load time */
   totalKiB: 1200,

@@ -1,0 +1,18 @@
+.mode-panel { position: absolute; top: calc(100% + 8px); left: 0; z-index: 60; width: min(440px, calc(100vw - 24px)); padding: 12px; border-radius: 14px;
+  background: var(--c-bg2); border: 1px solid color-mix(in srgb, var(--mode-accent) 30%, var(--c-panel)); box-shadow: 0 18px 48px rgba(0, 0, 0, .45); animation: mode-in .18s ease-out; }
+@media (prefers-reduced-motion: reduce) { .mode-panel { animation: none; } }
+@keyframes mode-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.mode-panel-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; } .mode-panel-head .icon-btn { margin-left: auto; }
+.mode-cards { display: grid; gap: 6px; }
+.mode-card { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--c-panel); background: transparent; color: var(--c-text); transition: border-color .2s, background .2s, transform .15s; }
+.mode-card:hover:not(:disabled) { border-color: color-mix(in srgb, var(--mc) 50%, transparent); background: color-mix(in srgb, var(--mc) 6%, transparent); }
+.mode-card:active:not(:disabled) { transform: scale(.99); }
+.mode-card.on { border-color: var(--mc); background: color-mix(in srgb, var(--mc) 10%, transparent); }
+.mode-card { --mc: var(--c-electric); } .mc-education { --mc: #7cc4ff; } .mc-medical { --mc: #67e8f9; } .mc-legal { --mc: #b4c2dc; } .mc-it { --mc: #4c8dff; }
+:root[data-theme="light"] .mc-education { --mc: #1d6fd6; } :root[data-theme="light"] .mc-medical { --mc: #0e7490; } :root[data-theme="light"] .mc-legal { --mc: #44506a; } :root[data-theme="light"] .mc-it { --mc: #1d4ed8; }
+.mc-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: none; border-radius: 10px; color: var(--mc); background: color-mix(in srgb, var(--mc) 12%, transparent); }
+.mc-text { display: grid; gap: 2px; min-width: 0; } .mc-name { font-weight: 700; } .mc-desc { font-size: 12.5px; color: var(--c-muted); line-height: 1.35; }
+.mc-active { margin-left: auto; flex: none; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--mc); }
+.mode-option { display: grid; gap: 4px; margin-top: 10px; font-size: 13px; } .mode-option input { width: 100%; }
+.mode-notice { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; background: color-mix(in srgb, var(--mode-accent) 8%, transparent); color: var(--c-muted); }
+@media (max-width: 760px) { .mode-panel { position: fixed; top: 56px; left: 12px; right: 12px; width: auto; max-height: calc(100dvh - 72px); overflow: auto; } }

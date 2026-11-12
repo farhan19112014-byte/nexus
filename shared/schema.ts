@@ -5,6 +5,8 @@
  */
 import { z } from 'zod';
 import { VisionChatContextSchema } from './visionContext';
+import { MODE_IDS, ModeOptionsSchema, type ModeId } from './modes';
+import type { SafetyNotice } from './safety';
 import { VisualFieldSchema } from './visual';
 import { DEFAULT_ROBOT_NAME, effectiveRobotName } from './identity';
 import { CHANNEL_NAMES, type Channel } from './channels';
@@ -312,6 +314,11 @@ export const ChatRequestSchema = z.object({
   stream: z.boolean().default(true),
   /** optional (older clients omit it) */
   context: ChatContextSchema.optional(),
+  /** the active NEXUS mode (older clients omit it: default); the server checks it against the mode registry */
+  mode: z.enum(MODE_IDS).default('default'),
+  modeOptions: ModeOptionsSchema.optional(),
+  /** the browser's id of the saved conversation this turn belongs to (the server stores nothing; validated only) */
+  conversationId: z.string().max(64).regex(/^[A-Za-z0-9_-]+$/).optional(),
 }).strict().refine((r) => Array.isArray(r.messages) && r.messages.reduce((n, m) => n + m.content.length, 0) <= LIMITS.totalChars, 'conversation too large')
   .refine((r) => r.messages.length > 0 && r.messages[r.messages.length - 1].role === 'user', 'last message must be from the user');
 export type ChatRequest = z.infer<typeof ChatRequestSchema>;
@@ -357,4 +364,12 @@ export interface ResponseMeta {
   research: { used: boolean; provider: string | null; count: number; error?: string };
   /** 'compact' for small local models with a short context window */
   promptMode?: 'full' | 'compact';
+  /** the mode the server actually used */
+  mode?: ModeId;
+  /** a deterministic safety notice for this turn (emergency / crisis wording) — set by the server, not the model */
+  safety?: SafetyNotice;
+  /** fixed scope notice of the mode (legal / medical) */
+  notice?: string;
+  /** parts of the model's answer the active mode does not permit (removed by the server) */
+  withheld?: string[];
 }

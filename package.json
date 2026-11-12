@@ -15,6 +15,7 @@
     "check:bundle": "node scripts/bundle-budget.mjs",
     "test:e2e": "node scripts/e2e.mjs",
     "test:e2e:vision": "node scripts/e2e-vision.mjs",
+    "test:e2e:modes": "node scripts/e2e-modes.mjs",
     "report": "node --import tsx scripts/report.mjs",
     "sheet": "vite --open /?sheet=1",
     "build:server": "esbuild server/index.ts server/start.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outdir=dist-server --log-level=warning",

@@ -49,8 +49,13 @@ export default defineConfig({
       output: {
         // the 3D robot's body animation (clips, IK, foot locking, controller) is loaded only when the 3D robot is shown;
         // its chunks get one recognisable prefix so the bundle budget and the e2e checks can tell them apart
-        chunkFileNames: (c) => (c.moduleIds.length > 0 && c.moduleIds.every((id) => /\/src\/character3d\/(body\/(?!clipMap\.)|motion3d\.|body3d\.)/.test(id.replace(/\\/g, '/')))
-          ? 'assets/body3d-[name]-[hash].js' : 'assets/[name]-[hash].js'),
+        chunkFileNames: (c) => {
+          const ids = c.moduleIds.map((id) => id.replace(/\\/g, '/'));
+          if (ids.length && ids.every((id) => /\/src\/character3d\/(body\/(?!clipMap\.)|motion3d\.|body3d\.)/.test(id))) return 'assets/body3d-[name]-[hash].js';
+          // the mode outfits: one small chunk per outfit (+ the shared kit / manager), loaded only when one is worn
+          if (ids.length && ids.every((id) => /\/src\/character3d\/outfits\//.test(id))) return 'assets/outfit-[name]-[hash].js';
+          return 'assets/[name]-[hash].js';
+        },
       },
     },
   },

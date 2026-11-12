@@ -12,6 +12,9 @@ import type { ServerConfig } from './config';
 import { ProviderError, type ImagePart, type LLMProvider } from './providers/types';
 import { parseImageDataUrl } from '../shared/vision';
 import { researchQuery, type ResearchProvider } from './research';
+import { resolveMode } from '../shared/modes';
+import { detectEmergency } from '../shared/safety';
+import { allowedVisual, applyModePermissions } from './modes/permissions';
 
 /** Asset 44 — context window policy: newest messages within count & char budgets, starting with a user turn. */
 export function trimHistory(messages: ChatMessage[], maxMessages: number, maxChars: number): ChatMessage[] {
@@ -55,7 +58,7 @@ export class BrainService {
   }
 
   private async gatherSources(req: ChatRequest, signal: AbortSignal, emit: Emit, meta: ResponseMeta): Promise<Source[]> {
-    if (!req.research) return [];
+    if (!req.research || !resolveMode(req.mode).permissions.research) return [];   // research only where the mode permits it
     meta.research.provider = this.research?.id ?? null;
     if (!this.research || !this.research.configured().ok) {
       meta.research.error = this.research ? this.research.configured().note : 'No research provider is configured on the server (RESEARCH_PROVIDER).';
@@ -81,13 +84,22 @@ export class BrainService {
   async handle(req: ChatRequest, clientSignal: AbortSignal, emit: Emit = () => {}): Promise<{ response: BrainResponse; meta: ResponseMeta }> {
     const t0 = Date.now();
     const meta: ResponseMeta = { provider: this.provider.id, model: this.provider.model, isLLM: this.provider.id !== 'demo', latencyMs: 0, streamed: false, repaired: false, droppedFields: [], degraded: false, historySent: 0, promptVersion: PROMPT_VERSION, research: { used: false, provider: null, count: 0 } };
+    // mode orchestration: an unknown or disabled mode runs as default; safety notices are decided here, not by the model
+    const mode = resolveMode(req.mode); if (mode.id !== req.mode) req = { ...req, mode: mode.id };
+    meta.mode = mode.id;
+    const safety = detectEmergency(req.messages.at(-1)!.content); if (safety) meta.safety = safety;
+    if (mode.notice) meta.notice = mode.notice;
+    // the mode's permissions apply to everything the model sends: the early HEAD (visual) and the final answer
+    const outer = emit;
+    emit = (e) => outer(e.type === 'head' ? { ...e, head: { ...e.head, visual: allowedVisual(mode.id, e.head.visual) } } : e);
+    const permit = (r: BrainResponse) => { const x = applyModePermissions(mode.id, r); if (x.removed.length) meta.withheld = [...new Set([...(meta.withheld ?? []), ...x.removed])]; return x.response; };
     // a frame this model cannot see (or that is not a valid image) is dropped, so the prompt never claims one is attached
     if (req.context?.vision?.frame && (!this.provider.supportsVision || !parseImageDataUrl(req.context.vision.frame))) req = { ...req, context: { ...req.context, vision: { ...req.context.vision, frame: undefined } } };
     const sources = await this.gatherSources(req, clientSignal, emit, meta);
     if (clientSignal.aborted) throw new ProviderError('Request cancelled', 'cancelled', 499);
 
     if (!meta.isLLM) {
-      const response = demoBrain(req, sources);
+      const response = permit(demoBrain(req, sources));
       emit({ type: 'head', head: BrainHeadSchema.parse(response) });
       emit({ type: 'delta', text: response.reply });   // one chunk: the demo brain does not stream
       meta.latencyMs = Date.now() - t0;
@@ -112,10 +124,11 @@ export class BrainService {
           const out = useStream
             ? await this.streamed(req, history, sources, ctl.signal, emit, meta, () => (sentText = true))
             : await this.json(req, history, sources, ctl.signal, meta);
-          emit({ type: 'head', head: BrainHeadSchema.parse(out) });
-          if (!useStream) emit({ type: 'delta', text: out.reply });
+          const permitted = permit(out);
+          emit({ type: 'head', head: BrainHeadSchema.parse(permitted) });
+          if (!useStream) emit({ type: 'delta', text: permitted.reply });
           meta.latencyMs = Date.now() - t0; meta.model = this.provider.model;   // the model that actually answered (may be a fallback)
-          return { response: out, meta };
+          return { response: permitted, meta };
         } catch (e) {
           const pe = e instanceof ProviderError ? e : new ProviderError((e as Error).message, 'internal', 500);
           if (!pe.retryable || sentText || attempt >= this.cfg.maxRetries || ctl.signal.aborted) throw pe;

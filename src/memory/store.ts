@@ -12,6 +12,7 @@ import { DEFAULT_ROBOT_NAME, effectiveRobotName } from '../../shared/identity';
 import { MEMORY_CATEGORIES, PersonalitySchema, type MemoryCandidate } from '../../shared/schema';
 import { StorageError, type KV } from '../storage/db';
 import { jaccard, rankMemories } from './retrieval';
+import { MODE_IDS, OUTFIT_IDS } from '../../shared/modes';
 import { looksSensitive } from '../security/validation';
 
 export type MemorySource = 'explicit_request' | 'accepted_suggestion' | 'manual' | 'import';
@@ -88,11 +89,17 @@ export const SettingsSchema = z.object({
   layout: z.enum(['robot', 'workspace']).default('robot').catch('robot'),
   /** auto: the server speech service when configured, else this computer's voices / browser recognition */
   voiceEngine: z.enum(['auto', 'server', 'browser']).default('auto').catch('auto'),
+  /** the active NEXUS mode (Default, Educational, Medical, Legal, IT) — the server validates it again */
+  mode: z.enum(MODE_IDS).default('default').catch('default'),
+  /** short per-mode settings: legal jurisdiction, IT language/stack, learner level ('' = not set) */
+  modeOptions: z.object({ jurisdiction: z.string().max(60).default(''), language: z.string().max(40).default(''), level: z.string().max(40).default('') }).prefault({}).catch({ jurisdiction: '', language: '', level: '' }),
+  /** the robot's outfit: follow the mode (auto) or always wear `fixed` ('default' = the original NEXUS); accessories on/off */
+  appearance: z.object({ autoOutfit: z.boolean().default(true), fixed: z.enum(OUTFIT_IDS).default('default'), accessories: z.boolean().default(true) }).prefault({}).catch({ autoOutfit: true, fixed: 'default', accessories: true }),
   /** settings schema version — bump when a field changes meaning; unknown/invalid fields fall back to defaults */
   settingsVersion: z.number().int().default(SETTINGS_VERSION).catch(SETTINGS_VERSION),
 });
 /** Settings that "Reset personalization" restores (everything else — memories, skills, model, privacy — is untouched). */
-export const PERSONALIZATION_KEYS = ['robotName', 'defaultExpression', 'greetingStyle', 'greetEverySession', 'idleLevel', 'speakingMouth', 'animationIntensity', 'environment', 'effects', 'accessories', 'playfulReactions', 'completionReaction', 'theme', 'palette', 'ambientBehaviours', 'robotSize', 'layout'] as const;
+export const PERSONALIZATION_KEYS = ['robotName', 'defaultExpression', 'greetingStyle', 'greetEverySession', 'idleLevel', 'speakingMouth', 'animationIntensity', 'environment', 'effects', 'accessories', 'playfulReactions', 'completionReaction', 'theme', 'palette', 'ambientBehaviours', 'robotSize', 'layout', 'appearance'] as const;
 export type Settings = z.infer<typeof SettingsSchema>;
 export const DEFAULT_SETTINGS: Settings = SettingsSchema.parse({});
 

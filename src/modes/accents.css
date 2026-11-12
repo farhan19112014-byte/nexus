@@ -1,0 +1,25 @@
+/* NEXUS modes — subtle accents only: the robot, layout and theme stay the original NEXUS. */
+.app { --mode-accent: var(--c-electric); }
+.app[data-mode="education"] { --mode-accent: #7cc4ff; }
+.app[data-mode="medical"] { --mode-accent: #67e8f9; }
+.app[data-mode="legal"] { --mode-accent: #b4c2dc; }
+.app[data-mode="it"] { --mode-accent: #4c8dff; }
+:root[data-theme="light"] .app[data-mode="education"] { --mode-accent: #1d6fd6; }
+:root[data-theme="light"] .app[data-mode="medical"] { --mode-accent: #0e7490; }
+:root[data-theme="light"] .app[data-mode="legal"] { --mode-accent: #44506a; }
+:root[data-theme="light"] .app[data-mode="it"] { --mode-accent: #1d4ed8; }
+.app:not([data-mode="default"]) .top { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--mode-accent) 55%, transparent); transition: box-shadow .4s ease; }
+
+.mode-switch { position: relative; }
+.mode-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--mode-accent) 45%, transparent); background: color-mix(in srgb, var(--mode-accent) 10%, transparent); color: var(--c-text); font-weight: 600; letter-spacing: .02em; }
+.mode-btn svg { color: var(--mode-accent); }
+.mode-btn:hover { background: color-mix(in srgb, var(--mode-accent) 18%, transparent); }
+.app.hc .mode-btn { border-color: #fff; background: #000; }
+.msg .mode-tag { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--mode-accent) 40%, transparent); color: var(--c-muted); }
+.msg .mode-tag.mt-education { --mode-accent: #7cc4ff; } .msg .mode-tag.mt-medical { --mode-accent: #67e8f9; } .msg .mode-tag.mt-legal { --mode-accent: #b4c2dc; } .msg .mode-tag.mt-it { --mode-accent: #4c8dff; }
+.msg .mode-scope { margin: 4px 0 0; font-size: 12px; color: var(--c-muted); border-left: 2px solid color-mix(in srgb, var(--mode-accent) 60%, transparent); padding-left: 8px; }
+.safety-banner { margin: 6px 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--c-bad); background: color-mix(in srgb, var(--c-bad) 14%, transparent); color: var(--c-text); font-weight: 600; }
+.msg.system.mode-switch-note { border-left: 2px solid var(--mode-accent); }
+@media (max-width: 760px) { .mode-btn-label { display: none; } .mode-btn { padding: 0 9px; } }
+/* the mode button joins the top bar: on mid-size screens the workspace links show their icons only (they keep their labels for assistive tech) */
+@media (min-width: 761px) and (max-width: 1100px) { .app-links .btn > span { display: none; } .app-links .btn { padding-inline: 10px; } }

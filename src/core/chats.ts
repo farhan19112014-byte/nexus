@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import type { KV } from '../storage/db';
 import type { UIMessage } from '../ai/context';
+import { MODE_IDS } from '../../shared/modes';
 
 export const CHAT_LIMITS = { chats: 200, messagesPerChat: 200, textChars: 20000 };
 
@@ -14,6 +15,8 @@ const StoredMessageSchema = z.object({
   status: z.enum(['sending', 'streaming', 'complete', 'failed', 'cancelled']),
   replyTo: z.string().max(64).optional(),
   reminderId: z.string().max(64).optional(),
+  mode: z.enum(MODE_IDS).optional().catch(undefined),
+  safety: z.object({ kind: z.enum(['medical_emergency', 'crisis']), notice: z.string().max(600) }).optional().catch(undefined),
   error: z.object({ message: z.string().max(500), code: z.string().max(40), retryable: z.boolean() }).optional(),
   meta: z.object({ provider: z.string().max(60), model: z.string().max(120).nullable(), isLLM: z.boolean(), latencyMs: z.number(), streamed: z.boolean() }).passthrough().optional(),
   sources: z.array(z.object({ id: z.number(), title: z.string(), url: z.string(), snippet: z.string(), provider: z.string(), retrievedAt: z.string() }).passthrough()).max(10).optional(),
@@ -45,7 +48,7 @@ export function toStored(messages: UIMessage[]): StoredMessage[] {
 }
 function storable(m: UIMessage) {
   return ({
-    reminderId: m.reminderId, id: m.id, role: m.role, text: m.text.slice(0, CHAT_LIMITS.textChars), at: m.at, replyTo: m.replyTo,
+    reminderId: m.reminderId, mode: m.mode, safety: m.safety, id: m.id, role: m.role, text: m.text.slice(0, CHAT_LIMITS.textChars), at: m.at, replyTo: m.replyTo,
     status: m.status === 'sending' || m.status === 'streaming' ? 'cancelled' : m.status,
     error: m.error ? { ...m.error, message: m.error.message.slice(0, 500) } : undefined,
     meta: m.meta ? { provider: m.meta.provider, model: m.meta.model, isLLM: m.meta.isLLM, latencyMs: m.meta.latencyMs, streamed: m.meta.streamed } : undefined,

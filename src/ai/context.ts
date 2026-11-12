@@ -4,6 +4,8 @@
  */
 import type { BrainResponse, ChatMessage, ResponseMeta, Source } from '../../shared/schema';
 import type { LearnOutcome } from '../skills/learning';
+import { MODES, type ModeId } from '../../shared/modes';
+import type { SafetyNotice } from '../../shared/safety';
 
 export type MsgStatus = 'sending' | 'streaming' | 'complete' | 'failed' | 'cancelled';
 export interface UIMessage {
@@ -16,13 +18,21 @@ export interface UIMessage {
   replyTo?: string;
   /** set on the on-device reply that created a reminder (so editing that turn cancels it) */
   reminderId?: string;
+  /** the mode the message was sent / answered in (absent = default) */
+  mode?: ModeId;
+  /** an emergency / crisis notice for this exchange (deterministic check, confirmed by the server) */
+  safety?: SafetyNotice;
 }
 
 export const SESSION_LIMIT = 200;
 let seq = 0;
 export const msgId = () => `${Date.now().toString(36)}-${(seq++).toString(36)}`;
 
-export function buildContext(messages: UIMessage[], maxMessages: number, maxChars = 20000): ChatMessage[] {
+/**
+ * `mode`: the mode of the request being built. Answers given in a different mode are labelled
+ * "[answered in … mode]" so the model treats them as context, not as instructions for the current mode.
+ */
+export function buildContext(messages: UIMessage[], maxMessages: number, maxChars = 20000, mode?: ModeId): ChatMessage[] {
   // drop user turns whose reply FAILED (an error; the newest, pending user turn always stays): otherwise an unanswered
   // question is glued onto the next message and the model answers both. An interrupted turn stays — the next message
   // often builds on it ("tell me a story" → "actually, a short one").
@@ -34,7 +44,8 @@ export function buildContext(messages: UIMessage[], maxMessages: number, maxChar
   let chars = 0;
   for (let i = usable.length - 1; i >= 0 && out.length < maxMessages; i--) {
     const m = usable[i];
-    const c = m.text.slice(0, 5000);
+    const other = mode && m.role === 'assistant' && (m.mode ?? 'default') !== mode;
+    const c = `${other ? `[answered in ${MODES[m.mode ?? 'default'].name} mode] ` : ''}${m.text.slice(0, 5000)}`;
     if (chars + c.length > maxChars && out.length) break;
     out.unshift({ role: m.role as 'user' | 'assistant', content: c }); chars += c.length;
   }

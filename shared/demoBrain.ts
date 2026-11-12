@@ -4,6 +4,7 @@
  * feedback, gesture preferences, explicit "remember …" requests and a few social phrases, so the
  * body, face, skill pipeline and memory can be exercised without credentials.
  */
+import { MODES } from './modes';
 import { demoTopic } from './demoVisuals';
 import { VisualRequestSchema } from './visual';
 import { BrainResponseSchema, type ActionStep, type BrainResponse, type ChatRequest, type Pose, type Source } from './schema';
@@ -75,6 +76,12 @@ function mods(t: string) {
 const learned = (t: string, req: ChatRequest) => req.skills.find((s) => !s.tags.includes('builtin') && (t.includes(s.id) || t.includes(s.id.replace(/_/g, ' ')) || (s.name.length > 3 && t.includes(s.name.toLowerCase()))))?.id ?? null;
 
 export function demoBrain(req: ChatRequest, sources: Source[] = []): BrainResponse {
+  const r = demoReply(req, sources);
+  // a specialist mode needs a real AI model: the scripted demo says so instead of pretending to be an expert
+  const m = req.mode && req.mode !== 'default' ? MODES[req.mode] : null;
+  return m ? { ...r, reply: `${r.reply}\n\n(${m.name} mode is active, but this is the scripted demo brain — ${m.name.toLowerCase()} answers need an AI model connected to the NEXUS server.)` } : r;
+}
+function demoReply(req: ChatRequest, sources: Source[]): BrainResponse {
   const raw = req.messages.at(-1)!.content.trim();
   const t = raw.toLowerCase().replace(/[’']/g, "'");
   const known = new Set(req.skills.map((s) => s.id));

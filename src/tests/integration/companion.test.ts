@@ -529,3 +529,48 @@ describe('[A126] website redesign: motion-engine states', () => {
   });
 });
 
+
+describe('[A150] NEXUS modes in the companion (Mode Manager)', () => {
+  it('[A150] switching mode needs no reload, keeps the conversation, tags messages and sends the validated mode with each request', async () => {
+    const t = rig(demo, { stores: true }); await t.ready();
+    await t.c.send('hello there'); await idle(t.c);
+    const before = t.c.getSnapshot().messages.length;
+    expect(await t.c.setMode('legal')).toBe(true);
+    expect(t.memory.settings.mode).toBe('legal'); expect(t.c.mode.id).toBe('legal');
+    const msgs = t.c.getSnapshot().messages; expect(msgs.length).toBe(before + 1);                // history kept, one switch note added
+    expect(msgs.at(-1)!.role).toBe('system'); expect(msgs.at(-1)!.text).toMatch(/Legal mode/);
+    await t.memory.updateSettings({ modeOptions: { ...t.memory.settings.modeOptions, jurisdiction: 'India', language: 'Go' } });
+    await t.c.send('what is a tort'); await idle(t.c);
+    const req = t.requests.at(-1)!;
+    expect(req.mode).toBe('legal'); expect(req.modeOptions).toEqual({ jurisdiction: 'India' });   // only the active mode's option
+    expect(req.conversationId).toBe(t.chats!.currentId);
+    // the earlier default-mode answer is labelled as such for the model; the new turn's messages carry the mode
+    expect(req.messages.find((m) => m.role === 'assistant')!.content).toMatch(/^\[answered in Default mode\] /);
+    const last = t.c.getSnapshot().messages.filter((m) => m.role !== 'system').slice(-2); expect(last.map((m) => m.mode)).toEqual(['legal', 'legal']);
+    // an unknown mode is refused and the current mode stays
+    expect(await t.c.setMode('hacker')).toBe(false); expect(t.c.mode.id).toBe('legal');
+    expect(await t.c.setMode('default')).toBe(true); await t.c.send('and now normally'); await idle(t.c);
+    expect(t.requests.at(-1)!.mode).toBe('default'); expect(t.requests.at(-1)!.modeOptions).toBeUndefined();
+    t.stop();
+  });
+  it('[A150] an emergency is flagged at once; medical mode never saves memory, even when the model suggests it', async () => {
+    const t = rig(streamed({ reply: 'Please call emergency services now.', memoryCandidates: [{ text: 'User has chest pain', category: 'fact', explicit: true, reason: 'asked' }] }), { stores: true }); await t.ready();
+    await t.c.setMode('medical');
+    const p = t.c.send('remember this: I have chest pain and can\'t breathe');
+    await until(() => !!t.c.getSnapshot().messages.find((m) => m.role === 'assistant' && m.safety));
+    expect(t.c.getSnapshot().messages.find((m) => m.role === 'assistant' && m.safety)!.safety!.kind).toBe('medical_emergency');
+    await p; await idle(t.c);
+    expect(t.memory.active().length).toBe(0); expect(t.memory.suggestions.length).toBe(0);
+    expect(t.c.getSnapshot().messages.at(-1)!.notes?.join(' ')).toMatch(/Nothing from Medical mode is saved to memory/);
+    t.stop();
+  });
+  it('[A150] the outfit follows the mode, a fixed outfit or a preview; the original look can be kept in every mode', async () => {
+    const t = rig(); await t.ready();
+    expect(t.c.outfit()).toBe('default');
+    await t.c.setMode('it'); expect(t.c.outfit()).toBe('it');
+    t.c.previewOutfit('medical'); expect(t.c.outfit()).toBe('medical'); t.c.previewOutfit(null);
+    await t.memory.updateSettings({ appearance: { ...t.memory.settings.appearance, autoOutfit: false, fixed: 'default' } });
+    expect(t.c.outfit()).toBe('default');
+    t.stop();
+  });
+});

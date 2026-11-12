@@ -3,6 +3,7 @@
  * previews) and implemented by the 3D robot (src/character3d/Robot3D.tsx). NEXUS is 3D only.
  */
 import type { Channel } from '../../shared/channels';
+import type { OutfitId } from '../../shared/modes';
 
 export interface Accessories { antenna: boolean; sidePanels: boolean; chestLight: boolean; cheekLights: boolean; foreheadIndicator: boolean }
 export const DEFAULT_ACCESSORIES: Accessories = { antenna: true, sidePanels: true, chestLight: true, cheekLights: true, foreheadIndicator: true };
@@ -18,6 +19,10 @@ export interface RobotProps {
   seat?: boolean;
   /** colour variant; defaults to the page theme (dark = the classic NEXUS, light = white and light blue) */
   skin?: 'dark' | 'light';
+  /** clothing over the original robot (3D only; null / 'default' = the original NEXUS) */
+  outfit?: { id: OutfitId; accessories: boolean; reduced: boolean } | null;
+  /** told which outfit is actually worn (or why it could not be put on) */
+  onOutfit?: (worn: OutfitId, error?: string) => void;
 }
 
 export interface RigHandle {

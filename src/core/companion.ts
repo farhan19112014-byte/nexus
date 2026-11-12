@@ -41,6 +41,8 @@ import { describeDue, parseReminder, type Reminder, type ReminderStore } from '.
 import type { ChatContextInput, ResponseMeta } from '../../shared/schema';
 import { isSmallTalk, topicFromText, type ImageResult, type VisualRequest } from '../../shared/visual';
 import type { VisionChatContext } from '../../shared/visionContext';
+import { MODES, isModeId, resolveMode, type ModeDef, type ModeOptions, type OutfitId } from '../../shared/modes';
+import { detectEmergency } from '../../shared/safety';
 type ChatContext = ChatContextInput;
 
 export interface Snapshot {
@@ -57,6 +59,8 @@ export interface Snapshot {
   voiceOkAt: number | null;
   /** the visual presenter: what is shown beside the robot for the current explanation (null = nothing) */
   visual: PresentedVisual | null;
+  /** Settings → Appearance: an outfit being previewed on the robot (not saved until applied) */
+  outfitPreview: OutfitId | null;
 }
 export interface PresentedVisual { id: number; msgId: string; request: VisualRequest; status: 'loading' | 'ready' | 'failed'; image?: ImageResult; error?: string }
 export type ActivityKind = 'building' | 'editing' | 'researching' | 'reflecting';
@@ -70,6 +74,8 @@ export interface CompanionDeps {
   /** told after every finished or failed exchange (the learning engine records real experiences from it) */
   onExchange?: (x: { msgId: string; user: string; reply: string; uncertainty?: string | null; failed?: string | null; previousReply?: string | null }) => void;
 }
+
+const WITHHELD_LABEL: Record<string, string> = { visual: 'a picture', skillProposal: 'a new animation', skillRefinement: 'an animation change', preferenceUpdate: 'a gesture preference', feedback: 'movement feedback', memoryCandidates: 'memory' };
 
 /** Meta for replies produced on this device without any AI (reminders, greetings). */
 export const ON_DEVICE_META: ResponseMeta = { provider: 'on-device', model: null, isLLM: false, latencyMs: 0, streamed: false, repaired: false, droppedFields: [], degraded: false, historySent: 0, promptVersion: 'local', research: { used: false, provider: null, count: 0 } };
@@ -111,7 +117,7 @@ export class Companion {
     if (d.stt) this.stt = d.stt; else { const r = new VoiceInputRouter(); this.voiceIn = r; this.stt = r; }
     this.runner = new SkillRunner(this.engine, d.registry);
     this.notifications = new Notifications(() => this.settings, (kind) => { if (kind !== 'error') void this.react('notify'); });
-    this.snap = { state: 'idle', messages: [], caps: null, capabilities: [], listening: false, interim: '', draft: null, speaking: false, error: null, lastSkillId: null, preview: null, mic: 'unknown', busy: false, activity: null, voiceIssue: null, voiceOkAt: null, visual: null, connection: { state: 'untested', at: null, detail: 'No request yet' } };
+    this.snap = { state: 'idle', messages: [], caps: null, capabilities: [], listening: false, interim: '', draft: null, speaking: false, error: null, lastSkillId: null, preview: null, mic: 'unknown', busy: false, activity: null, voiceIssue: null, voiceOkAt: null, visual: null, outfitPreview: null, connection: { state: 'untested', at: null, detail: 'No request yet' } };
     this.sm.on((s, prev) => this.onState(s, prev));
     this.tts.hooks = {
       onStart: () => { if (this.voiceOut?.engineName === 'server') this.set({ voiceIssue: null, voiceOkAt: Date.now() }); this.engine.setSpeaking(true); if (this.sm.state === 'responding' || this.sm.state === 'processing') this.sm.go('speaking'); this.set({ speaking: true }); },
@@ -212,6 +218,38 @@ export class Companion {
   /* ---------------- identity (Section 6) ---------------- */
   /** The robot's current display name — the one source of truth is the saved settings. */
   get robotName(): string { return this.settings.robotName; }
+
+  /* ---------------- modes (Mode Manager) ---------------- */
+  /** the active mode (a stored value that is not a known, enabled mode is never used: default) */
+  get mode(): ModeDef { return resolveMode(this.settings.mode); }
+  /** the robot's outfit right now: a preview, else the mode's outfit (automatic) or the fixed one chosen in Appearance */
+  outfit(): OutfitId { const a = this.settings.appearance; return this.snap.outfitPreview ?? (a.autoOutfit ? this.mode.outfit : a.fixed); }
+  /** only the active mode's own option is sent (validated again on the server) */
+  private modeOptions(): ModeOptions | undefined {
+    const m = this.mode; const o = this.settings.modeOptions;
+    const v = m.option === 'jurisdiction' ? o.jurisdiction : m.option === 'language' ? o.language : m.option === 'level' ? o.level : '';
+    const t = v.trim().replace(/[^\p{L}\p{N} .,'()&/+#-]/gu, '').slice(0, 40);
+    return m.option && t ? { [m.option]: t } as ModeOptions : undefined;
+  }
+  /**
+   * Switches mode without reloading anything: the conversation stays (earlier answers keep the mode they were given
+   * in), the next request uses the new mode, the robot changes outfit (if automatic) and acknowledges the switch.
+   * An unknown or disabled mode is refused; a failed save leaves the previous mode active.
+   */
+  async setMode(id: string): Promise<boolean> {
+    if (!isModeId(id) || !MODES[id].enabled) { this.notifications.push('error', `"${String(id).slice(0, 30)}" is not an available mode.`, { react: false }); return false; }
+    if (id === this.settings.mode) return true;
+    const from = this.mode;
+    try { await this.d.memory.updateSettings({ mode: id }); }
+    catch (e) { this.notifications.push('error', `Could not switch mode: ${(e as Error).message}`, { essential: true, react: false }); return false; }
+    const to = MODES[id];
+    this.push({ role: 'system', text: `${to.name} mode${to.id === 'default' ? '' : ` — ${to.tagline.toLowerCase()}`}. Earlier messages stay as they were (${from.name} mode).`, status: 'complete', mode: id });
+    // a calm acknowledgement — never while NEXUS is speaking or acting (no interruption of voice or lip-sync)
+    if (!this.snap.busy && !this.snap.speaking && !this.settings.reducedMotion && (this.sm.state === 'idle' || this.sm.state === 'listening')) { this.pres()?.react('acknowledge'); this.expressions.set('reaction', id === 'default' ? 'happy' : 'focused', 0.6, 1.4, 0); }
+    return true;
+  }
+  /** Settings → Appearance: show an outfit on the robot without saving it (null ends the preview) */
+  previewOutfit(id: OutfitId | null) { this.set({ outfitPreview: id }); }
   private renaming = false;
   /**
    * Renames the robot. Validates, saves, reads the setting back, and only then reports success.
@@ -523,7 +561,7 @@ export class Companion {
 
   /** Reminder/timer requests are handled on this device (no AI involved) and say so. */
   private async handleReminder(text: string, r: NonNullable<ReturnType<typeof parseReminder>>) {
-    const user = this.push({ role: 'user', text, status: 'complete' });
+    const user = this.push({ role: 'user', text, status: 'complete', mode: this.mode.id });
     let reply: string; let reminderId: string | undefined;
     if ('error' in r) reply = r.error;
     else {
@@ -569,16 +607,19 @@ export class Companion {
     this.pres()?.react(/^\s*(no\b|nope|actually|that'?s (not|wrong)|not quite|wrong|incorrect)/i.test(text) ? 'correction' : 'acknowledge');
     if (this.stt.listening) this.stt.abort();
     const token = this.token;
-    const user = this.push({ role: 'user', text, status: 'complete' });
+    const mode = this.mode;
+    const user = this.push({ role: 'user', text, status: 'complete', mode: mode.id });
     this.go('processing');
     this.set({ listening: false, interim: '', draft: null, busy: true, error: null });
     void this.waitingLoop(token);
 
-    const asst = this.push({ role: 'assistant', text: '', status: 'sending', replyTo: user.id, stage: 'thinking' });
+    // an emergency notice shows at once (the server repeats the same deterministic check and confirms it)
+    const emergency = detectEmergency(text);
+    const asst = this.push({ role: 'assistant', text: '', status: 'sending', replyTo: user.id, stage: 'thinking', mode: mode.id, ...(emergency ? { safety: emergency } : {}) });
     if (isSmallTalk(text)) this.smallTalk.add(asst.id); // a greeting gets no picture (not even the last topic's)
     const ctl = new AbortController(); this.reqAbort = ctl;
     const s = this.settings;
-    const research = s.research && !!this.snap.caps?.research.configured;
+    const research = s.research && !!this.snap.caps?.research.configured && mode.permissions.research;
     const prevReply = [...this.snap.messages].reverse().find((m) => m.role === 'assistant' && m.id !== asst.id && m.status === 'complete')?.text ?? null;
     let knowledge: NonNullable<ReturnType<NonNullable<CompanionDeps['knowledgeFor']>>> = [];
     try { knowledge = this.d.knowledgeFor?.(text) ?? []; } catch { knowledge = []; }
@@ -593,11 +634,12 @@ export class Companion {
     try {
       const call = o.offlineDemo ? this.d.api.offlineDemo.bind(this.d.api) : this.d.api.chat.bind(this.d.api);
       const result = await call({
-        messages: buildContext(this.snap.messages.filter((m) => m.id !== asst.id), s.historyLimit),
+        messages: buildContext(this.snap.messages.filter((m) => m.id !== asst.id), s.historyLimit, undefined, mode.id),
         skills: this.d.registry.catalog(), expressions: this.expressions.ids().filter((x) => x !== '__preview'),
         memory: this.d.memory.contextLines(text), preferences: this.prefs(),
         profile: { responseStyle: s.responseStyle, language: s.language, robotName: s.robotName, personality: s.personality, visuals: s.visuals }, lastSkillId: this.runner.lastSkillId,
         research, stream: s.streaming, ...(context ? { context } : {}),
+        mode: mode.id, ...(this.modeOptions() ? { modeOptions: this.modeOptions() } : {}), ...(this.d.chats ? { conversationId: this.d.chats.currentId } : {}),
       }, ctl.signal, {
         onStatus: (st) => { if (token === this.token) this.patch(asst.id, { stage: st }); },
         onSources: (src) => { if (token === this.token) this.patch(asst.id, { sources: src }); },
@@ -632,21 +674,24 @@ export class Companion {
       if (!result.offline) this.recordConnection(result.meta.isLLM ? 'ok' : 'demo', result.meta.isLLM ? `${result.meta.model ?? result.meta.provider} answered` : 'Demo brain answered (not an LLM)');
       if (!result.offline && this.snap.caps?.provider === 'local-demo') void this.refreshStatus().catch(() => {});   // the server answered: it is not offline
       if (result.meta.degraded) notes.push('The model output did not follow the format; showing text only and running no actions.');
+      if (result.meta.withheld?.length) notes.push(`Not available in ${MODES[result.meta.mode ?? mode.id].name} mode, so not used: ${result.meta.withheld.map((f) => WITHHELD_LABEL[f] ?? f).join(', ')}.`);
       if (result.meta.droppedFields.length) notes.push(`Ignored invalid fields from the model: ${[...new Set(result.meta.droppedFields)].join(', ')}.`);
       if (research && result.meta.research.error) notes.push(result.meta.research.error);
       if (s.research && !this.snap.caps?.research.configured) notes.push('Research is on, but no research provider is configured — answered without live sources.');
       { const vn = this.visualNotes.get(asst.id); if (vn) { notes.push(vn); this.visualNotes.delete(asst.id); } }
       if (knowledge.length && result.meta.isLLM) notes.push(`Sent ${knowledge.length} note(s) from NEXUS's knowledge base with this message (${Object.entries(knowledge.reduce<Record<string, number>>((acc, k) => { acc[k.status] = (acc[k.status] ?? 0) + 1; return acc; }, {})).map(([k, n]) => `${n} ${k}`).join(', ')}).`);
-      this.patch(asst.id, { text: resp.reply, status: 'complete', stage: undefined, meta: result.meta, response: resp, notes, changes: [{ scope: 'conversation', text: 'This reply is part of the conversation only.' }] });
+      this.patch(asst.id, { text: resp.reply, status: 'complete', stage: undefined, meta: result.meta, response: resp, notes, safety: result.meta.safety ?? emergency ?? undefined, changes: [{ scope: 'conversation', text: 'This reply is part of the conversation only.' }] });
       if (!headApplied) { this.applyExpression(resp.expression, resp.emotionIntensity); this.presentVisual(resp.visual ?? null, asst.id, token); }
       // the visual arrived after the head (in the reply's closing metadata): show it now
       else if (resp.visual && this.snap.visual?.msgId !== asst.id) this.presentVisual(resp.visual, asst.id, token);
       // "always" (Settings → Visuals): the model sent none — look up a picture of the subject ourselves
       if (this.smallTalk.has(asst.id)) { this.smallTalk.delete(asst.id); if (this.snap.visual) this.set({ visual: null }); }
-      else if (s.visuals === 'always' && !resp.visual && this.snap.visual?.msgId !== asst.id) {
+      else if (s.visuals === 'always' && mode.permissions.visuals === 'all' && !resp.visual && this.snap.visual?.msgId !== asst.id) {
         const topic = topicFromText(text) ?? this.lastTopic;
         if (topic) this.presentVisual({ kind: 'image', query: topic, caption: '' }, asst.id, token);
       }
+      // a mode without pictures: an earlier answer's picture does not linger beside this one
+      else if (mode.permissions.visuals !== 'all' && !resp.visual && this.snap.visual && this.snap.visual.msgId !== asst.id) this.dismissVisual();
       if (resp.pose !== 'neutral' || this.engine.getPose() !== 'neutral') this.engine.setPose(resp.pose as Pose);
       if (typeof document !== 'undefined' && document.hidden) this.notifications.push('response', `${this.robotName} replied.`, { react: false, desktop: true });
       try { if (result.meta.isLLM) this.d.onExchange?.({ msgId: asst.id, user: text, reply: resp.reply, uncertainty: resp.uncertainty, previousReply: prevReply }); } catch { /* learning is best-effort */ }
@@ -673,6 +718,9 @@ export class Companion {
   presentVisual(req: VisualRequest | null, msgId: string, token: number) {
     this.visualAbort?.abort(); this.visualAbort = null;
     if (this.settings.visuals === 'off' || this.smallTalk.has(msgId)) req = null;
+    // the reply's mode decides which visuals may appear (the server already removed others; offline answers too)
+    const vm = resolveMode(this.msg(msgId)?.mode).permissions.visuals;
+    if (req && (vm === 'none' || (vm === 'diagrams' && req.kind !== 'diagram'))) req = null;
     if (!req && this.smallTalk.has(msgId)) { if (this.snap.visual) this.set({ visual: null }); return; }
     // with "always", a reply whose head has no visual keeps the panel until the final check decides (no flicker)
     if (!req && this.settings.visuals === 'always' && this.snap.visual && this.snap.visual.msgId !== msgId) return;
@@ -763,7 +811,9 @@ export class Companion {
   private async sideEffects(resp: BrainResponse, userText: string, msgIdV: string, token: number) {
     const M = this.d.memory; const changes = [...(this.msg(msgIdV)?.changes ?? [])]; const notes = [...(this.msg(msgIdV)?.notes ?? [])];
     const explicitAsk = REMEMBER_RE.test(userText);
-    for (const c of resp.memoryCandidates) {
+    const md = resolveMode(this.msg(msgIdV)?.mode);
+    if (!md.permissions.memory && (resp.memoryCandidates.length || explicitAsk)) notes.push(`Nothing from ${md.name} mode is saved to memory.`);
+    for (const c of md.permissions.memory ? resp.memoryCandidates : []) {
       if (!M.settings.memoryEnabled) { notes.push('Memory is off — nothing was saved.'); break; }
       if (c.explicit && explicitAsk) {
         const r = await M.remember(c, 'explicit_request');
@@ -987,7 +1037,8 @@ export class Companion {
 
   async resetConversation() {
     if (this.persistTimer) clearTimeout(this.persistTimer);
-    const msgs = buildContext(this.snap.messages, 40);
+    // messages from modes that never store anything (medical, legal) are not summarised either
+    const msgs = buildContext(this.snap.messages.filter((m) => resolveMode(m.mode).permissions.memory), 40);
     this.interrupt('reset conversation');
     this.set({ messages: [] }); this.sm.reset(); this.set({});
     if (this.settings.memoryEnabled && msgs.length >= 4) {

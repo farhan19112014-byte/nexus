@@ -27,6 +27,7 @@ import { Link, PATHS, navigate, useTitle } from '../router';
 import { isChatBuildRequest } from '../holobuild/intent';
 import { Logo } from '../site/Site';
 import { PRODUCT_NAME } from '../../shared/identity';
+import { ModeSwitch } from '../modes/ModeSwitch';
 
 type Tab = 'conversation' | 'chats' | 'skills' | 'memory' | 'reminders' | 'settings' | 'status';
 const SHORTCUT_TABS: Record<string, Tab> = { Digit1: 'chats', Digit2: 'skills', Digit3: 'memory', Digit4: 'reminders', Digit5: 'settings', Digit6: 'status' };
@@ -102,7 +103,7 @@ export default function App() {
   useEffect(() => { const sys = matchMedia('(prefers-reduced-motion: reduce)'); if (sys.matches && !s.reducedMotion) void memory.updateSettings({ reducedMotion: true }).then(() => companion.applySettings()); }, []);
   const llm = snap.capabilities.find((c) => c.id === 'llm');
   return (
-    <div className={`app ${s.highContrast ? 'hc' : ''} ${s.largeText ? 'lt' : ''} ${s.reducedMotion ? 'rm' : ''}`}>
+    <div className={`app ${s.highContrast ? 'hc' : ''} ${s.largeText ? 'lt' : ''} ${s.reducedMotion ? 'rm' : ''}`} data-mode={companion.mode.id}>
       <a className="skip" href="#composer">Skip to message box</a>
       <header className="top">
         <Link to={PATHS.home} className="brand" aria-label={`${PRODUCT_NAME} home page`} title="Back to the home page"><Logo size={24} /><span>{PRODUCT_NAME}</span></Link>
@@ -110,6 +111,7 @@ export default function App() {
           <span className="robot-name" data-testid="robot-name">{robotName}</span>
           <button className="icon-btn" onClick={openRenameDialog} aria-label={`Rename ${robotName}`} title="Rename your robot"><Icon name="pen" /></button>
         </div>
+        <ModeSwitch />
         <div className="chips-row">
           {llm && <span className={`badge cap-${snap.connection.state === 'failed' ? 'unavailable' : llm.state}`} title={`${llm.detail} — ${snap.connection.detail}${snap.connection.at ? ` (${new Date(snap.connection.at).toLocaleTimeString()})` : ''}`} data-testid="ai-chip">
             {snap.caps?.provider === 'web-demo' ? 'web demo · not an LLM' : snap.caps?.provider === 'local-demo' ? 'server offline' : snap.caps?.isLLM ? `${snap.caps.model ?? 'LLM'} · ${snap.connection.state === 'ok' ? 'connected' : snap.connection.state === 'failed' ? 'last request failed' : 'not checked yet'}` : 'demo brain · not an LLM'}

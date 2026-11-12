@@ -1,4 +1,5 @@
 /** Assets 85/86 — conversation: history with status & timestamps, streaming, retry, cancel, sources, consent prompts, proposals, disclosures. */
+import { MODES } from '../../shared/modes';
 import { Icon } from './Icon';
 import { useEffect, useRef, useState } from 'react';
 import { companion, learner, memory, registry } from '../core/runtime';
@@ -44,17 +45,19 @@ export function Message({ m, lastUser, lastAssistant, onEdit }: { m: UIMessage; 
   const copy = async () => { try { await navigator.clipboard.writeText(m.text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { companion.notifications.push('error', 'Copy failed — your browser blocked clipboard access.'); } };
   const [open, setOpen] = useState(false);
   useStore(memory);
-  if (m.role === 'system') return <div className="msg system">{m.text}</div>;
+  if (m.role === 'system') return <div className={`msg system${m.mode ? ' mode-switch-note' : ''}`}>{m.text}</div>;
   const r = m.response; const meta = m.meta;
   const sugg = memory.suggestions.filter((s) => m.changes?.some((c) => c.text.includes(s.text)));
   return (
     <article className={`msg ${m.role} ms-${m.status}`} aria-busy={m.status === 'streaming' || m.status === 'sending'}>
+      {m.safety && <div className="safety-banner" role="alert" data-testid="safety-banner">{m.safety.notice}</div>}
       <div className="bubble">
         {m.role === 'assistant' && m.text ? <Markdown text={m.text} /> : m.text || (m.status === 'sending' ? <span className="typing" aria-label={m.stage === 'researching' ? 'Researching' : 'Waiting for the AI'}><i /><i /><i /> {m.stage === 'researching' ? 'researching…' : ''}</span> : m.status === 'cancelled' ? <em>cancelled before any reply</em> : '')}
         {m.status === 'streaming' && <span className="cursor" aria-hidden>▍</span>}
       </div>
       <div className="msg-meta">
         <time dateTime={new Date(m.at).toISOString()}>{fmtTime(m.at)}</time>
+        {m.mode && m.mode !== 'default' && <span className={`mode-tag mt-${m.mode}`} title={`Sent in ${MODES[m.mode].name} mode`}>{MODES[m.mode].name}</span>}
         {m.role === 'assistant' && m.status === 'complete' && meta && (meta.provider === 'on-device'
           ? <span>handled on this device · no AI</span>
           : <span>{meta.isLLM ? `LLM · ${meta.model ?? meta.provider}` : meta.provider === 'local-demo' ? 'local demo brain' : 'demo brain (not an LLM)'}{meta.streamed ? ' · streamed' : ''}{meta.promptMode === 'compact' ? ' · compact prompt' : ''} · {(meta.latencyMs / 1000).toFixed(1)}s</span>)}
@@ -81,6 +84,7 @@ export function Message({ m, lastUser, lastAssistant, onEdit }: { m: UIMessage; 
           <ol>{m.sources.map((s) => <li key={s.id} className={r?.citations.includes(s.id) ? 'cited' : ''}><a href={s.url} target="_blank" rel="noreferrer noopener">{s.title}</a> <span className="muted">[{s.id}] · retrieved {new Date(s.retrievedAt).toLocaleString()}{s.publishedAt ? ` · published ${s.publishedAt.slice(0, 10)}` : ''}{r?.citations.includes(s.id) ? ' · cited' : ''}</span><p>{s.snippet.slice(0, 280)}{s.snippet.length > 280 ? '…' : ''}</p></li>)}</ol>
         </details>
       )}
+      {m.role === 'assistant' && m.status === 'complete' && meta?.notice && <p className="mode-scope" data-testid="mode-notice">{meta.notice}</p>}
       {r?.clarification && <div className="card clar"><Icon name="help" /> {r.clarification}</div>}
       {sugg.map((s) => (
         <div key={s.id} className="card consent" role="group" aria-label="Memory suggestion">
