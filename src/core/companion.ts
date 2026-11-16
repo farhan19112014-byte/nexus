@@ -639,7 +639,7 @@ export class Companion {
         memory: this.d.memory.contextLines(text), preferences: this.prefs(),
         profile: { responseStyle: s.responseStyle, language: s.language, robotName: s.robotName, personality: s.personality, visuals: s.visuals }, lastSkillId: this.runner.lastSkillId,
         research, stream: s.streaming, ...(context ? { context } : {}),
-        mode: mode.id, ...(this.modeOptions() ? { modeOptions: this.modeOptions() } : {}), ...(this.d.chats ? { conversationId: this.d.chats.currentId } : {}),
+        mode: mode.id, verifyCurrent: s.verifyCurrent, ...(this.modeOptions() ? { modeOptions: this.modeOptions() } : {}), ...(this.d.chats ? { conversationId: this.d.chats.currentId } : {}),
       }, ctl.signal, {
         onStatus: (st) => { if (token === this.token) this.patch(asst.id, { stage: st }); },
         onSources: (src) => { if (token === this.token) this.patch(asst.id, { sources: src }); },

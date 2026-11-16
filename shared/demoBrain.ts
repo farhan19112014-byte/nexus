@@ -81,6 +81,8 @@ export function demoBrain(req: ChatRequest, sources: Source[] = []): BrainRespon
   const m = req.mode && req.mode !== 'default' ? MODES[req.mode] : null;
   return m ? { ...r, reply: `${r.reply}\n\n(${m.name} mode is active, but this is the scripted demo brain — ${m.name.toLowerCase()} answers need an AI model connected to the NEXUS server.)` } : r;
 }
+/** the opening of a snippet, cut at a sentence end (abbreviations such as "Lt. Gen." do not end a sentence) */
+const firstSentences = (t: string, max = 280) => { if (t.length <= max) return t; const cut = t.slice(0, max); const end = cut.search(/[.!?](?=\s+[A-Z][a-z]{2,}\b(?!\.))[^.!?]*$/); return end > 60 ? cut.slice(0, end + 1) : `${cut.trimEnd()}…`; };
 function demoReply(req: ChatRequest, sources: Source[]): BrainResponse {
   const raw = req.messages.at(-1)!.content.trim();
   const t = raw.toLowerCase().replace(/[’']/g, "'");
@@ -90,7 +92,7 @@ function demoReply(req: ChatRequest, sources: Source[]): BrainResponse {
   // research results (extractive only — the demo brain cannot summarize)
   if (req.research) {
     if (!sources.length) return R({ reply: "I couldn't retrieve any sources for that (research is unavailable or returned nothing), and in demo mode I can't answer from knowledge either.", expression: 'concerned', uncertainty: 'high' });
-    const lines = sources.slice(0, 3).map((s) => `[${s.id}] ${s.title}: ${s.snippet.split(/(?<=\.)\s/).slice(0, 2).join(' ')}`);
+    const lines = sources.slice(0, 3).map((s) => `[${s.id}] ${s.title}${s.authority === 'official' ? ' (official)' : ''}${s.publishedAt ? ` — page updated ${s.publishedAt.slice(0, 10)}` : ''}: ${firstSentences(s.snippet)}`);
     return R({ reply: `Here is what I retrieved just now (quoted from the sources, not an AI summary — demo mode can't analyse it):\n${lines.join('\n')}`, expression: 'curious', citations: sources.slice(0, 3).map((s) => s.id), uncertainty: 'medium' });
   }
 

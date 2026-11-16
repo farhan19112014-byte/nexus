@@ -9,9 +9,16 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 
 function toneWav(dur = 1.6, on = (t) => t < 0.6 || t > 0.9, sr = 16000) { const n = Math.round(sr * dur), d = Buffer.alloc(44 + n * 2); d.write('RIFF', 0); d.writeUInt32LE(36 + n * 2, 4); d.write('WAVEfmt ', 8); d.writeUInt32LE(16, 16); d.writeUInt16LE(1, 20); d.writeUInt16LE(1, 22); d.writeUInt32LE(sr, 24); d.writeUInt32LE(sr * 2, 28); d.writeUInt16LE(2, 32); d.writeUInt16LE(16, 34); d.write('data', 36); d.writeUInt32LE(n * 2, 40); for (let i = 0; i < n; i++) { const t = i / sr; d.writeInt16LE(on(t) ? Math.round(Math.sin(2 * Math.PI * 220 * t) * 16000) : 0, 44 + i * 2); } return d; }
 
-const gemini = []; const tts = []; let failing = false;
+const gemini = []; const tts = []; const wiki = []; let failing = false;
 const mock = http.createServer(async (req, res) => {
   let b = ''; for await (const c of req) b += c; const j = JSON.parse(b || '{}');
+  // mock Wikipedia (research): a page about the office, with its last-edit date — test data for the mocked search
+  if (req.url.startsWith('/w/api.php')) {
+    res.setHeader('content-type', 'application/json'); wiki.push(decodeURIComponent(req.url));
+    if (req.url.includes('generator=search')) return res.end(JSON.stringify({ query: { pages: [] } }));
+    if (req.url.includes('list=search')) return res.end(JSON.stringify({ query: { search: [{ pageid: 9, title: 'Governor of Bihar' }] } }));
+    return res.end(JSON.stringify({ query: { pages: { 9: { title: 'Governor of Bihar', extract: 'The governor of Bihar is the constitutional head of the state of Bihar.', fullurl: 'https://en.wikipedia.org/wiki/Governor_of_Bihar', revisions: [{ timestamp: '2026-10-02T10:00:00Z' }] } } } }));
+  }
   if (req.url.includes('/v1/text-to-speech/')) {
     tts.push({ text: j.text, at: Date.now() });
     const text = String(j.text ?? ''); const per = 1.6 / Math.max(1, text.length);
@@ -33,7 +40,7 @@ const mock = http.createServer(async (req, res) => {
 });
 await new Promise((r) => mock.listen(0, '127.0.0.1', r)); const mport = mock.address().port;
 const port = 8896; const O = `http://127.0.0.1:${port}`; mkdirSync('test-results', { recursive: true });
-const srv = spawn('node', ['dist-server/index.js', '--serve-dist'], { env: { ...process.env, PORT: String(port), LLM_PROVIDER: 'gemini', GEMINI_API_KEY: 'AIza-test-not-real', GEMINI_MODEL: 'gemini-test', GEMINI_BASE_URL: `http://127.0.0.1:${mport}`, GEMINI_FALLBACK_MODELS: 'none', GEMINI_RETRY_DELAY_MS: '0', RUNTIME_CONFIG_PATH: 'test-results/modes-runtime.json', TTS_PROVIDER: 'elevenlabs', ELEVENLABS_API_KEY: 'test-not-real', ELEVENLABS_VOICE_ID: 'voice-test', ELEVENLABS_BASE_URL: `http://127.0.0.1:${mport}`, STT_PROVIDER: 'none', RESEARCH_PROVIDER: 'none', LOG_REQUESTS: 'false' }, stdio: 'ignore' });
+const srv = spawn('node', ['dist-server/index.js', '--serve-dist'], { env: { ...process.env, PORT: String(port), LLM_PROVIDER: 'gemini', GEMINI_API_KEY: 'AIza-test-not-real', GEMINI_MODEL: 'gemini-test', GEMINI_BASE_URL: `http://127.0.0.1:${mport}`, GEMINI_FALLBACK_MODELS: 'none', GEMINI_RETRY_DELAY_MS: '0', RUNTIME_CONFIG_PATH: 'test-results/modes-runtime.json', TTS_PROVIDER: 'elevenlabs', ELEVENLABS_API_KEY: 'test-not-real', ELEVENLABS_VOICE_ID: 'voice-test', ELEVENLABS_BASE_URL: `http://127.0.0.1:${mport}`, STT_PROVIDER: 'none', RESEARCH_PROVIDER: 'wikipedia', WIKIPEDIA_BASE_URL: `http://127.0.0.1:${mport}`, LOG_REQUESTS: 'false' }, stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 2500));
 
 const R = {}; const ok = (k, v) => { R[k] = v; };
@@ -137,6 +144,15 @@ const sp = samples.filter((s) => s.st === 'speaking');
 ok('voice', { ttsCalls: tts.length - t0, spoke: sp.length, maxMouth: Math.max(0, ...sp.map((s) => s.mouth)), minMouth: Math.min(1, ...sp.slice(3).map((s) => s.mouth)), levelDriven: sp.some((s) => s.lvl), switched, speakAfterSwitch, outfitAfter: samples.at(-1)?.outfit, endState: samples.at(-1)?.st });
 await E(async () => { await nexus.memory.updateSettings({ voiceOutput: false }); nexus.companion.applySettings(); });
 
+// 9b. time-sensitive facts: research is OFF, yet a current-officeholder question is checked live; a timeless one is not
+await E(async () => { await nexus.memory.updateSettings({ research: false }); await nexus.companion.setMode('default'); });
+const w0 = wiki.filter((u) => u.includes('list=search')).length;
+await E(() => { void nexus.companion.send('Explain how rainbows form'); }); await idle();
+const w1 = wiki.filter((u) => u.includes('list=search')).length;
+await E(() => { void nexus.companion.send('Who is the current Governor of Bihar?'); }); await idle();
+const fr = wiki.filter((u) => u.includes('list=search')).slice(w1 - w0 > 0 ? -1 : -1);
+ok('fresh', { timelessSearches: w1 - w0, searchedFor: fr.at(-1)?.match(/srsearch=([^&]+)/)?.[1], sys: { date: /TODAY'S DATE: \w+, \d+ \w+ 20\d\d/.test(gemini.at(-1)?.sys ?? ''), fresh: /TIME-SENSITIVE QUESTION[\s\S]*Live sources were retrieved/.test(gemini.at(-1)?.sys ?? ''), former: /"former"/.test(gemini.at(-1)?.sys ?? '') }, line: await p.locator('[data-testid=freshness]').last().textContent().catch(() => null), meta: await E(() => window.__lastA()?.meta?.freshness ?? null) });
+
 // 10. phone width: the selector fits, no horizontal scroll
 const mp = await (await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage(); mp.on('pageerror', (e) => errs.push(e.message));
 await mp.goto(`${O}/app`, { waitUntil: 'networkidle' }); await mp.evaluate(async () => { await nexus.memory.updateSettings({ setupDone: true, greeted: true }); }); await mp.reload({ waitUntil: 'networkidle' }); await mp.keyboard.press('Escape');
@@ -157,6 +173,7 @@ const checks = [
   ['outfits: each mode wears its own outfit on the 3D robot, default restores the original; each outfit chunk loads on demand', ['education', 'medical', 'legal', 'it'].every((m) => S.outfits.outfits[m] === m) && S.outfits.outfits.default === 'default' && ['education', 'medical', 'legal', 'it'].every((m) => S.outfits.chunks.some((c) => c.startsWith(`outfit-${m}-`)))],
   ['appearance: preview without saving, end preview, restore the original look in any mode', S.appearance.previewing.worn === 'medical' && S.appearance.previewing.saved.autoOutfit === true && S.appearance.afterPreview === 'default' && S.appearance.restored.worn === 'default' && S.appearance.restored.mode === 'legal' && S.appearance.restored.a.autoOutfit === false],
   ['voice: ElevenLabs speech in a mode with audio-driven lip-sync; an outfit change mid-speech does not interrupt it', S.voice.ttsCalls > 0 && S.voice.spoke > 5 && S.voice.levelDriven && S.voice.maxMouth > 0.3 && S.voice.switched && S.voice.speakAfterSwitch > 2 && S.voice.outfitAfter === 'it' && S.voice.endState === 'idle'],
+  ['time-sensitive facts: research off, yet "who is the current governor" is checked live (today\'s date + current-vs-former rules reach Gemini; "Checked live on … · Source" shown); a timeless question is not searched', S.fresh.timelessSearches === 0 && S.fresh.searchedFor === 'Governor of Bihar' && S.fresh.sys.date && S.fresh.sys.fresh && S.fresh.sys.former && /^Checked live on .+ Source: Governor of Bihar \(reference source, page updated 2 October 2026\)/.test(S.fresh.line ?? '') && S.fresh.meta?.verified === true],
   ['phone width: the selector fits the screen, no horizontal scroll', S.phone.sw <= 390 && S.phone.left >= 0 && S.phone.right <= S.phone.vw && S.phone.cards === 5],
   ['no page errors', S.errors.length === 0],
 ];

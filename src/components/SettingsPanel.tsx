@@ -229,6 +229,7 @@ export default function SettingsPanel() {
       </fieldset>
       <label className="field">Language<input value={s.language} maxLength={40} onChange={(e) => up({ language: e.target.value || 'English' })} /></label>
       <T k="streaming" label="Stream replies when the provider supports it" />
+      <T k="verifyCurrent" label="Check current facts online automatically (who holds an office now, dates, prices, latest…) — sends only that question to the research service" />
       <label className="field">History sent to the model: last {s.historyLimit} messages<input type="range" min={2} max={40} step={2} value={s.historyLimit} onChange={(e) => up({ historyLimit: Number(e.target.value) })} /></label>
       <h4>Animation & appearance</h4>
       <label className="field">Layout<select value={s.layout} onChange={(e) => up({ layout: e.target.value as Settings['layout'] })}><option value="robot">Robot view — the robot fills the window, voice first</option><option value="workspace">Workspace — robot, chat and panels side by side</option></select></label>

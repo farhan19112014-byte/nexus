@@ -23,3 +23,6 @@
 @media (max-width: 760px) { .mode-btn-label { display: none; } .mode-btn { padding: 0 9px; } }
 /* the mode button joins the top bar: on mid-size screens the workspace links show their icons only (they keep their labels for assistive tech) */
 @media (min-width: 761px) and (max-width: 1100px) { .app-links .btn > span { display: none; } .app-links .btn { padding-inline: 10px; } }
+.msg .fresh-line { margin: 4px 0 0; font-size: 12px; color: var(--c-muted); }
+.msg .fresh-line.verified { color: var(--c-ok); } .msg .fresh-line.verified a { color: inherit; text-decoration: underline; }
+.msg .fresh-line.unverified { color: var(--c-warn); }

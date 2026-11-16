@@ -12,6 +12,7 @@ import type { ServerConfig } from './config';
 import { ProviderError, type ImagePart, type LLMProvider } from './providers/types';
 import { parseImageDataUrl } from '../shared/vision';
 import { researchQuery, type ResearchProvider } from './research';
+import { freshQueryWith, isTimeSensitive, type Freshness } from '../shared/freshness';
 import { resolveMode } from '../shared/modes';
 import { detectEmergency } from '../shared/safety';
 import { allowedVisual, applyModePermissions } from './modes/permissions';
@@ -48,8 +49,29 @@ export function coerceBrainResponse(raw: unknown): { value: BrainResponse | null
 
 type Emit = (e: StreamEvent) => void;
 
+/** What the server records about a time-sensitive answer — decided from the real retrieval, never from model text. */
+export function freshnessOf(sources: Source[], meta: ResponseMeta, req: ChatRequest): Freshness {
+  const best = sources[0];
+  if (best) {
+    // the newest page date among the sources: when every dated source is old, say so (a page's date is not the event's date)
+    const dated = sources.map((s) => (s.publishedAt ? Date.parse(s.publishedAt) : NaN)).filter((n) => !Number.isNaN(n));
+    const newest = dated.length ? Math.max(...dated) : null;
+    const old = newest !== null && Date.now() - newest > 365 * 86_400_000;
+    return { timeSensitive: true, verified: true, checkedAt: best.retrievedAt, source: { title: best.title, url: best.url, authority: best.authority ?? 'other', updatedAt: best.publishedAt ?? null }, count: sources.length, via: meta.research.provider ?? undefined, ...(old ? { note: `The newest dated source was last updated on ${new Date(newest!).toISOString().slice(0, 10)}; this may have changed since.` } : {}) };
+  }
+  const note = !resolveMode(req.mode).permissions.research ? 'Live research is not available in this mode.'
+    : !req.verifyCurrent && !req.research ? 'Automatic checking of current facts is turned off.'
+      : meta.research.error ?? 'No live source could be retrieved.';
+  return { timeSensitive: true, verified: false, checkedAt: null, source: null, note };
+}
+
 export class BrainService {
-  constructor(private cfg: ServerConfig, private provider: LLMProvider, private research: ResearchProvider | null) {}
+  /** `freshResearch`: the search used to verify time-sensitive questions (defaults to the research provider) */
+  constructor(private cfg: ServerConfig, private provider: LLMProvider, private research: ResearchProvider | null, private freshResearch: ResearchProvider | null = research) {}
+  /** recent verification searches, so the same question asked again within ten minutes costs no new search */
+  private cache = new Map<string, { at: number; sources: Source[] }>();
+  private cached(q: string): Source[] | null { const c = this.cache.get(q); if (!c) return null; if (Date.now() - c.at > 600_000) { this.cache.delete(q); return null; } return c.sources; }
+  private remember(q: string, sources: Source[]) { if (this.cache.size >= 100) this.cache.delete(this.cache.keys().next().value!); this.cache.set(q, { at: Date.now(), sources }); }
   /** Small local models (Ollama, LM Studio) often run with a 2–4k token context: send them a compact prompt and shorter history. */
   get compact(): boolean {
     if (this.cfg.promptMode === 'compact') return true;
@@ -57,20 +79,33 @@ export class BrainService {
     return this.provider.id === 'openai' && isLocalUrl(this.cfg.openai.baseUrl);
   }
 
-  private async gatherSources(req: ChatRequest, signal: AbortSignal, emit: Emit, meta: ResponseMeta): Promise<Source[]> {
-    if (!req.research || !resolveMode(req.mode).permissions.research) return [];   // research only where the mode permits it
-    meta.research.provider = this.research?.id ?? null;
-    if (!this.research || !this.research.configured().ok) {
-      meta.research.error = this.research ? this.research.configured().note : 'No research provider is configured on the server (RESEARCH_PROVIDER).';
+  /**
+   * Live sources for this turn. Research runs when the user turned it on — and, for a time-sensitive question (who holds
+   * an office now, dates, prices, "latest"…), automatically, so the answer does not rest on the model's stale training
+   * data. Only where the mode permits research.
+   */
+  private async gatherSources(req: ChatRequest, signal: AbortSignal, emit: Emit, meta: ResponseMeta, fresh: boolean): Promise<Source[]> {
+    const auto = fresh && req.verifyCurrent && !req.research;
+    if ((!req.research && !auto) || !resolveMode(req.mode).permissions.research) return [];   // research only where the mode permits it
+    if (auto) meta.autoResearch = true;
+    const provider = fresh ? this.freshResearch ?? this.research : this.research;
+    meta.research.provider = provider?.id ?? null;
+    if (!provider || !provider.configured().ok) {
+      meta.research.error = provider ? provider.configured().note : 'No research provider is configured on the server (RESEARCH_PROVIDER).';
       return [];
     }
     emit({ type: 'status', stage: 'researching' });
     const ctl = new AbortController();
-    const t = setTimeout(() => ctl.abort(), 9000);
+    const t = setTimeout(() => ctl.abort(), fresh ? 14000 : 9000);
     const onAbort = () => ctl.abort(); signal.addEventListener('abort', onAbort);
     try {
-      const q = researchQuery(req.messages.at(-1)!.content);
-      const s = q ? await this.research.search(q, ctl.signal) : [];
+      const text = req.messages.at(-1)!.content;
+      const previous = req.messages.filter((m) => m.role === 'user').at(-2)?.content;
+      const q = fresh ? freshQueryWith(text, previous) || researchQuery(text) : researchQuery(text);
+      const key = fresh ? `${provider.id}|${q.toLowerCase()}` : '';
+      let s = (key && this.cached(key)) || (q ? await provider.search(q, ctl.signal, { fresh }) : []);
+      if (!s.length && fresh && researchQuery(text) && researchQuery(text) !== q) s = await provider.search(researchQuery(text), ctl.signal, { fresh });
+      if (key && s.length) this.remember(key, s);
       meta.research.used = s.length > 0; meta.research.count = s.length;
       if (!s.length) meta.research.error = 'The search returned no results.';
       emit({ type: 'sources', sources: s });
@@ -95,11 +130,13 @@ export class BrainService {
     const permit = (r: BrainResponse) => { const x = applyModePermissions(mode.id, r); if (x.removed.length) meta.withheld = [...new Set([...(meta.withheld ?? []), ...x.removed])]; return x.response; };
     // a frame this model cannot see (or that is not a valid image) is dropped, so the prompt never claims one is attached
     if (req.context?.vision?.frame && (!this.provider.supportsVision || !parseImageDataUrl(req.context.vision.frame))) req = { ...req, context: { ...req.context, vision: { ...req.context.vision, frame: undefined } } };
-    const sources = await this.gatherSources(req, clientSignal, emit, meta);
+    const fresh = isTimeSensitive(req.messages.at(-1)!.content);
+    const sources = await this.gatherSources(req, clientSignal, emit, meta, fresh);
+    if (fresh) meta.freshness = freshnessOf(sources, meta, req);
     if (clientSignal.aborted) throw new ProviderError('Request cancelled', 'cancelled', 499);
 
     if (!meta.isLLM) {
-      const response = permit(demoBrain(req, sources));
+      const response = permit(demoBrain(sources.length && !req.research ? { ...req, research: true } : req, sources));
       emit({ type: 'head', head: BrainHeadSchema.parse(response) });
       emit({ type: 'delta', text: response.reply });   // one chunk: the demo brain does not stream
       meta.latencyMs = Date.now() - t0;
@@ -149,7 +186,7 @@ export class BrainService {
 
   private async streamed(req: ChatRequest, history: ChatMessage[], sources: Source[], signal: AbortSignal, emit: Emit, meta: ResponseMeta, onSent: () => void): Promise<BrainResponse> {
     const parser = new StreamParser();
-    const system = buildSystemPrompt(req, { streaming: true, sources, compact: this.compact });
+    const system = buildSystemPrompt(req, { streaming: true, sources, compact: this.compact, fresh: isTimeSensitive(req.messages.at(-1)!.content) });
     emit({ type: 'status', stage: 'thinking' });
     await this.provider.stream({ system, messages: history, maxTokens: this.cfg.maxTokens, temperature: this.cfg.temperature, json: false, ...this.images(req) }, signal, (chunk) => {
       const { delta, headParsed } = parser.feed(chunk);
@@ -175,7 +212,7 @@ export class BrainService {
   }
 
   private async json(req: ChatRequest, history: ChatMessage[], sources: Source[], signal: AbortSignal, meta: ResponseMeta): Promise<BrainResponse> {
-    const system = buildSystemPrompt(req, { streaming: false, sources, compact: this.compact });
+    const system = buildSystemPrompt(req, { streaming: false, sources, compact: this.compact, fresh: isTimeSensitive(req.messages.at(-1)!.content) });
     const call = (msgs: ChatMessage[]) => this.provider.complete({ system, messages: msgs, maxTokens: this.cfg.maxTokens, temperature: this.cfg.temperature, json: true, ...this.images(req) }, signal);
     let text = await call(history);
     let res: ReturnType<typeof coerceBrainResponse>;

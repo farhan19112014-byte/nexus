@@ -23,7 +23,8 @@ import { OpenAICompatibleProvider } from './providers/openai';
 import { AnthropicProvider } from './providers/anthropic';
 import { GeminiProvider } from './providers/gemini';
 import { DemoProvider } from './providers/demo';
-import { makeResearch, type ResearchProvider } from './research';
+import { Combined, makeResearch, type ResearchProvider } from './research';
+import { GoogleSearch } from './research/google';
 import { PROMPT_VERSION } from './prompts/system';
 import { DailyBudget, makeCounterStore, visitorOf, type CounterStore, type Denied, type MeterName } from './budget';
 import { createHash, timingSafeEqual } from 'node:crypto';
@@ -118,8 +119,14 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   let runtime = opts.persistRuntime !== false && base.allowRuntimeConfig ? loadRuntime(base.runtimeConfigPath) : {};
   let provider = makeProvider(cfg);
   let research: ResearchProvider | null = makeResearch(cfg.research);
-  let brain = new BrainService(cfg, provider, research);
-  const rebuild = () => { cfg = applyRuntime(base, runtime); provider = makeProvider(cfg); research = makeResearch(cfg.research); brain = new BrainService(cfg, provider, research); };
+  /** live verification of time-sensitive questions: Google Search (through the Gemini key) together with the configured research provider */
+  const makeFresh = (): ResearchProvider | null => {
+    const g = cfg.research.googleSearch !== false ? new GoogleSearch({ apiKey: cfg.gemini.apiKey, model: cfg.gemini.model, baseUrl: cfg.gemini.baseUrl }) : null;
+    const parts = [g?.configured().ok ? g : null, research?.configured().ok ? research : null].filter(Boolean) as ResearchProvider[];
+    return parts.length > 1 ? new Combined(parts) : parts[0] ?? research;
+  };
+  let brain = new BrainService(cfg, provider, research, makeFresh());
+  const rebuild = () => { cfg = applyRuntime(base, runtime); provider = makeProvider(cfg); research = makeResearch(cfg.research); brain = new BrainService(cfg, provider, research, makeFresh()); };
 
   const app = express();
   app.disable('x-powered-by');

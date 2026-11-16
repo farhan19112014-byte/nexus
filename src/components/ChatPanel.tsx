@@ -1,5 +1,6 @@
 /** Assets 85/86 — conversation: history with status & timestamps, streaming, retry, cancel, sources, consent prompts, proposals, disclosures. */
 import { MODES } from '../../shared/modes';
+import { fmtDay, type Freshness } from '../../shared/freshness';
 import { Icon } from './Icon';
 import { useEffect, useRef, useState } from 'react';
 import { companion, learner, memory, registry } from '../core/runtime';
@@ -38,6 +39,17 @@ function Feedback({ m }: { m: UIMessage }) {
   const give = (up: boolean) => { if (given !== null) return; setGiven(up); void learner.feedback(m.id, up, q); };
   if (given !== null) return <span className="fresh" role="status">thanks — noted as {given ? 'helpful' : 'not helpful'}</span>;
   return <span className="feedback-btns"><button className="link" onClick={() => give(true)} aria-label="Helpful" title="Helpful"><Icon name="thumbUp" /></button><button className="link" onClick={() => give(false)} aria-label="Not helpful" title="Not helpful"><Icon name="thumbDown" /></button></span>;
+}
+
+/** A time-sensitive answer: when and where it was checked live (server facts, not model text) — or that it was not. */
+function FreshnessLine({ f }: { f: Freshness }) {
+  if (!f.verified || !f.source) return <p className="fresh-line unverified" data-testid="freshness" role="note">Not verified live — this may be out of date.{f.note ? ` ${f.note}` : ''}</p>;
+  const s = f.source;
+  return (
+    <p className="fresh-line verified" data-testid="freshness">
+      Checked live on {fmtDay(f.checkedAt)} · Source: <a href={s.url} target="_blank" rel="noreferrer noopener">{s.title}</a> ({s.authority === 'official' ? 'official source' : s.authority === 'reference' ? 'reference source' : 'web source'}{s.updatedAt ? `, page updated ${fmtDay(s.updatedAt)}` : ''})
+    </p>
+  );
 }
 
 export function Message({ m, lastUser, lastAssistant, onEdit }: { m: UIMessage; lastUser?: boolean; lastAssistant?: boolean; onEdit?: () => void }) {
@@ -84,6 +96,7 @@ export function Message({ m, lastUser, lastAssistant, onEdit }: { m: UIMessage; 
           <ol>{m.sources.map((s) => <li key={s.id} className={r?.citations.includes(s.id) ? 'cited' : ''}><a href={s.url} target="_blank" rel="noreferrer noopener">{s.title}</a> <span className="muted">[{s.id}] · retrieved {new Date(s.retrievedAt).toLocaleString()}{s.publishedAt ? ` · published ${s.publishedAt.slice(0, 10)}` : ''}{r?.citations.includes(s.id) ? ' · cited' : ''}</span><p>{s.snippet.slice(0, 280)}{s.snippet.length > 280 ? '…' : ''}</p></li>)}</ol>
         </details>
       )}
+      {m.role === 'assistant' && m.status === 'complete' && meta?.freshness && <FreshnessLine f={meta.freshness} />}
       {m.role === 'assistant' && m.status === 'complete' && meta?.notice && <p className="mode-scope" data-testid="mode-notice">{meta.notice}</p>}
       {r?.clarification && <div className="card clar"><Icon name="help" /> {r.clarification}</div>}
       {sugg.map((s) => (

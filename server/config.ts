@@ -78,7 +78,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): ServerConfig {
       // tried in order when the main model is overloaded (HTTP 5xx); "none" turns this off
       fallbackModels: (env.GEMINI_FALLBACK_MODELS ?? 'gemini-3.5-flash-lite,gemini-3.1-flash-lite').split(',').map((m) => m.trim()).filter((m) => m && m !== 'none'),
       ...(env.GEMINI_RETRY_DELAY_MS ? { retryDelayMs: Number(env.GEMINI_RETRY_DELAY_MS) } : {}) },
-    research: { provider: (['wikipedia', 'searxng', 'tavily'].includes(rp) ? rp : 'none') as ResearchConfig['provider'], searxngUrl: env.SEARXNG_URL ?? '', tavilyKey: env.TAVILY_API_KEY ?? '', wikipediaLang: env.WIKIPEDIA_LANG ?? 'en', wikipediaBase: env.WIKIPEDIA_BASE_URL || undefined, tavilyBase: env.TAVILY_BASE_URL || undefined },
+    research: { provider: (['wikipedia', 'searxng', 'tavily'].includes(rp) ? rp : 'none') as ResearchConfig['provider'], searxngUrl: env.SEARXNG_URL ?? '', tavilyKey: env.TAVILY_API_KEY ?? '', wikipediaLang: env.WIKIPEDIA_LANG ?? 'en', wikipediaBase: env.WIKIPEDIA_BASE_URL || undefined, tavilyBase: env.TAVILY_BASE_URL || undefined, googleSearch: (env.GOOGLE_SEARCH_GROUNDING ?? 'on').toLowerCase() !== 'off' },
     allowRuntimeConfig: (env.ALLOW_RUNTIME_CONFIG ?? 'true') !== 'false' && !pub,
     publicMode: pub,
     allowedOrigins: (env.ALLOWED_ORIGINS ?? '').split(',').map((o) => o.trim().replace(/\/+$/, '')).filter((o) => /^https?:\/\/[^/\s]+$/i.test(o)),

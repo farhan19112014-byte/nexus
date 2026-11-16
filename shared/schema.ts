@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { VisionChatContextSchema } from './visionContext';
 import { MODE_IDS, ModeOptionsSchema, type ModeId } from './modes';
 import type { SafetyNotice } from './safety';
+import type { Freshness } from './freshness';
 import { VisualFieldSchema } from './visual';
 import { DEFAULT_ROBOT_NAME, effectiveRobotName } from './identity';
 import { CHANNEL_NAMES, type Channel } from './channels';
@@ -250,6 +251,8 @@ export const SourceSchema = z.object({
   provider: z.string().max(40),
   retrievedAt: z.string().max(40),     // ISO timestamp of OUR retrieval, never invented
   publishedAt: z.string().max(40).nullable().default(null),
+  /** official (government / primary) · reference (encyclopedia) · other — set by the server from the URL */
+  authority: z.enum(['official', 'reference', 'other']).optional(),
 });
 export type Source = z.infer<typeof SourceSchema>;
 
@@ -316,6 +319,8 @@ export const ChatRequestSchema = z.object({
   context: ChatContextSchema.optional(),
   /** the active NEXUS mode (older clients omit it: default); the server checks it against the mode registry */
   mode: z.enum(MODE_IDS).default('default'),
+  /** check time-sensitive facts (current officeholders, dates, prices…) with live research even when research is off */
+  verifyCurrent: z.boolean().default(true),
   modeOptions: ModeOptionsSchema.optional(),
   /** the browser's id of the saved conversation this turn belongs to (the server stores nothing; validated only) */
   conversationId: z.string().max(64).regex(/^[A-Za-z0-9_-]+$/).optional(),
@@ -372,4 +377,8 @@ export interface ResponseMeta {
   notice?: string;
   /** parts of the model's answer the active mode does not permit (removed by the server) */
   withheld?: string[];
+  /** a time-sensitive question: whether the answer was checked against live sources, when, and the best source */
+  freshness?: Freshness;
+  /** research ran automatically because the question was time-sensitive */
+  autoResearch?: boolean;
 }

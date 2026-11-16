@@ -59,6 +59,8 @@ export const SettingsSchema = z.object({
   notificationReactions: z.boolean().default(true),
   desktopNotifications: z.boolean().default(false),
   research: z.boolean().default(false),
+  /** time-sensitive questions (who holds an office now, dates, prices…) are checked with live research automatically */
+  verifyCurrent: z.boolean().default(true).catch(true),
   streaming: z.boolean().default(true),
   refinementPolicy: z.enum(['require', 'auto_low_risk']).default('require'),
   historyLimit: z.number().int().min(2).max(40).default(16),
