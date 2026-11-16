@@ -13,6 +13,7 @@ import { ProviderError, type ImagePart, type LLMProvider } from './providers/typ
 import { parseImageDataUrl } from '../shared/vision';
 import { researchQuery, type ResearchProvider } from './research';
 import { freshQueryWith, isTimeSensitive, type Freshness } from '../shared/freshness';
+import { officeLookup } from '../shared/offices';
 import { resolveMode } from '../shared/modes';
 import { detectEmergency } from '../shared/safety';
 import { allowedVisual, applyModePermissions } from './modes/permissions';
@@ -103,7 +104,11 @@ export class BrainService {
       const previous = req.messages.filter((m) => m.role === 'user').at(-2)?.content;
       const q = fresh ? freshQueryWith(text, previous) || researchQuery(text) : researchQuery(text);
       const key = fresh ? `${provider.id}|${q.toLowerCase()}` : '';
-      let s = (key && this.cached(key)) || (q ? await provider.search(q, ctl.signal, { fresh }) : []);
+      let s: Source[] = (key && this.cached(key)) || [];
+      // "who is the chief minister of …" / "prime minister of …": read the office's own page first (one request, structured)
+      const plan = fresh && !s.length ? officeLookup(text) : null;
+      if (plan && provider.officeholders) s = await provider.officeholders(plan, ctl.signal).catch(() => []);
+      if (!s.length && q) s = await provider.search(q, ctl.signal, { fresh });
       if (!s.length && fresh && researchQuery(text) && researchQuery(text) !== q) s = await provider.search(researchQuery(text), ctl.signal, { fresh });
       if (key && s.length) this.remember(key, s);
       meta.research.used = s.length > 0; meta.research.count = s.length;

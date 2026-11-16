@@ -4,6 +4,8 @@
  * sources and records whether the answer was verified) and the browser (which shows the verification line).
  */
 
+import { officeLookup } from './offices';
+
 /** Positions whose holder changes: government, courts, organisations, teams. */
 const ROLE = String.raw`(president|vice[- ]president|prime minister|pm|deputy prime minister|chief minister|cm|deputy chief minister|governor|lieutenant governor|lt\.? governor|minister|cabinet secretary|secretary of state|foreign secretary|home secretary|chancellor|premier|mayor|speaker|chief justice|justice|judge|attorney general|solicitor general|chief election commissioner|election commissioner|ambassador|high commissioner|envoy|chief of (army|naval|air) staff|army chief|chief of defence staff|ceo|chief executive|chairman|chairperson|chair|director[- ]general|secretary[- ]general|managing director|head|leader|king|queen|monarch|pope|captain|coach|manager|mp|mla|senator|member of parliament|commissioner|registrar|vice[- ]chancellor|principal|dean|editor|founder|owner|champion|title holder|record holder)`;
 /** Asking about who holds a position — always time-sensitive. */
@@ -33,6 +35,7 @@ const TIMELESS = /^\s*(explain|define|describe how|how does|how do|why (is|are|d
 export function isTimeSensitive(text: string): boolean {
   const t = text.slice(0, 1000);
   if (MATH.test(t) || CODE.test(t)) return false;
+  if (officeLookup(t)) return true;   // who holds a public office now (also lists: "chief ministers of all states")
   if (ROLE_PATTERNS.some((p) => p.test(t))) return true;
   if (!QUESTION.test(t) || CHAT.test(t)) return false;
   if (ROLE_OF.test(t)) return true;

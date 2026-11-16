@@ -124,7 +124,9 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
     const g = cfg.research.googleSearch !== false ? new GoogleSearch({ apiKey: cfg.gemini.apiKey, model: cfg.gemini.model, baseUrl: cfg.gemini.baseUrl }) : null;
     // with no research provider configured, Wikipedia (free, no key) still verifies current facts
     const base = research?.configured().ok ? research : makeResearch({ ...cfg.research, provider: 'wikipedia' });
-    const parts = [g?.configured().ok ? g : null, base].filter(Boolean) as ResearchProvider[];
+    // officeholder look-ups read Wikipedia's office pages, whatever the configured search provider is
+    const wiki = base?.id === 'wikipedia' ? null : makeResearch({ ...cfg.research, provider: 'wikipedia' });
+    const parts = [g?.configured().ok ? g : null, base, wiki].filter(Boolean) as ResearchProvider[];
     return parts.length > 1 ? new Combined(parts) : parts[0] ?? research;
   };
   let brain = new BrainService(cfg, provider, research, makeFresh());
