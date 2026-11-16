@@ -8,7 +8,7 @@ import { PRODUCT_NAME, creatorLine } from '../../shared/identity';
 import { persona as editablePersona } from './persona';
 import { modeBlock } from '../modes/prompts';
 
-export const PROMPT_VERSION = 'nexus-presenter-fresh-2026.11.16-1';
+export const PROMPT_VERSION = 'nexus-presenter-fresh-2026.11.16-2';
 
 /** The persona is rebuilt for every request so a rename takes effect immediately (no stale copies of the old name). */
 function persona(req: ChatRequest) {
@@ -170,8 +170,9 @@ ${rules}
 - If the sources do not clearly state the current situation, say you could not confirm it — do not fill the gap from memory as if it were current.
 - End your reply with one line: "Source: <source title> (<official|reference|other>), checked ${day}."`;
   return `TIME-SENSITIVE QUESTION — the user is asking about something that changes over time, and NO live source could be retrieved for it.
-- Do not present what you remember as the current situation. Say plainly that you could not verify it live today (${day}).
-- If you give what you last knew, label it clearly as possibly out of date ("as of my training data, which may be outdated") and suggest an official source to check (e.g. the government's official website).
+- Do NOT name a person, price, number, version or date from your memory as the answer: your memory has a cutoff and is likely out of date for this. Not even with a caveat such as "as of my training data".
+- Say plainly, in one or two sentences, that you could not verify this live today (${day}), and name the official place to check (e.g. the government's or organisation's official website).
+- You may explain timeless background (what the position is, how it is appointed) if useful.
 ${rules}`;
 }
 

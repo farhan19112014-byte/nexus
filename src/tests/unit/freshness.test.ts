@@ -71,7 +71,7 @@ describe('[A151] the prompt: today\'s date, sources first, current vs former, un
   });
   it('[A151] without sources: say it could not be verified live, never present memory as current', () => {
     const b = freshnessBlock([], NOW);
-    expect(b).toMatch(/NO live source could be retrieved/); expect(b).toMatch(/could not verify it live today \(15 November 2026\)/); expect(b).toMatch(/possibly out of date/);
+    expect(b).toMatch(/NO live source could be retrieved/); expect(b).toMatch(/could not verify this live today \(15 November 2026\)/); expect(b).toMatch(/Do NOT name a person, price, number, version or date from your memory/);
     expect(buildSystemPrompt(req('Explain photosynthesis'), { streaming: true, sources: [], now: NOW })).not.toMatch(/TIME-SENSITIVE/);
   });
 });
@@ -187,5 +187,14 @@ describe('[A153] Google Search grounding through the Gemini key', () => {
     expect((await c.search('Governor of Bihar', new AbortController().signal, { fresh: true })).map((s) => s.title)).toEqual(['Raj Bhavan Bihar — The Governor', 'Governor of Bihar']);
     const out = await new BrainService(cfg, new FakeLLM(), null, new Combined([boom])).handle(req('Who is the Governor of Bihar?'), new AbortController().signal);
     expect(out.meta.freshness).toMatchObject({ verified: false, source: null }); expect(out.meta.freshness!.note).toMatch(/Research failed: quota/);
+  });
+  it('[A153] a quota refusal pauses Google Search (no repeat calls); the error text carries no raw API payload', async () => {
+    let calls = 0; const srv = http.createServer((_q, res) => { calls++; res.statusCode = 429; res.setHeader('content-type', 'application/json'); res.end(JSON.stringify({ error: { code: 429, message: 'You exceeded your current quota', status: 'RESOURCE_EXHAUSTED' } })); });
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    try {
+      const g = new GoogleSearch({ apiKey: 'AIza-test', model: 'gemini-test', baseUrl: `http://127.0.0.1:${(srv.address() as AddressInfo).port}` });
+      await expect(g.search('x', new AbortController().signal)).rejects.toThrow('Google Search quota reached for this Gemini key');
+      expect(await g.search('x', new AbortController().signal)).toEqual([]); expect(calls).toBe(1);
+    } finally { srv.close(); }
   });
 });

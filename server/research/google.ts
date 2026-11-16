@@ -33,14 +33,17 @@ export class GoogleSearch implements ResearchProvider {
   private ai: GoogleGenAI | null = null;
   constructor(private cfg: GoogleSearchConfig) {}
   configured() { return placeholder(this.cfg.apiKey) || placeholder(this.cfg.model) ? { ok: false, note: 'Google Search needs the Gemini API key (GEMINI_API_KEY).' } : { ok: true }; }
+  /** after a quota / permission refusal, Google Search is skipped for ten minutes (no wasted calls or waiting) */
+  private pausedUntil = 0;
   async search(q: string, signal: AbortSignal): Promise<Source[]> {
+    if (Date.now() < this.pausedUntil) return [];
     this.ai ??= new GoogleGenAI({ apiKey: this.cfg.apiKey, httpOptions: { retryOptions: { attempts: 1 }, ...(this.cfg.baseUrl ? { baseUrl: this.cfg.baseUrl } : {}) } });
     const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
     const r = await this.ai.models.generateContent({
       model: this.cfg.model,
       contents: [{ role: 'user', parts: [{ text: `Today is ${today}. Search the web and report what the most recent and most official pages say about: ${q}\nState the current situation, the date it took effect, and each page's publication date when it is given (a publication date is not the event date). Name earlier holders or values as former. If pages disagree, report both. Facts only, no advice, at most 120 words.` }] }],
       config: { tools: [{ googleSearch: {} }], temperature: 0, maxOutputTokens: 2048, abortSignal: signal },
-    });
+    }).catch((e: unknown) => { const st = Number((e as { status?: unknown })?.status) || 0; if (st === 429 || st === 403 || st === 400) this.pausedUntil = Date.now() + 600_000; throw new Error(st === 429 ? 'Google Search quota reached for this Gemini key' : `Google Search failed${st ? ` (HTTP ${st})` : ''}`); });
     return finalize(groundingSources(r.candidates?.[0]?.groundingMetadata as Grounding | undefined), this.id);
   }
 }
