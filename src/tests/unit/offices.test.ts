@@ -105,7 +105,8 @@ describe('[A154] reading the holder from the office page', () => {
       const s = await w.officeholders!(officeLookup('Who is the current Governor of Bihar?')!, new AbortController().signal);
       expect(s).toHaveLength(1);
       expect(s[0]).toMatchObject({ title: 'Governor of Bihar', url: 'https://en.wikipedia.org/wiki/List_of_governors_of_Bihar', publishedAt: '2026-11-10T08:00:00.000Z', authority: 'reference' });
-      expect(s[0].snippet).toMatch(/^Current holder according to this page's "incumbent" field: Test Governor \(since 2026-01-01\)\. Test Governor is the current holder, since 1 January 2026\./);
+      expect(s[0].snippet).toMatch(/^Current holder according to this page's "incumbent" field: Test Governor \(since 2026-01-01\)\. Respectful form: the Honourable Governor of Bihar, Test Governor\. Test Governor is the current holder, since 1 January 2026\./);
+      expect(buildSystemPrompt(req('Who is the current Governor of Bihar?'), { streaming: true, sources: s, fresh: true })).toMatch(/the Honourable <office> of <place>, <name>/);
       expect(await w.officeholders!({ titles: ['Prime Minister of Atlantis'] }, new AbortController().signal)).toEqual([]);
     } finally { m.srv.close(); }
   });

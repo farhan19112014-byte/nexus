@@ -9,7 +9,7 @@ import { PRODUCT_NAME, creatorLine } from '../../shared/identity';
 import { persona as editablePersona } from './persona';
 import { modeBlock } from '../modes/prompts';
 
-export const PROMPT_VERSION = 'nexus-presenter-fresh-2026.11.16-3';
+export const PROMPT_VERSION = 'nexus-presenter-fresh-2026.11.16-4';
 
 /** The persona is rebuilt for every request so a rename takes effect immediately (no stale copies of the old name). */
 function persona(req: ChatRequest) {
@@ -163,6 +163,7 @@ export function freshnessBlock(sources: Source[], now = new Date()): string {
   const rules = `- Distinguish the CURRENT holder from FORMER holders: name who holds the position now and since when (if the source gives the date), and call predecessors "former". Never call someone current just because they appear in a source or in your memory.
 - If sources disagree, prefer the official one and the most recently updated one, and say plainly that the sources disagree and what each says.
 - A page's "updated" date is when the page was published or edited, NOT when the event happened. Give an event date (took office, released, announced) only when a source's text states it; never present a page date as the event date, and never invent a date, a source or a link.
+- Speak of people who hold public office with respect. On first mention say "the Honourable <office> of <place>, <name>" — for example "the Honourable Governor of <state>, <name>". Keep ranks and titles a source gives (Dr., Justice, Lt. Gen., Retd.); never guess Shri / Smt. / Mr. / Ms. For a monarch use the royal title instead (King, Queen, Emperor, Sultan). A former holder is "former <office> <name>". In a long list, write "Hon'ble <office>, <name>" on each line. Never use a mocking or casual tone about an officeholder.
 - Give the answer directly in the first sentence, in natural language; then the date and, briefly, anything the user should know (e.g. who held it before).`;
   if (sources.length) return `TIME-SENSITIVE QUESTION — the user is asking about something that changes over time. Live sources were retrieved on ${day}:
 - Answer from the SOURCES, not from your memory. Prefer [n] sources marked "official" (government / primary) over reference works and other sites.

@@ -90,14 +90,14 @@ class Wikipedia implements ResearchProvider {
       return finalize(found.map(({ asked, p, inc }) => {
         // sentences of the page's introduction that speak about the present holder (they carry the dates)
         const sents = (intro.get(p.title) ?? '').split(/(?<=[.!?])\s+/).filter((q) => /\b(current|incumbent|since|took office|assumed|sworn)\b/i.test(q)).slice(0, 3).join(' ');
-        return { title: asked, url: url(p), publishedAt: p.revisions?.[0]?.timestamp ?? null, snippet: `Current holder according to this page's "incumbent" field: ${inc.name}${inc.since ? ` (since ${inc.since})` : ''}. ${sents}` };
+        return { title: asked, url: url(p), publishedAt: p.revisions?.[0]?.timestamp ?? null, snippet: `Current holder according to this page's "incumbent" field: ${inc.name}${inc.since ? ` (since ${inc.since})` : ''}. ${/^(King|Queen|Emperor|Sultan)\b/.test(asked) ? '' : `Respectful form: the Honourable ${asked}, ${inc.name}. `}${sents}` };
       }), this.id);
     }
     // a list across India: one line per state / territory, split over as many sources as the length limit needs
     const lines = plan.bulk!.map((b) => { const f = found.find((q) => q.asked === b.title); return f ? `${b.label}: ${f.inc.name}${b.title.startsWith('Chief Minister') ? '' : ` (${b.title.split(' of ')[0]})`}` : null; }).filter(Boolean) as string[];
     const newest = found.map((f) => f.p.revisions?.[0]?.timestamp ?? '').sort().at(-1) || null;
-    const chunks: string[][] = [[]]; for (const l of lines) { if (chunks.at(-1)!.join('; ').length + l.length > 1050) chunks.push([]); chunks.at(-1)!.push(l); }
-    return finalize(chunks.map((c, i) => ({ title: `${plan.heading ?? 'Current officeholders'}${chunks.length > 1 ? ` (part ${i + 1} of ${chunks.length})` : ''}`, url: `${plan.listUrl ?? `https://${this.lang}.wikipedia.org`}${i ? `#part-${i + 1}` : ''}`, publishedAt: newest, snippet: `From each office's own page ("incumbent" field): ${c.join('; ')}.` })), this.id);
+    const chunks: string[][] = [[]]; for (const l of lines) { if (chunks.at(-1)!.join('; ').length + l.length > 1010) chunks.push([]); chunks.at(-1)!.push(l); }
+    return finalize(chunks.map((c, i) => ({ title: `${plan.heading ?? 'Current officeholders'}${chunks.length > 1 ? ` (part ${i + 1} of ${chunks.length})` : ''}`, url: `${plan.listUrl ?? `https://${this.lang}.wikipedia.org`}${i ? `#part-${i + 1}` : ''}`, publishedAt: newest, snippet: `From each office's own page ("incumbent" field; refer to each as Hon'ble): ${c.join('; ')}.` })), this.id);
   }
 }
 class SearXNG implements ResearchProvider {
