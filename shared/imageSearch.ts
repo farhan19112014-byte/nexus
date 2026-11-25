@@ -22,7 +22,11 @@ export async function findImage(query: string, o: ImageSearchOptions = {}): Prom
   };
   const s = await get(`action=query&generator=search&gsrsearch=${encodeURIComponent(q)}&gsrlimit=5&gsrnamespace=0&prop=pageimages|info&piprop=thumbnail|name&pithumbsize=${w}&pilicense=free&inprop=url`) as { query?: { pages?: Page[] } };
   const pages = (s.query?.pages ?? []).slice().sort((a, b) => (a.index ?? 99) - (b.index ?? 99));
-  const hit = pages.find((p) => p.pageimage && p.thumbnail && isAllowedImageUrl(p.thumbnail.source));
+  // only a page the query actually names: never another person's photo under this caption ("Sudhakar Singh" for a question about Mithlesh Tiwari)
+  const norm = (x: string) => x.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const qWords = new Set(norm(q).split(/[^a-z0-9]+/).filter(Boolean));
+  const named = (title: string) => norm(title.replace(/\s*\([^)]*\)\s*$/, '')).split(/[^a-z0-9]+/).filter((w) => w.length > 2).every((w) => qWords.has(w));
+  const hit = pages.find((p) => p.pageimage && p.thumbnail && isAllowedImageUrl(p.thumbnail.source) && named(p.title));
   if (!hit || !hit.pageimage || !hit.thumbnail) return null;
   // the file's licence and author (Commons metadata, served through the wiki for shared files)
   let meta: Meta = {}; let fileUrl = `https://commons.wikimedia.org/wiki/File:${encodeURIComponent(hit.pageimage)}`;
