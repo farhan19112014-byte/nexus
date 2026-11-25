@@ -8,6 +8,7 @@
  * Success reactions only follow verified results (Asset 36); failures get an explanation + retry (35, 47).
  */
 import { UiSounds } from './uiSounds';
+import { curatedFor } from '../../shared/curatedImages';
 import { MicMeter } from '../voice/levels';
 import { introduction, validateRobotName } from '../../shared/identity';
 import { BrainResponseSchema, type BrainResponse, type ExpressionPreset, type ServerCapabilities, type Pose } from '../../shared/schema';
@@ -721,6 +722,10 @@ export class Companion {
     // the reply's mode decides which visuals may appear (the server already removed others; offline answers too)
     const vm = resolveMode(this.msg(msgId)?.mode).permissions.visuals;
     if (req && (vm === 'none' || (vm === 'diagrams' && req.kind !== 'diagram'))) req = null;
+    // a person Farhan gave a photo for: always that photo when the reply (or the question) is about them
+    { const i = this.snap.messages.findIndex((m) => m.id === msgId); const asked = this.snap.messages.slice(0, i < 0 ? undefined : i).reverse().find((m) => m.role === 'user')?.text;
+      const own = this.settings.visuals !== 'off' && vm !== 'none' ? curatedFor(this.msg(msgId)?.text, asked) : null;
+      if (own) { req = { kind: 'image', query: own.query, caption: own.caption }; this.smallTalk.delete(msgId); } }
     if (!req && this.smallTalk.has(msgId)) { if (this.snap.visual) this.set({ visual: null }); return; }
     // with "always", a reply whose head has no visual keeps the panel until the final check decides (no flicker)
     if (!req && this.settings.visuals === 'always' && this.snap.visual && this.snap.visual.msgId !== msgId) return;

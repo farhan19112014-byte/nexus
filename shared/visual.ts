@@ -102,7 +102,7 @@ export interface ImageResult {
   author: string;         // plain text, may be "Unknown"
   license: string;        // e.g. "CC BY-SA 4.0", "Public domain"
   licenseUrl: string | null;
-  source: 'Wikimedia Commons';
+  source: 'Wikimedia Commons' | 'NEXUS';
 }
 /** Wikimedia's image hosts: originals on upload., resized renditions on thumb. (both serve only Commons/Wikipedia files) */
 export const IMAGE_HOSTS = ['upload.wikimedia.org', 'thumb.wikimedia.org'] as const;

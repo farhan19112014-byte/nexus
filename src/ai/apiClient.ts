@@ -7,6 +7,7 @@ import { BrainResponseSchema, ChatRequestSchema, type BrainHead, type BrainRespo
 import { demoBrain } from '../../shared/demoBrain';
 import { API_BASE, REMOTE_API, WEB_DEMO } from '../webDemo';
 import { findImage } from '../../shared/imageSearch';
+import { curatedImage } from '../../shared/curatedImages';
 import { isAllowedImageUrl, type ImageResult } from '../../shared/visual';
 
 export class ApiError extends Error { constructor(msg: string, public code: ErrorCode, public retryable = false) { super(msg); } }
@@ -151,6 +152,8 @@ export class ApiClient {
    * any failure, so the explanation simply goes on without a picture.
    */
   async visualImage(query: string, signal?: AbortSignal): Promise<{ image: ImageResult | null; error?: string }> {
+    const own = typeof location !== 'undefined' ? curatedImage(query, `${location.origin}${(import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '')}`) : null;
+    if (own) return { image: own };
     const direct = async () => { try { return { image: await findImage(query, { signal }) }; } catch (e) { return { image: null, error: (e as Error).name === 'AbortError' ? 'cancelled' : 'The image search is unavailable right now.' }; } };
     if (this.webDemo) return direct();
     try {
