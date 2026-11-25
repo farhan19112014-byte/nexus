@@ -73,11 +73,17 @@ export interface OfficePlan {
   heading?: string;
   /** the overview page a list answer links to */
   listUrl?: string;
+  /** how to name the office in the answer, when the page title is a list ("Education Minister of Bihar") */
+  label?: string;
 }
+/** state cabinet portfolios ("education minister of Bihar", "Bihar's minister of education") → Wikipedia's list of that state's ministers */
+const PORTFOLIO = /\b(education|health|finance|home|agriculture)\s+ministers?\b|\bministers?\s+(?:of|for)\s+(education|health|finance|home|agriculture)\b/i;
 /** If the question asks who CURRENTLY holds a public office (in India or any country), the office pages to look up. */
 export function officeLookup(text: string): OfficePlan | null {
   const t = text.slice(0, 400);
   if (NOT_CURRENT.test(t)) return null;
+  const pm = PORTFOLIO.exec(t); const pr = pm ? findRegion(t) : null;
+  if (pm && pr) { const dept = (pm[1] ?? pm[2]).toLowerCase(); const place = pr.wiki ?? pr.name; return { titles: [`List of ministers of ${dept} of ${place}`], label: `${dept.charAt(0).toUpperCase() + dept.slice(1)} Minister of ${place}` }; }
   for (const o of OFFICES) {
     const m = o.re.exec(t); if (!m) continue;
     const region = findRegion(t);

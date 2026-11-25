@@ -51,6 +51,15 @@ export function incumbentOf(wikitext: string): { name: string; since: string | n
   const name = f('incumbent'); if (!name || name.length > 90) return null;
   return { name, since: f('incumbentsince') || null };
 }
+/** a list-of-officeholders page: the holder in the table row marked "present" / "incumbent" (the last such row) */
+export function presentRowHolder(wikitext: string): { name: string; since: string | null } | null {
+  const rows = wikitext.split(/\n\|-/).filter((r) => /\|\s*(?:\{\{[^}]*)?\b(present|incumbent)\b/i.test(r) && /\[\[/.test(r));
+  const row = rows.at(-1); if (!row) return null;
+  const link = /\[\[([^\]]+)\]\]/.exec(row); if (!link) return null;
+  const name = plainWiki(`[[${link[1]}]]`); if (!name || name.length > 90 || /\b(party|congress|janata|front|alliance)\b/i.test(name)) return null;
+  const date = /(\d{1,2}\s+[A-Z][a-z]+\s+\d{4})/.exec(plainWiki(row));
+  return { name, since: date?.[1] ?? null };
+}
 type WikiPage = { title: string; fullurl?: string; missing?: string; extract?: string; revisions?: { timestamp?: string; slots?: { main?: { '*'?: string } } }[] };
 
 class Wikipedia implements ResearchProvider {
@@ -82,7 +91,14 @@ class Wikipedia implements ResearchProvider {
     const pages = Object.values(j.query?.pages ?? {}).filter((p) => !('missing' in p));
     const byTitle = new Map(pages.map((p) => [p.title, p]));
     const hop = (t: string) => { const n = j.query?.normalized?.find((r) => r.from === t)?.to ?? t; return j.query?.redirects?.find((r) => r.from === n)?.to ?? n; };
-    const found = titles.map((t) => { const p = byTitle.get(hop(t)); const inc = p ? incumbentOf(p.revisions?.[0]?.slots?.main?.['*'] ?? '') : null; return p && inc ? { asked: t, p, inc } : null; }).filter(Boolean) as { asked: string; p: WikiPage; inc: { name: string; since: string | null } }[];
+    let found = titles.map((t) => { const p = byTitle.get(hop(t)); const inc = p ? incumbentOf(p.revisions?.[0]?.slots?.main?.['*'] ?? '') : null; return p && inc ? { asked: t, p, inc } : null; }).filter(Boolean) as { asked: string; p: WikiPage; inc: { name: string; since: string | null } }[];
+    if (!found.length && single && plan.label) {
+      // a list page (no infobox): read the whole page and take the row marked "present"
+      const full = await getJSON(`${base}?action=query&prop=revisions&rvprop=content|timestamp&rvslots=main&redirects=1&titles=${encodeURIComponent(titles[0])}&format=json&origin=*`, {}, signal).catch(() => null) as { query?: { pages?: Record<string, WikiPage> } } | null;
+      const fp = Object.values(full?.query?.pages ?? {}).find((p) => !('missing' in p));
+      const inc = fp ? presentRowHolder(fp.revisions?.[0]?.slots?.main?.['*'] ?? '') : null;
+      if (fp && inc) found = [{ asked: plan.label, p: { ...fp, fullurl: byTitle.get(fp.title)?.fullurl ?? fp.fullurl }, inc }];
+    }
     if (!found.length) return [];
     const url = (p: WikiPage) => p.fullurl ?? `https://${this.lang}.wikipedia.org/wiki/${encodeURIComponent(p.title.replace(/ /g, '_'))}`;
     if (single) {
