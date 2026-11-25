@@ -32,7 +32,7 @@ services:
         sync: false
       # the GitHub Pages site may call this server from the browser
       - key: ALLOWED_ORIGINS
-        value: https://farhan19112014-byte.github.io
+        value: https://farhan19112014-byte.github.io,https://nexusfarhan.in,https://www.nexusfarhan.in,http://nexusfarhan.in
       # daily budgets that protect your free quotas (0 = no limit)
       - key: DAILY_CHAT_LIMIT
         value: "400"
