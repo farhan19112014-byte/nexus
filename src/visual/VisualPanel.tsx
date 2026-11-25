@@ -61,7 +61,7 @@ export function VisualPanel({ docked = false }: { docked?: boolean }) {
   const r = shown.request;
   // honest source label: a diagram described by the language model, or one from the scripted demo brain
   const byAI = snap.messages.find((m) => m.id === shown.msgId)?.meta?.isLLM ?? !!snap.caps?.isLLM;
-  const kind = r.kind === 'diagram' ? (byAI ? 'Diagram · described by the AI, drawn by NEXUS' : 'Diagram · scripted demo') : 'Photo · Wikimedia Commons';
+  const kind = r.kind === 'diagram' ? (byAI ? 'Diagram · described by the AI, drawn by NEXUS' : 'Diagram · scripted demo') : (shown.image?.source === 'NEXUS' ? 'Photo · provided by Farhan' : 'Photo · Wikimedia Commons');
   const title = r.kind === 'diagram' ? r.diagram.title : shown.image?.title ?? r.query;
   return (
     <aside ref={panel} className={`visual-panel${docked ? ' docked' : ''}${leaving ? ' leaving' : ''}`} aria-label={`Visual: ${title}`} data-testid="visual-panel" data-kind={r.kind} data-status={shown.status}>
