@@ -129,7 +129,7 @@ async function start(env: Record<string, string>, opts: { persistRuntime?: boole
   return `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
 }
 const post2 = (url: string, body: unknown, signal: AbortSignal) => fetch(url, { method: 'POST', signal, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-const post = (url: string, body: unknown) => fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
+const post = (url: string, body: unknown) => fetch(url, { method: 'POST', headers: { origin: new URL(url).origin, 'content-type': 'application/json' }, body: typeof body === 'string' ? body : JSON.stringify(body) });
 const chat = (o: object = {}) => ({ messages: [{ role: 'user', content: 'What is photosynthesis?' }], skills: [{ id: 'nod', name: 'Nod', description: 'nod', kind: 'motion' }], expressions: ['happy', 'curious'], stream: false, ...o });
 async function events(url: string, body: unknown): Promise<StreamEvent[]> {
   const r = await post(url, body); const t = await r.text();
@@ -564,8 +564,12 @@ describe('[A97] server integration', () => {
     expect((await fetch(`${url}/api/config`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ provider: 'demo' }) })).status).toBe(403);
     expect((await fetch(`${url}/api/speech/voices`)).status).toBe(404); expect((await fetch(`${url}/api/local-models`)).status).toBe(404);
     const cfg = await (await fetch(`${url}/api/config`)).text(); expect(cfg).not.toContain('9999'); expect(cfg).not.toContain('5555'); expect(JSON.parse(cfg).gemini.apiKey).toEqual({ set: true, hint: null });
+    // a script with no Origin header cannot spend the AI quota; neither can another site's page (no-cors / form post)
+    const bare = await raw(`${url}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ message: 'hi', stream: false }) });
+    expect(bare.status).toBe(403); expect(bare.headers['cache-control']).toBe('no-store');
+    expect((await raw(`${url}/api/chat`, { method: 'POST', headers: { origin: url, 'sec-fetch-site': 'cross-site', 'content-type': 'application/json' }, body: JSON.stringify({ message: 'hi', stream: false }) })).status).toBe(403);
     // daily budgets: 2 messages per visitor (by X-Forwarded-For from the host's proxy), 3 in total
-    const chat = (ip: string) => fetch(`${url}/api/chat`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': ip }, body: JSON.stringify({ message: 'hi', stream: false }) });
+    const chat = (ip: string) => fetch(`${url}/api/chat`, { method: 'POST', headers: { origin: url, 'content-type': 'application/json', 'x-forwarded-for': ip }, body: JSON.stringify({ message: 'hi', stream: false }) });
     expect((await chat('1.1.1.1')).status).toBe(200); expect((await chat('1.1.1.1')).status).toBe(200);
     const third = await chat('1.1.1.1'); expect(third.status).toBe(429); expect((await third.json()).error).toMatch(/today's limit of 2 messages/);
     expect((await chat('2.2.2.2')).status).toBe(200);

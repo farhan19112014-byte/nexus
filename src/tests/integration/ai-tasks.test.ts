@@ -27,7 +27,7 @@ async function start(env: Record<string, string> = {}) {
   const s = app.listen(0, '127.0.0.1'); servers.push(s); await new Promise((r) => s.once('listening', r));
   return `http://127.0.0.1:${(s.address() as AddressInfo).port}`;
 }
-const post = async (url: string, body: unknown) => { const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json() as Record<string, unknown> }; };
+const post = async (url: string, body: unknown) => { const r = await fetch(url, { method: 'POST', headers: { origin: new URL(url).origin, 'content-type': 'application/json' }, body: JSON.stringify(body) }); return { status: r.status, body: await r.json() as Record<string, unknown> }; };
 
 describe('HOLOBUILD AI endpoints', () => {
   it('[A129] /api/holo/design: request fenced as data, model output validated (bad parts dropped), refusals passed on; demo mode says it needs an AI', async () => {

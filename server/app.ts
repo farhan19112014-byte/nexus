@@ -147,6 +147,8 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
   const corsOrigins = new Set(base.allowedOrigins.map((o) => o.toLowerCase()));
   const originOk = (o: string | undefined) => originAllowed(o, extraHosts) || (!!o && corsOrigins.has(o.toLowerCase()));
   app.use('/api', (req, res, next) => {
+    // API answers are never cached by browsers or proxies (they can hold a visitor's conversation)
+    res.setHeader('cache-control', 'no-store');
     // the liveness probe carries no data, so the host's health checker may use any Host header
     if (!(req.method === 'GET' && req.path === '/health') && !hostAllowed(req.headers.host, extraHosts)) { res.status(403).json({ error: 'Host not allowed', code: 'forbidden_host' }); return; }
     const origin = req.headers.origin;
@@ -158,6 +160,12 @@ export function createApp(base: ServerConfig = readConfig(), opts: AppOptions = 
       if (req.method === 'OPTIONS') { res.status(204).end(); return; }
     }
     if (req.method !== 'GET' && req.method !== 'HEAD' && !originOk(origin)) { res.status(403).json({ error: 'Cross-origin request refused', code: 'forbidden_origin' }); return; }
+    // public server: AI and voice calls must come from a browser page on an allowed site. A script with no Origin header
+    // (curl, a bot) would otherwise spend the owner's Gemini / voice quota; the voice-clone notebook has its own key.
+    if (base.publicMode && req.method === 'POST' && !origin && req.path !== '/voice-clone/register') { res.status(403).json({ error: 'Requests must come from the NEXUS website.', code: 'forbidden_origin' }); return; }
+    // browsers say where a request comes from: refuse one that another site's page sent without CORS (form posts, no-cors)
+    const site = req.headers['sec-fetch-site'];
+    if (base.publicMode && req.method === 'POST' && site === 'cross-site' && !(origin && corsOrigins.has(origin.toLowerCase()))) { res.status(403).json({ error: 'Cross-site request refused', code: 'forbidden_origin' }); return; }
     next();
   });
   if (base.publicMode) {

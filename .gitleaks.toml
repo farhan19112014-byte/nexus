@@ -1,0 +1,6 @@
+# gitleaks: default rules, plus the test files whose sample "keys" are deliberately fake
+[extend]
+useDefault = true
+[allowlist]
+description = "fake keys used by the unit tests"
+paths = ['''^src/tests/''']

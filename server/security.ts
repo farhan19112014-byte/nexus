@@ -44,8 +44,9 @@ export function buildCsp(o: CspOptions): string {
     ['base-uri', ["'self'"]],
     ['form-action', ["'self'"]],
     ...(o.meta ? [] : [['frame-ancestors', ["'none'"]] as [string, string[]]]),
+    ...(o.publicMode ? [['upgrade-insecure-requests', []] as [string, string[]]] : []),
   ];
-  return d.map(([k, v]) => `${k} ${v.join(' ')}`).join('; ');
+  return d.map(([k, v]) => (v.length ? `${k} ${v.join(' ')}` : k)).join('; ');
 }
 
 /** The other headers, safe for both pages and API responses. */
@@ -57,6 +58,8 @@ export function baseSecurityHeaders(publicMode: boolean): Record<string, string>
     // microphone (voice input) and camera (Live Vision, started only by the user) for this site only; nothing else
     'permissions-policy': 'microphone=(self), camera=(self), geolocation=(), payment=(), usb=(), interest-cohort=()',
     'cross-origin-opener-policy': 'same-origin',
-    ...(publicMode ? { 'strict-transport-security': 'max-age=31536000' } : {}),
+    'x-dns-prefetch-control': 'off',
+    'x-permitted-cross-domain-policies': 'none',
+    ...(publicMode ? { 'strict-transport-security': 'max-age=63072000; includeSubDomains' } : {}),
   };
 }
