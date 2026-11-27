@@ -2,6 +2,8 @@
  * Live Vision panel (robot view). Off by default; the camera starts only from the "Activate Live Vision" button, after
  * the user has read what is sent where. While it runs: the local preview, an unmistakable LIVE badge, what NEXUS last
  * saw (with its time), a question box and the answer, and STOP — which ends the camera at once.
+ * "Hide" returns to the normal NEXUS view while the camera keeps running: a small LIVE bar (with Stop) stays on screen,
+ * so the camera is never on without a visible indicator. Voice questions from the main mic still use the camera.
  */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Icon } from '../components/Icon';
@@ -31,6 +33,18 @@ export default function VisionPanel({ vision, open: openInit = true, toggle }: {
   useEffect(() => () => { if (vision.active) vision.stop(); }, [vision]);
   if (!open && !live && v.status !== 'error') return null;
 
+  // minimised while the camera runs: the normal NEXUS view, plus an always-visible LIVE bar
+  if (!open && live) return (
+    <section className="vision-mini" aria-label="Live Vision (minimised)" data-testid="vision-mini" data-status={v.status}>
+      {/* the preview stays mounted (as a thumbnail): frames are captured from it, and you can see what the camera sees */}
+      <video ref={video} className="vision-mini-video" muted playsInline autoPlay aria-label="Your camera (local preview)" />
+      <span className="live-badge" role="status" data-testid="vision-live"><span className="dot" aria-hidden /> LIVE</span>
+      <span className="vision-mini-text small">{v.status === 'paused' ? 'Camera paused' : v.analysing ? 'Looking…' : 'Camera on — ask by voice or text'}</span>
+      <button className="link small" onClick={() => setOpen(true)} data-testid="vision-show">Show</button>
+      <button className="vision-stop is-mini" onClick={() => vision.stop()} aria-label="Stop Live Vision" data-testid="vision-stop"><Icon name="stop" /> STOP</button>
+    </section>
+  );
+
   const caps = snap.caps?.vision;
   const unavailable = caps ? !caps.available : snap.caps?.provider === 'web-demo' || snap.caps?.provider === 'local-demo';
   const ask = (e: React.FormEvent) => {
@@ -49,6 +63,7 @@ export default function VisionPanel({ vision, open: openInit = true, toggle }: {
       <header className="vp-head">
         <span className="vision-title"><Icon name="camera" /> Live Vision</span>
         {live && <span className="live-badge" role="status" data-testid="vision-live"><span className="dot" aria-hidden /> LIVE</span>}
+        {live && <button className="link small" onClick={() => setOpen(false)} aria-label="Hide the Live Vision panel (the camera stays on)" title="Back to NEXUS — the camera stays on" data-testid="vision-hide">Hide</button>}
         {!live && <button className="icon-btn" onClick={() => { setOpen(false); vision.stop(); }} aria-label="Close Live Vision"><Icon name="close" /></button>}
       </header>
 
@@ -71,7 +86,8 @@ export default function VisionPanel({ vision, open: openInit = true, toggle }: {
         <>
           <div className="vision-preview">
             <video ref={video} muted playsInline autoPlay aria-label="Your camera (local preview)" />
-            <span className="vision-local small">Local preview</span>
+            <span className="vision-local small">{v.switching ? 'Switching camera…' : 'Local preview'}</span>
+            {v.cameras.length > 1 && <button className="vision-switch small" onClick={() => void vision.switchCamera()} disabled={v.switching || v.status === 'starting'} aria-label="Switch camera" title={`Switch camera (${v.cameras.length} found)`} data-testid="vision-switch"><Icon name="retry" /> Switch</button>}
           </div>
           <p className="vision-state small" aria-live="polite" data-testid="vision-state">{state}{v.notice && <button className="link small" onClick={() => vision.retry()}> Retry</button>}</p>
           <div className="vision-obs" data-testid="vision-observation">

@@ -205,3 +205,16 @@
   .robot-layout:has(.vision-panel) .system-panel { display: none; } }
 @media (prefers-reduced-motion: reduce) { .vision-panel { animation: none; } .live-badge .dot { animation: none; } }
 .app.hc .vision-panel { background: var(--c-bg); border: 2px solid var(--c-text); }
+/* Live Vision minimised: the camera is still on, so a compact LIVE bar with Stop always stays visible */
+.vision-mini { position: absolute; left: 24px; top: 16px; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 6px 8px 6px 10px; border-radius: 999px;
+  background: rgb(var(--k-07111f) / .92); border: 1px solid rgb(var(--k-38d9ff) / .45); box-shadow: 0 12px 28px -20px rgba(0, 0, 0, .8); }
+:root[data-theme="light"] .vision-mini { background: rgba(255, 255, 255, .95); border-color: rgb(var(--k-0f172a) / .16); }
+.vision-mini-video { width: 48px; height: 36px; border-radius: 6px; object-fit: cover; background: #000; display: block; flex: none; }
+.vision-mini-text { color: var(--c-muted); white-space: nowrap; }
+.vision-stop.is-mini { width: auto; padding: 4px 10px; font-size: .72rem; }
+.vision-switch { position: absolute; right: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 6px;
+  background: rgba(0, 0, 0, .55); color: #fff; border: 1px solid rgba(255, 255, 255, .25); }
+.vision-switch:disabled { opacity: .5; }
+@media (max-width: 1099px) { .vision-mini { left: 12px; top: 12px; } }
+@media (max-width: 699px) { .vision-mini { position: relative; left: auto; top: auto; margin: 8px 12px 0; width: fit-content; max-width: calc(100vw - 24px); } .vision-mini-text { white-space: normal; } }
+.app.hc .vision-mini { background: var(--c-bg); border: 2px solid var(--c-text); }
