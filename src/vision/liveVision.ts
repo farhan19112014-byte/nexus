@@ -24,13 +24,18 @@ export interface VisionDeps {
   /** the server can analyse frames (capabilities); null = unknown */
   available: () => boolean | null;
   getUserMedia?: (c: MediaStreamConstraints) => Promise<MediaStream>;
+  /** lists cameras (labels are only filled in after permission was granted) */
+  enumerateDevices?: () => Promise<MediaDeviceInfo[]>;
   now?: () => number;
   doc?: Pick<Document, 'hidden' | 'addEventListener' | 'removeEventListener'> | null;
   /** tests: replaces the canvas capture */
   grab?: () => { url: string; sig: Uint8Array } | null;
 }
+export interface VisionCamera { id: string; label: string }
 export interface VisionSnapshot {
   status: VisionStatus; error: string | null;
+  /** cameras on this device (after permission) and the one in use — for "Switch camera" */
+  cameras: VisionCamera[]; cameraId: string | null; switching: boolean;
   /** why automatic observation is paused while the camera stays on (quota, server problem…) */
   notice: string | null;
   analysing: boolean; latest: TimedObservation | null; previous: TimedObservation | null;
@@ -68,7 +73,7 @@ export class LiveVision {
     this.now = d.now ?? (() => Date.now());
     this.doc = d.doc === undefined ? (typeof document !== 'undefined' ? document : null) : d.doc;
   }
-  private fresh(): VisionSnapshot { return { status: 'off', error: null, notice: null, analysing: false, latest: null, previous: null, diff: { added: [], gone: [] }, framesSent: 0, framesSkipped: 0, intervalMs: VISION_LIMITS.intervalMs, lastAnalysisAt: null }; }
+  private fresh(): VisionSnapshot { return { status: 'off', error: null, cameras: [], cameraId: null, switching: false, notice: null, analysing: false, latest: null, previous: null, diff: { added: [], gone: [] }, framesSent: 0, framesSkipped: 0, intervalMs: VISION_LIMITS.intervalMs, lastAnalysisAt: null }; }
   subscribe = (f: () => void) => { this.listeners.add(f); return () => { this.listeners.delete(f); }; };
   getSnapshot = () => this.snap;
   private set(p: Partial<VisionSnapshot>) { this.snap = { ...this.snap, ...p }; this.listeners.forEach((f) => f()); }
@@ -78,30 +83,82 @@ export class LiveVision {
   async start(): Promise<boolean> {
     if (this.active) return true;
     const s = ++this.session;
-    const gum = this.d.getUserMedia ?? (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia ? (c: MediaStreamConstraints) => navigator.mediaDevices.getUserMedia(c) : null);
+    const gum = this.gum();
     if (typeof window !== 'undefined' && window.isSecureContext === false) { this.set({ status: 'error', error: 'The camera only works on a secure page (https:// or this computer\'s localhost).' }); return false; }
     if (!gum) { this.set({ status: 'error', error: 'This browser cannot use a camera here (no camera support).' }); return false; }
     this.set({ ...this.fresh(), status: 'starting' });
     let stream: MediaStream;
-    try { stream = await gum({ audio: false, video: { width: { ideal: this.config.width }, height: { ideal: this.config.height }, facingMode: { ideal: 'environment' } } }); }
+    try { stream = await gum(this.constraints(null)); }
     catch (e) {
       if (s !== this.session) return false;
-      const n = (e as Error).name;
-      const msg = n === 'NotAllowedError' || n === 'SecurityError' ? 'Camera permission was denied. Live Vision stays off — allow the camera for this site in the browser (or system) settings to use it.'
-        : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'No camera was found on this device.'
-        : n === 'NotReadableError' || n === 'AbortError' ? 'The camera is in use by another program or could not be started.'
-        : `The camera could not be started (${(e as Error).message || n}).`;
-      this.set({ status: 'error', error: msg }); return false;
+      this.set({ status: 'error', error: cameraError(e) }); return false;
     }
     if (s !== this.session) { stream.getTracks().forEach((t) => t.stop()); return false; }   // stopped while the permission prompt was open
-    this.stream = stream;
-    for (const t of stream.getVideoTracks()) t.addEventListener('ended', this.onEnded);
-    if (this.video) this.bindVideo(this.video);
+    this.useStream(stream);
     this.interval = this.config.intervalMs; this.autoPaused = false;
     this.doc?.addEventListener('visibilitychange', this.onVis);
     this.set({ status: this.doc?.hidden ? 'paused' : 'live', error: null, intervalMs: this.interval });
     this.schedule(800);   // the first frame shortly after the preview starts
+    void this.listCameras(s);
     return true;
+  }
+
+  private gum(): ((c: MediaStreamConstraints) => Promise<MediaStream>) | null {
+    return this.d.getUserMedia ?? (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia ? (c: MediaStreamConstraints) => navigator.mediaDevices.getUserMedia(c) : null);
+  }
+  /** the first camera: the rear one where there is a choice (phones); a chosen camera: exactly that one */
+  private constraints(deviceId: string | null): MediaStreamConstraints {
+    return { audio: false, video: { width: { ideal: this.config.width }, height: { ideal: this.config.height }, ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }) } };
+  }
+  private useStream(stream: MediaStream) {
+    this.stream = stream;
+    for (const t of stream.getVideoTracks()) t.addEventListener('ended', this.onEnded);
+    if (this.video) this.bindVideo(this.video);
+    const id = stream.getVideoTracks()[0]?.getSettings?.().deviceId ?? null;
+    this.set({ cameraId: id });
+  }
+  private releaseStream() {
+    if (this.stream) { for (const t of this.stream.getTracks()) { t.removeEventListener('ended', this.onEnded); t.stop(); } }
+    this.stream = null;
+  }
+  /** Cameras on this device (labels exist only now that permission was given). Never opens a camera itself. */
+  private async listCameras(s: number) {
+    const en = this.d.enumerateDevices ?? (typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices ? () => navigator.mediaDevices.enumerateDevices() : null);
+    if (!en) return;
+    try {
+      const all = (await en()).filter((d) => d.kind === 'videoinput' && d.deviceId);
+      if (s !== this.session) return;
+      this.set({ cameras: all.map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` })) });
+    } catch { /* no list: switching simply is not offered */ }
+  }
+
+  /**
+   * Switch to the next camera (front ↔ back on a phone, built-in ↔ USB webcam on a laptop). The old camera is released
+   * first (many phones cannot open two at once); if the new one fails, the previous one is reopened, else Live Vision stops.
+   */
+  async switchCamera(): Promise<boolean> {
+    const list = this.snap.cameras; const gum = this.gum();
+    if (!this.active || this.snap.status === 'starting' || this.snap.switching || list.length < 2 || !gum) return false;
+    const s = this.session; const prev = this.snap.cameraId;
+    const next = list[(list.findIndex((c) => c.id === prev) + 1) % list.length];
+    this.ctl?.abort('switch'); this.ctl = null;
+    if (this.timer) clearTimeout(this.timer); this.timer = null;
+    this.releaseStream(); this.lastSig = null;
+    this.set({ switching: true, analysing: false });
+    const open = async (id: string | null) => { const st = await gum(this.constraints(id)); if (s !== this.session) { st.getTracks().forEach((t) => t.stop()); return null; } return st; };
+    let stream: MediaStream | null = null; let ok = true;
+    try { stream = await open(next.id); }
+    catch (e) {
+      ok = false;
+      if (s !== this.session) return false;
+      try { stream = await open(prev); } catch { if (s === this.session) this.stop(`Could not switch camera (${cameraError(e)}) and the previous camera could not be reopened.`); return false; }
+      if (stream) this.set({ notice: `Could not switch to ${next.label}: ${cameraError(e)}` });
+    }
+    if (!stream || s !== this.session) return false;
+    this.useStream(stream);
+    this.set({ switching: false });
+    this.schedule(600);
+    return ok;
   }
 
   /** Stops everything at once: tracks, timer, request in flight, canvas, observations. */
@@ -109,8 +166,7 @@ export class LiveVision {
     this.session++;
     if (this.timer) clearTimeout(this.timer); this.timer = null;
     this.ctl?.abort('stopped'); this.ctl = null;
-    if (this.stream) { for (const t of this.stream.getTracks()) { t.removeEventListener('ended', this.onEnded); t.stop(); } }
-    this.stream = null;
+    this.releaseStream();
     if (this.video) { try { this.video.pause(); } catch { /* gone */ } this.video.srcObject = null; }
     if (this.canvas) { this.canvas.width = 0; this.canvas.height = 0; } this.canvas = null;
     this.lastSig = null; this.obs.clear();
@@ -194,6 +250,15 @@ export class LiveVision {
   /** tests: how many requests are in flight right now (0 or 1) */
   get inFlight() { return this.ctl ? 1 : 0; }
   get sinceLastSend() { return this.lastSentAt ? this.now() - this.lastSentAt : null; }
+}
+
+/** A getUserMedia failure → a sentence the user can act on. */
+export function cameraError(e: unknown): string {
+  const n = (e as Error)?.name;
+  return n === 'NotAllowedError' || n === 'SecurityError' ? 'Camera permission was denied. Live Vision stays off — allow the camera for this site in the browser (or system) settings to use it.'
+    : n === 'NotFoundError' || n === 'OverconstrainedError' ? 'No camera was found on this device.'
+    : n === 'NotReadableError' || n === 'AbortError' ? 'The camera is in use by another program or could not be started.'
+    : `The camera could not be started (${(e as Error)?.message || n}).`;
 }
 
 /** 16×12 greyscale thumbnail of the frame (192 bytes). */

@@ -73,6 +73,13 @@ failing = false;
 // theme switch
 await p.evaluate(async () => { await nexus.memory.updateSettings({ theme: 'light' }); nexus.companion.applySettings(); }); await p.waitForTimeout(500); await p.screenshot({ path: 'test-results/e2e-vision-light.png' });
 await p.setViewportSize({ width: 390, height: 844 }); await p.waitForTimeout(500); await p.screenshot({ path: 'test-results/e2e-vision-phone.png' }); ok('phone', { sw: await p.evaluate(() => document.documentElement.scrollWidth) }); await p.setViewportSize({ width: 1280, height: 800 });
+// HIDE: back to the normal NEXUS view with the camera on — a LIVE bar stays; a question from the main input still sees
+await p.click('[data-testid=vision-hide]'); await p.waitForTimeout(300);
+const hq0 = seen.length;
+await p.evaluate(() => nexus.companion.send('What am I holding up right now?')); await p.waitForFunction(() => !nexus.companion.getSnapshot().busy, null, { timeout: 15000 });
+ok('15 hidden panel', { panel: await p.locator('[data-testid=vision-panel]').count(), mini: await p.locator('[data-testid=vision-mini] [data-testid=vision-live]').count(), status: await p.evaluate(() => nexus.vision.getSnapshot().status), mainQuestionHadImage: seen.slice(hq0).some((x) => x.kind === 'chat' && x.img) });
+await p.screenshot({ path: 'test-results/e2e-vision-minimised.png' });
+await p.click('[data-testid=vision-show]'); await p.waitForSelector('[data-testid=vision-panel]', { timeout: 3000 });
 // STOP
 await p.click('[data-testid=vision-stop]');
 const s0 = seen.length; await p.waitForTimeout(5000);
@@ -103,6 +110,7 @@ const checks = [
   ['model failure reported honestly, nothing invented', /could not be analysed/.test(R['12 Gemini failure'].notice ?? '') && R['12 Gemini failure'].latestUnchanged && R['12b question during failure'].status === 'failed'],
   ['stop releases camera and observations; no frames afterwards', R['3 stop releases everything'].status === 'off' && R['3 stop releases everything'].video === null && R['3 stop releases everything'].latest === null && R['no frames after stop'] === 0 && R['question after stop has no image']],
   ['restart, disconnect and denied permission handled', R['4 restart'] === 'live' && /disconnected/.test(R['5 disconnect'].error ?? '') && /denied/.test(R['2 denied'] ?? '')],
+  ['hide: normal view with a LIVE bar; main-input questions still use the camera', R['15 hidden panel'].panel === 0 && R['15 hidden panel'].mini === 1 && R['15 hidden panel'].status === 'live' && R['15 hidden panel'].mainQuestionHadImage],
   ['phone width: no horizontal scroll; no page errors', R.phone.sw <= 390 && R.errors.length === 0],
 ];
 for (const [n, okk] of checks) console.log(`${okk ? '✔' : '✘'} [A149] ${n}`);
