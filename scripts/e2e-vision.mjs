@@ -99,6 +99,27 @@ ok('5 disconnect', await p.evaluate(() => ({ status: nexus.vision.getSnapshot().
 await p.evaluate(() => localStorage.setItem('denyCam', '1')); await p.click('[data-testid=vision-activate]'); await p.waitForTimeout(300);
 ok('2 denied', await p.locator('[data-testid=vision-error]').textContent().catch(() => null));
 await p.evaluate(() => localStorage.removeItem('denyCam'));
+// CHAT CAMERA BUTTON — robot layout: from the Conversation drawer; the drawer closes and the panel opens in the robot view
+await p.evaluate(() => localStorage.removeItem('denyCam'));
+await p.click('[data-testid=vision-panel] [aria-label="Close Live Vision"]').catch(() => {});
+await p.click('.menu-toggle'); await p.click('#tab-conversation'); await p.waitForSelector('#side [data-testid=chat-camera]');
+const gumR = await p.evaluate(() => window.__gum);
+await p.click('#side [data-testid=chat-camera]'); await p.waitForSelector('.robot-view [data-testid=vision-panel]', { timeout: 5000 });
+ok('16 robot: chat camera button', { drawerClosed: await p.locator('#side').count() === 0, panelInRobot: await p.locator('.robot-view [data-testid=vision-activate]').count(), noCameraYet: (await p.evaluate(() => window.__gum)) === gumR });
+// classic (workspace) layout: the panel opens at the top of the chat; activate, ask in the chat box, stop
+await p.evaluate(async () => { await nexus.memory.updateSettings({ layout: 'workspace' }); nexus.companion.applySettings(); }); await p.waitForTimeout(800);
+const noneBefore = await p.locator('[data-testid=vision-panel]').count();
+await p.click('.companion [data-testid=chat-camera]'); await p.waitForSelector('.chat-vision [data-testid=vision-activate]', { timeout: 8000 });
+const gumW = await p.evaluate(() => window.__gum);
+await p.click('.chat-vision [data-testid=vision-activate]'); await p.waitForSelector('.chat-vision [data-testid=vision-live]', { timeout: 10000 });
+await p.waitForFunction(() => { const v = document.querySelector('.chat-vision .vision-preview video'); return v && v.readyState >= 2 && v.videoWidth > 0; }, null, { timeout: 10000 });
+const wq0 = seen.length;
+await p.fill('.companion #composer', 'What do you see right now?'); await p.keyboard.press('Enter');
+await p.waitForFunction(() => !nexus.companion.getSnapshot().busy, null, { timeout: 15000 }); await p.waitForTimeout(300);
+await p.screenshot({ path: 'test-results/e2e-vision-workspace.png' });
+const btnOn = await p.locator('.companion [data-testid=chat-camera]').textContent();
+await p.click('.chat-vision [data-testid=vision-stop]'); await p.waitForTimeout(300);
+ok('17 workspace: chat camera button', { noneBefore, startedOnlyOnActivate: gumW === gumR, btnOn, askHadImage: seen.slice(wq0).some((x) => x.kind === 'chat' && x.img), afterStop: await p.evaluate(() => nexus.vision.getSnapshot().status), btnOff: await p.locator('.companion [data-testid=chat-camera]').textContent() });
 ok('errors', errs);
 const checks = [
   ['no camera and no frame before consent', R['1 no camera without consent'].gum === 0 && R['1 no camera without consent'].frames === 0 && R['2 panel explains before starting'].gum === 0],
@@ -111,6 +132,8 @@ const checks = [
   ['stop releases camera and observations; no frames afterwards', R['3 stop releases everything'].status === 'off' && R['3 stop releases everything'].video === null && R['3 stop releases everything'].latest === null && R['no frames after stop'] === 0 && R['question after stop has no image']],
   ['restart, disconnect and denied permission handled', R['4 restart'] === 'live' && /disconnected/.test(R['5 disconnect'].error ?? '') && /denied/.test(R['2 denied'] ?? '')],
   ['hide: normal view with a LIVE bar; main-input questions still use the camera', R['15 hidden panel'].panel === 0 && R['15 hidden panel'].mini === 1 && R['15 hidden panel'].status === 'live' && R['15 hidden panel'].mainQuestionHadImage],
+  ['chat Camera button (robot layout): closes the drawer, opens the panel, camera not started yet', R['16 robot: chat camera button'].drawerClosed && R['16 robot: chat camera button'].panelInRobot === 1 && R['16 robot: chat camera button'].noCameraYet],
+  ['chat Camera button (workspace layout): panel in the chat, questions see the camera, stop works', R['17 workspace: chat camera button'].noneBefore === 0 && R['17 workspace: chat camera button'].startedOnlyOnActivate && /Camera on/.test(R['17 workspace: chat camera button'].btnOn) && R['17 workspace: chat camera button'].askHadImage && R['17 workspace: chat camera button'].afterStop === 'off' && /^\s*Camera\s*$/.test(R['17 workspace: chat camera button'].btnOff)],
   ['phone width: no horizontal scroll; no page errors', R.phone.sw <= 390 && R.errors.length === 0],
 ];
 for (const [n, okk] of checks) console.log(`${okk ? '✔' : '✘'} [A149] ${n}`);

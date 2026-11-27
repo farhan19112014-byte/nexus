@@ -2,12 +2,14 @@
 import { MODES } from '../../shared/modes';
 import { fmtDay, type Freshness } from '../../shared/freshness';
 import { Icon } from './Icon';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { companion, learner, memory, registry } from '../core/runtime';
 import { fmtTime, useSnapshot, useStore } from './hooks';
 import type { UIMessage } from '../ai/context';
 import { Markdown } from './Markdown';
 import { chats } from '../core/runtime';
+import { visionHost } from '../vision/host';
+import { VisionSlot } from '../vision/VisionSlot';
 
 const SUGGEST = ['Hello!', 'Wave then nod', 'Invent a new greeting', 'Invent a new expression', 'Can you wave more casually?', 'Sit down', 'What can you do?'];
 const SCOPE_LABEL: Record<string, string> = { conversation: 'Conversation only', memory: 'Memory', skill_registry: 'Skill registry', preference: 'Preference', retrieval: 'Retrieval' };
@@ -144,8 +146,13 @@ export default function ChatPanel({ inDrawer = false }: { inDrawer?: boolean } =
   };
   const s = memory.settings;
   const micLabel = !snap.capabilities.find((c) => c.id === 'stt') || snap.mic === 'unsupported' ? 'unsupported' : snap.mic;
+  // Live Vision: the Camera button opens its panel (the camera starts only from "Activate" there). In the robot layout
+  // the panel lives in the robot view; in the classic layout it sits at the top of this chat.
+  useSyncExternalStore(visionHost.subscribe, visionHost.getStatus); const visionOn = visionHost.on;
+  const visionCaps = snap.caps?.vision;
   return (
     <div className="chat">
+      {!inDrawer && <div className="chat-vision"><VisionSlot /></div>}
       <div className="messages" ref={list} role="log" aria-live="polite" aria-relevant="additions text">
         {!snap.messages.length && (
           <div className="empty">
@@ -175,6 +182,10 @@ export default function ChatPanel({ inDrawer = false }: { inDrawer?: boolean } =
           {snap.listening
             ? <button className="danger" onClick={() => companion.stopListening()} aria-pressed><Icon name="stop" /> Stop listening</button>
             : <button onClick={() => companion.startListening()} disabled={micLabel === 'unsupported'} title={micLabel === 'denied' ? 'Microphone blocked — allow it in site settings' : 'Speak (asks for microphone permission the first time)'}><Icon name="mic" /> Speak</button>}
+          <button className={visionOn ? 'on' : ''} onClick={() => visionHost.requestOpen()} aria-pressed={visionOn} data-testid="chat-camera"
+            title={visionCaps && !visionCaps.available ? (visionCaps.note ?? 'Live Vision is unavailable') : visionOn ? 'Live Vision is on — show or hide its panel' : 'Live Vision: let NEXUS see through your camera (you confirm before it starts)'}>
+            <Icon name="camera" /> {visionOn ? 'Camera on' : 'Camera'}
+          </button>
           {snap.busy && <button onClick={() => companion.cancel()}><Icon name="close" /> Cancel</button>}
           {snap.speaking && <button onClick={() => companion.stopSpeaking()}><Icon name="mute" /> Stop speaking</button>}
           <span className="spacer" />

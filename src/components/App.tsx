@@ -28,6 +28,7 @@ import { isChatBuildRequest } from '../holobuild/intent';
 import { Logo } from '../site/Site';
 import { PRODUCT_NAME } from '../../shared/identity';
 import { ModeSwitch } from '../modes/ModeSwitch';
+import { VISION_OPEN_EVENT } from '../vision/host';
 
 type Tab = 'conversation' | 'chats' | 'skills' | 'memory' | 'reminders' | 'settings' | 'status';
 const SHORTCUT_TABS: Record<string, Tab> = { Digit1: 'chats', Digit2: 'skills', Digit3: 'memory', Digit4: 'reminders', Digit5: 'settings', Digit6: 'status' };
@@ -61,6 +62,8 @@ export default function App() {
   const firstLayout = useRef(true);
   useEffect(() => { if (firstLayout.current) { firstLayout.current = false; return; } setSide(!robotMode && !narrowDrawer); }, [robotMode]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (!robotMode && tab === 'conversation') setTab('skills'); }, [robotMode, tab]);
+  // the chat's Camera button opens Live Vision in the robot view: close a drawer that would cover it
+  useEffect(() => { const o = () => { if (drawerMode) setSide(false); }; window.addEventListener(VISION_OPEN_EVENT, o); return () => window.removeEventListener(VISION_OPEN_EVENT, o); }, [drawerMode]);
   const openTab = (t: Tab) => { setTab(t); setSide(true); };
   const s = memory.settings;
   useEffect(() => { applyCssTokens(); void companion.init(); }, []);
