@@ -50,7 +50,7 @@
     "@vitejs/plugin-react": "^5.2.0",
     "axe-core": "^4.14.0",
     "concurrently": "^10.0.6",
-    "electron": "^44.10.0",
+    "electron": "^45.4.1",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^9.39.5",
