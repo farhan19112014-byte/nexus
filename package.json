@@ -65,7 +65,7 @@
     "typescript": "5.9",
     "typescript-eslint": "^8.71.2",
     "vite": "^7.3.7",
-    "vitest": "^4.1.12"
+    "vitest": "^5.1.1"
   },
   "description": "NEXUS — a cute 2D AI robot companion in one desktop app",
   "author": "NEXUS project",
