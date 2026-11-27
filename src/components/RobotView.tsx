@@ -3,7 +3,7 @@
  * exchange is shown as captions under the robot (so the app is usable without sound and for screen readers); typing
  * is a compact alternative; everything else (conversation history, skills, memory, settings) opens from the menu.
  */
-import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import Stage from './Stage';
 import { Message } from './ChatPanel';
 import { Icon } from './Icon';
@@ -12,9 +12,7 @@ import { companion, memory } from '../core/runtime';
 import { useSnapshot, useStore } from './hooks';
 import { attachCursorGaze } from '../core/cursorGaze';
 import { visionHost } from '../vision/host';
-import { loadVision } from '../core/runtime';
-import type { LiveVision } from '../vision/liveVision';
-const VisionPanel = lazy(() => import('../vision/VisionPanel'));
+import { VisionSlot } from '../vision/VisionSlot';
 import { engine } from '../core/runtime';
 
 export const COMPOSE_EVENT = 'nexus:compose';
@@ -31,8 +29,7 @@ export default function RobotView({ onOpenConversation }: { onOpenConversation: 
   // the eyes glance toward the pointer while idle (limited, smoothed; off under reduced motion / quiet mode)
   useSyncExternalStore(visionHost.subscribe, visionHost.getStatus); const visionOn = visionHost.on;
   // Live Vision's code is fetched the first time its button is pressed; the camera itself still needs "Activate"
-  const [lv, setLv] = useState<LiveVision | null>(visionHost.instance); const [vToggle, setVToggle] = useState(0);
-  const openVision = () => { if (lv) { setVToggle((n) => n + 1); return; } void loadVision().then(setLv).catch(() => companion.notifications.push('error', 'Live Vision could not be loaded — check the connection to NEXUS and try again.', { react: false })); };
+  const openVision = () => visionHost.requestOpen();
   const view = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = view.current; if (!el) return;
@@ -57,7 +54,7 @@ export default function RobotView({ onOpenConversation }: { onOpenConversation: 
   return (
     <div className="robot-view" data-testid="robot-view" ref={view}>
       <Stage compact />
-      {lv && <Suspense fallback={null}><VisionPanel vision={lv} toggle={vToggle} /></Suspense>}
+      <VisionSlot />
       <p className="maker-plate" data-testid="maker-plate"><span aria-hidden>◆</span> Made by Farhan</p>
       <div className="captions" aria-live="polite" data-testid="captions">
         {snap.listening && <VoiceScope source="mic" label="Your voice" />}

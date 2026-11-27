@@ -218,3 +218,9 @@
 @media (max-width: 1099px) { .vision-mini { left: 12px; top: 12px; } }
 @media (max-width: 699px) { .vision-mini { position: relative; left: auto; top: auto; margin: 8px 12px 0; width: fit-content; max-width: calc(100vw - 24px); } .vision-mini-text { white-space: normal; } }
 .app.hc .vision-mini { background: var(--c-bg); border: 2px solid var(--c-text); }
+/* classic layout: the panel sits in the flow at the top of the chat column */
+.chat-vision:empty { display: none; }
+.chat-vision .vision-panel, .chat-vision .vision-mini { position: relative; left: auto; top: auto; margin: 0; }
+.chat-vision .vision-panel { width: auto; max-height: 42vh; flex: none; }
+.chat-vision .vision-preview { width: min(100%, 260px); }
+.composer button.on { border-color: rgb(var(--k-38d9ff) / .6); color: var(--c-primary); }
