@@ -36,7 +36,7 @@ jobs:
       - run: cp dist/index.html dist/404.html
       # each app page gets its own copy, so /app, /about… load with HTTP 200 (not the 404 fallback)
       - run: for r in app settings holobuild learning about creator studio motions privacy; do mkdir -p dist/$r && cp dist/index.html dist/$r/index.html; done
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
   deploy:
