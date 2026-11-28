@@ -1,7 +1,11 @@
 /** Live Vision: frame format, observation validation, and the browser controller (consent, one request, cleanup). */
 import { describe, expect, it, vi } from 'vitest';
 import { coerceObservation, labelDiff, parseImageDataUrl, VISION_LIMITS } from '../../../shared/vision';
-import { LiveVision, similar } from '../../vision/liveVision';
+import { differentScene, EARLIER_SCENES, LiveVision, ObservationManager, similar } from '../../vision/liveVision';
+import { buildContext, type UIMessage } from '../../ai/context';
+import { toStored } from '../../core/chats';
+import { buildSystemPrompt, conversationBlock } from '../../../server/prompts/system';
+import type { ChatRequest } from '../../../shared/schema';
 
 const b64 = (bytes: number[], pad = 200) => Buffer.from([...bytes, ...new Array(pad).fill(7)]).toString('base64');
 export const JPEG = `data:image/jpeg;base64,${b64([0xff, 0xd8, 0xff, 0xe0])}`;
@@ -104,5 +108,60 @@ describe('[A149] Live Vision controller', () => {
   it('[A149] the controller never starts the camera by itself', async () => {
     const gum = vi.fn(); const v = new LiveVision({ analyze: vi.fn(), busy: () => false, available: () => true, getUserMedia: gum, doc: null });
     await v.tick(); v.forQuestion(); v.retry(); v.attachVideo(null); expect(gum).not.toHaveBeenCalled();
+  });
+});
+
+describe('[A150] visual context across the conversation', () => {
+  const ob = (description: string, labels: string[]) => coerceObservation({ description, objects: labels.map((label) => ({ label })) })!;
+  it('[A150] earlier, clearly different views are kept (text only, a few) and labelled as possibly out of view; stop forgets them', () => {
+    const m = new ObservationManager(); let t = 0;
+    m.push(ob('A desk with a laptop and a mug.', ['laptop', 'mug']), t += 1000, 'm');
+    m.push(ob('The same desk.', ['laptop', 'mug']), t += 1000, 'm');
+    m.push(ob('A bookshelf.', ['books', 'plant']), t += 1000, 'm');
+    m.push(ob('A window with a fan.', ['window', 'fan']), t += 1000, 'm');
+    expect(m.latest!.description).toMatch(/window/); expect(m.previous!.description).toMatch(/bookshelf/);
+    expect(m.earlier.map((o) => o.description)).toEqual(['The same desk.']);   // the desk view moved out once the scene changed
+    const notes = m.notes(t + 2000);
+    expect(notes).toMatch(/^Newest observation \(2 s ago\): A window/);
+    expect(notes).toMatch(/Earlier view \(4 s ago, may no longer be in view\): The same desk\. Objects: laptop, mug\./);
+    for (let i = 0; i < 10; i++) m.push(ob(`scene ${i}`, [`thing${i}`]), t += 1000, 'm');
+    expect(m.earlier.length).toBe(EARLIER_SCENES); expect(m.notes(t).length).toBeLessThanOrEqual(2900);
+    m.clear(); expect(m.earlier).toEqual([]); expect(m.notes(t)).toBe('');
+  });
+  it('[A150] a scene counts as different only when the object lists barely overlap', () => {
+    expect(differentScene(ob('a', ['laptop', 'mug', 'pen']), ob('b', ['laptops', 'mug', 'phone']))).toBe(false);
+    expect(differentScene(ob('a', ['laptop', 'mug']), ob('b', ['dog']))).toBe(true);
+    expect(differentScene(ob('a', []), ob('b', ['dog']))).toBe(false);
+  });
+  it('[A150] camera turns are marked in the history sent to the model, and the flag (never the frame) is saved with the chat', () => {
+    const msgs: UIMessage[] = [
+      { id: '1', role: 'user', text: 'what is this?', at: 1, status: 'complete', vision: true },
+      { id: '2', role: 'assistant', text: 'Looks like a desk fan.', at: 2, status: 'complete', replyTo: '1' },
+      { id: '3', role: 'user', text: 'why is it not spinning?', at: 3, status: 'complete' },
+    ];
+    expect(buildContext(msgs, 10).map((m) => m.content)).toEqual(['[camera on] what is this?', 'Looks like a desk fan.', 'why is it not spinning?']);
+    expect(toStored(msgs)[0].vision).toBe(true); expect('vision' in toStored(msgs)[1]).toBe(false);
+  });
+  const req = (messages: { role: 'user' | 'assistant'; content: string }[], vision = false) => ({
+    messages, skills: [], expressions: [], memory: [], preferences: [], profile: { responseStyle: 'balanced', language: 'English', robotName: 'NEXUS', personality: {}, visuals: 'auto' }, lastSkillId: null,
+    ...(vision ? { context: { workspace: '', knowledge: [], vision: { notes: 'Newest observation (0 s ago): a fan.', ageS: 0 } } } : {}),
+  }) as unknown as ChatRequest;
+  it('[A150] once Live Vision is off, the prompt forbids claiming to still see earlier camera views', () => {
+    const hist = [{ role: 'user' as const, content: '[camera on] what is this?' }, { role: 'assistant' as const, content: 'A desk fan.' }, { role: 'user' as const, content: 'is it still there?' }];
+    const off = conversationBlock(req(hist));
+    expect(off).toMatch(/LIVE VISION IS OFF NOW/); expect(off).toMatch(/never say or imply you can see them now/);
+    expect(conversationBlock(req(hist, true))).toMatch(/may have changed — trust the attached frame/);
+    const plain = conversationBlock(req([{ role: 'user', content: 'hi' }]));
+    expect(plain).toMatch(/resolve "it", "that"/); expect(plain).not.toMatch(/LIVE VISION/);
+    // the new turn's own text never triggers the off-state (only earlier turns count)
+    expect(conversationBlock(req([{ role: 'user', content: '[camera on] hi' }]))).not.toMatch(/LIVE VISION IS OFF/);
+  });
+  it('[A150] the live prompt asks for natural phrasing, frame positions for "left/right", and a question when a reference is ambiguous', () => {
+    const p = buildSystemPrompt(req([{ role: 'user', content: 'what about the other one?' }], true), { streaming: true, sources: [], compact: false, fresh: false });
+    expect(p).toMatch(/Looks like you've got a laptop there/); expect(p).toMatch(/never a report/);
+    expect(p).toMatch(/"the one on the left\/right" uses positions in the frame/); expect(p).toMatch(/If two or more things fit, ask which one/);
+    expect(p).toMatch(/say it is out of view now/); expect(p).toMatch(/CONVERSATION — this is one continuous conversation/);
+    const compact = buildSystemPrompt(req([{ role: 'user', content: 'hi' }]), { streaming: true, sources: [], compact: true, fresh: false });
+    expect(compact).toMatch(/CONVERSATION —/);
   });
 });

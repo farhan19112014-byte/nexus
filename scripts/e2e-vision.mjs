@@ -13,7 +13,8 @@ const mock = http.createServer(async (req, res) => {
   const img = last.find((p) => p.inlineData)?.inlineData;
   let dims = null; if (img) { const buf = Buffer.from(img.data, 'base64'); for (let i = 2; i < buf.length - 9; i++) if (buf[i] === 0xff && (buf[i + 1] === 0xc0 || buf[i + 1] === 0xc2)) { dims = [buf.readUInt16BE(i + 7), buf.readUInt16BE(i + 5)]; break; } }
   const kind = sys.includes('eyes of NEXUS') ? 'observe' : 'chat';
-  seen.push({ kind, img: img ? { mime: img.mimeType, bytes: Math.round(img.data.length * 0.75), dims } : null, at: Date.now(), stream: req.url.includes('stream') });
+  const tagged = (j.contents ?? []).filter((c) => c.role === 'user' && (c.parts ?? []).some((x) => typeof x.text === 'string' && x.text.includes('[camera on]'))).length;
+  seen.push({ kind, img: img ? { mime: img.mimeType, bytes: Math.round(img.data.length * 0.75), dims } : null, at: Date.now(), stream: req.url.includes('stream'), tagged, liveBlock: sys.includes('LIVE VISION — the user turned on'), offBlock: sys.includes('LIVE VISION IS OFF NOW') });
   if (failing) { res.statusCode = 503; res.setHeader('content-type', 'application/json'); return res.end(JSON.stringify({ error: { code: 503, status: 'UNAVAILABLE', message: 'The model is overloaded.' } })); }
   const obs = { description: `A test pattern from the camera (frame ${seen.length}).`, objects: [{ label: 'Test pattern', position: 'centre' }], text: [], changes: seen.filter((s) => s.kind === 'observe').length > 1 ? ['the view looks the same apart from the moving pattern'] : [], uncertainties: [], people: 0 };
   const reply = 'HEAD {"expression":"curious","gesture":null,"pose":"neutral","speakingStyle":"calm","emotionIntensity":0.6}\nI can see a camera test pattern in the middle of the frame.';
@@ -50,8 +51,11 @@ await p.waitForSelector('[data-testid=vision-reply]', { timeout: 15000 }); await
 const qreq = seen.slice(n0).find((s) => s.kind === 'chat');
 ok('7 question answered with a fresh frame', { reply: await p.locator('[data-testid=vision-reply]').textContent(), chatHadImage: !!qreq?.img, state: await p.evaluate(() => nexus.companion.sm.state) });
 // multiple consecutive questions
+const f0 = seen.length;
 for (const q of ['Can you read that label?', 'What changed in the scene?']) { await p.evaluate((t) => nexus.companion.send(t), q); }
 await p.waitForFunction(() => !nexus.companion.getSnapshot().busy, null, { timeout: 15000 });
+const fchat = seen.slice(f0).filter((s) => s.kind === 'chat').at(-1);
+ok('A150 follow-up carries earlier camera turns', { tagged: fchat?.tagged ?? 0, live: !!fchat?.liveBlock, img: !!fchat?.img });
 ok('11 consecutive questions', { msgs: await p.evaluate(() => nexus.companion.getSnapshot().messages.filter((m) => m.role === 'assistant' && m.status === 'complete').length), inFlightMax1: true });
 // sampling: count observe requests over 10 s (≤ ~5 at 2 s, and never overlapping)
 const c0 = seen.filter((s) => s.kind === 'observe').length; await p.waitForTimeout(10000); const c1 = seen.filter((s) => s.kind === 'observe').length;
@@ -87,6 +91,7 @@ ok('3 stop releases everything', await p.evaluate(() => ({ status: nexus.vision.
 ok('no frames after stop', seen.length - s0);
 await p.evaluate(() => nexus.companion.send('what do you see?')); await p.waitForFunction(() => !nexus.companion.getSnapshot().busy, null, { timeout: 15000 });
 ok('question after stop has no image', !seen.at(-1).img);
+ok('A150 after stop', { offBlock: !!seen.at(-1).offBlock, liveBlock: !!seen.at(-1).liveBlock, tagged: seen.at(-1).tagged });
 // restart
 await p.click('[data-testid=vision-activate]'); await p.waitForSelector('[data-testid=vision-live]', { timeout: 10000 });
 await p.waitForFunction(() => document.querySelector('.vision-preview video')?.srcObject, null, { timeout: 10000 });
@@ -111,6 +116,8 @@ const checks = [
   ['stop releases camera and observations; no frames afterwards', R['3 stop releases everything'].status === 'off' && R['3 stop releases everything'].video === null && R['3 stop releases everything'].latest === null && R['no frames after stop'] === 0 && R['question after stop has no image']],
   ['restart, disconnect and denied permission handled', R['4 restart'] === 'live' && /disconnected/.test(R['5 disconnect'].error ?? '') && /denied/.test(R['2 denied'] ?? '')],
   ['hide: normal view with a LIVE bar; main-input questions still use the camera', R['15 hidden panel'].panel === 0 && R['15 hidden panel'].mini === 1 && R['15 hidden panel'].status === 'live' && R['15 hidden panel'].mainQuestionHadImage],
+  ['context: a follow-up carries the earlier camera turns ([camera on]) plus a fresh frame', R['A150 follow-up carries earlier camera turns'].tagged >= 2 && R['A150 follow-up carries earlier camera turns'].live && R['A150 follow-up carries earlier camera turns'].img],
+  ['context: after Stop the model is told the camera is off and earlier views are past', R['A150 after stop'].offBlock && !R['A150 after stop'].liveBlock && R['A150 after stop'].tagged >= 1],
   ['phone width: no horizontal scroll; no page errors', R.phone.sw <= 390 && R.errors.length === 0],
 ];
 for (const [n, okk] of checks) console.log(`${okk ? '✔' : '✘'} [A149] ${n}`);

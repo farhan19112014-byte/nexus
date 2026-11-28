@@ -44,17 +44,44 @@ export interface VisionSnapshot {
   framesSent: number; framesSkipped: number; intervalMs: number; lastAnalysisAt: number | null;
 }
 
-/** Keeps only what the current session needs: the newest observation and the one before it (text, never images). */
+/**
+ * Keeps only what the current session needs, as text (never images): the newest observation, the one before it, and up
+ * to `EARLIER_SCENES` earlier views that differed clearly from what followed (the camera was pointed elsewhere) — so a
+ * follow-up like "what about the one I showed you before?" can be resolved. Everything is forgotten when Live Vision stops.
+ */
+export const EARLIER_SCENES = 3;
 export class ObservationManager {
   latest: TimedObservation | null = null; previous: TimedObservation | null = null;
-  push(o: VisionObservation, at: number, model: string | null) { this.previous = this.latest; this.latest = { ...o, at, model }; }
-  clear() { this.latest = null; this.previous = null; }
+  /** earlier, clearly different views, newest first (excludes `latest` and `previous`) */
+  earlier: TimedObservation[] = [];
+  push(o: VisionObservation, at: number, model: string | null) {
+    const next = { ...o, at, model };
+    // the view about to drop out of `previous` is kept only if it was a different scene from its successor
+    if (this.previous && this.latest && differentScene(this.previous, this.latest)) this.earlier = [this.previous, ...this.earlier].slice(0, EARLIER_SCENES);
+    this.previous = this.latest; this.latest = next;
+  }
+  clear() { this.latest = null; this.previous = null; this.earlier = []; }
   ageMs(now: number) { return this.latest ? now - this.latest.at : null; }
   /** the notes a chat question carries (newest first, short) */
   notes(now: number): string {
-    const fmt = (o: TimedObservation, label: string) => `${label} (${Math.max(0, Math.round((now - o.at) / 1000))} s ago): ${observationText(o)}${o.changes.length ? ` Changes noted: ${o.changes.join('; ')}.` : ''}`;
-    return [this.latest && fmt(this.latest, 'Newest observation'), this.previous && fmt(this.previous, 'Previous observation')].filter(Boolean).join('\n').slice(0, 2900);
+    const ago = (o: TimedObservation) => `${Math.max(0, Math.round((now - o.at) / 1000))} s ago`;
+    const fmt = (o: TimedObservation, label: string) => `${label} (${ago(o)}): ${observationText(o)}${o.changes.length ? ` Changes noted: ${o.changes.join('; ')}.` : ''}`;
+    const brief = (o: TimedObservation) => `Earlier view (${ago(o)}, may no longer be in view): ${o.description}${o.objects.length ? ` Objects: ${o.objects.map((x) => x.label).join(', ')}.` : ''}`;
+    const lines = [this.latest && fmt(this.latest, 'Newest observation'), this.previous && fmt(this.previous, 'Previous observation'), ...this.earlier.map(brief)].filter(Boolean) as string[];
+    // the newest lines always fit; older ones are dropped whole rather than cut mid-sentence
+    let out = '';
+    for (const l of lines) { const n = out ? `${out}\n${l}` : l; if (n.length > 2900) { if (!out) out = l.slice(0, 2900); break; } out = n; }
+    return out;
   }
+}
+
+/** Two observations show different scenes when their object lists barely overlap (a list comparison, not motion detection). */
+export function differentScene(a: VisionObservation, b: VisionObservation): boolean {
+  const norm = (s: string) => s.toLowerCase().replace(/^(a|an|the)\s+/, '').replace(/s$/, '').trim();
+  const x = new Set(a.objects.map((o) => norm(o.label))); const y = new Set(b.objects.map((o) => norm(o.label)));
+  if (!x.size || !y.size) return false;
+  const both = [...x].filter((l) => y.has(l)).length;
+  return both / new Set([...x, ...y]).size < 0.4;
 }
 
 const errInfo = (e: unknown) => { const x = e as { message?: string; code?: string; retryable?: boolean; name?: string }; return { message: String(x?.message ?? 'The analysis failed.'), code: String(x?.code ?? (x?.name === 'AbortError' ? 'cancelled' : 'provider')), retryable: !!x?.retryable }; };

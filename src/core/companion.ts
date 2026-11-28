@@ -626,7 +626,7 @@ export class Companion {
     try { knowledge = this.d.knowledgeFor?.(text) ?? []; } catch { knowledge = []; }
     let vision: VisionChatContext | null = null;
     try { vision = this.visionFor?.() ?? null; } catch { vision = null; }
-    if (vision) this.smallTalk.add(asst.id);   // the camera is the picture: no reference image is looked up for this reply
+    if (vision) { this.smallTalk.add(asst.id); this.patch(user.id, { vision: true }); }   // the camera is the picture: no reference image is looked up for this reply; the turn is marked [camera on] in later context
     const context = o.context || knowledge.length || vision ? { ...(o.context ?? {}), ...(knowledge.length ? { knowledge } : {}), ...(vision ? { vision } : {}) } : null;
     const t0 = performance.now();
     let streamed = '', ttsBuf = '', firstDelta = true, headApplied = false;

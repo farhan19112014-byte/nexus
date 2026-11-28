@@ -527,6 +527,25 @@ describe('[A126] website redesign: motion-engine states', () => {
     t.c.visionFor = () => null; await t.c.send('and now?'); await idle(t.c); expect(t.requests.at(-1)!.context?.vision).toBeUndefined();
     t.stop();
   });
+
+  it('[A150] context-aware vision: camera turns are marked in later history, so after Live Vision is off the model knows they were past views', async () => {
+    const t = rig(demo); await t.ready();
+    t.c.visionFor = () => ({ frame: 'data:image/jpeg;base64,AAAA', notes: 'Newest observation (0 s ago): a desk fan.', ageS: 0 });
+    await t.c.send('what is this?'); await idle(t.c);
+    const asked = t.c.getSnapshot().messages.find((m) => m.role === 'user' && m.text === 'what is this?')!;
+    expect(asked.vision).toBe(true);
+    expect(t.requests.at(-1)!.messages.at(-1)!.content).toBe('[camera on] what is this?');
+    await t.c.send("why isn't it working?"); await idle(t.c);           // follow-up while still on: history carries the earlier turn
+    const follow = t.requests.at(-1)!.messages;
+    expect(follow.some((m) => m.role === 'user' && m.content === '[camera on] what is this?')).toBe(true);
+    t.c.visionFor = () => null;                                          // Live Vision turned off
+    await t.c.send('is it still there?'); await idle(t.c);
+    const off = t.requests.at(-1)!;
+    expect(off.context?.vision).toBeUndefined();
+    expect(off.messages.at(-1)!.content).toBe('is it still there?');      // the new turn is not marked
+    expect(off.messages.filter((m) => m.content.startsWith('[camera on]')).length).toBe(2);
+    t.stop();
+  });
 });
 
 

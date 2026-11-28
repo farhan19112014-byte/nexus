@@ -1,6 +1,9 @@
 /** The Live Vision part of a chat request (kept apart from shared/vision.ts so ordinary chat code stays small). */
 import { z } from 'zod';
 
+/** Prefix of a user turn asked while the camera was on (in the chat history): lets the model tell past camera views from the present. */
+export const CAMERA_TAG = '[camera on] ';
+
 /** a base64 640×480 frame is far below this; the server checks the real image separately */
 const MAX_FRAME_CHARS = 800_064;
 /** What a chat turn carries while Live Vision is on: the newest frame (optional) and the recent observations as text. */

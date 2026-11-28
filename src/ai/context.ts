@@ -5,6 +5,7 @@
 import type { BrainResponse, ChatMessage, ResponseMeta, Source } from '../../shared/schema';
 import type { LearnOutcome } from '../skills/learning';
 import { MODES, type ModeId } from '../../shared/modes';
+import { CAMERA_TAG } from '../../shared/visionContext';
 import type { SafetyNotice } from '../../shared/safety';
 
 export type MsgStatus = 'sending' | 'streaming' | 'complete' | 'failed' | 'cancelled';
@@ -22,6 +23,8 @@ export interface UIMessage {
   mode?: ModeId;
   /** an emergency / crisis notice for this exchange (deterministic check, confirmed by the server) */
   safety?: SafetyNotice;
+  /** a user turn asked while Live Vision was on (a flag only — frames are never kept) */
+  vision?: boolean;
 }
 
 export const SESSION_LIMIT = 200;
@@ -45,7 +48,7 @@ export function buildContext(messages: UIMessage[], maxMessages: number, maxChar
   for (let i = usable.length - 1; i >= 0 && out.length < maxMessages; i--) {
     const m = usable[i];
     const other = mode && m.role === 'assistant' && (m.mode ?? 'default') !== mode;
-    const c = `${other ? `[answered in ${MODES[m.mode ?? 'default'].name} mode] ` : ''}${m.text.slice(0, 5000)}`;
+    const c = `${other ? `[answered in ${MODES[m.mode ?? 'default'].name} mode] ` : ''}${m.role === 'user' && m.vision ? CAMERA_TAG : ''}${m.text.slice(0, 5000)}`;
     if (chars + c.length > maxChars && out.length) break;
     out.unshift({ role: m.role as 'user' | 'assistant', content: c }); chars += c.length;
   }
